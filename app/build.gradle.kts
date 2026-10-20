@@ -58,7 +58,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.9.0")
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
-    implementation("androidx.compose.material3:material3")
+    implementation("androidx.compose.material3:material3:1.5.0-alpha26")
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.datastore:datastore-preferences:1.1.2")
     implementation("io.coil-kt:coil-compose:2.7.0")
