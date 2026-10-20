@@ -13,14 +13,12 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
@@ -30,13 +28,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
@@ -44,7 +38,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 @Composable
 fun SettingsScreen(vm: WeatherViewModel) {
     val settings by vm.settings.collectAsStateWithLifecycle()
-    var key by remember(settings.apiKey) { mutableStateOf(settings.apiKey) }
 
     Scaffold(
         topBar = {
@@ -92,30 +85,6 @@ fun SettingsScreen(vm: WeatherViewModel) {
                 )
             }
 
-            SettingsCard("API configuration") {
-                Text(
-                    "AccuWeather API key. When set, current conditions and weather alerts come from AccuWeather. Forecast, air quality and UV data come from Open-Meteo.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(Modifier.height(12.dp))
-                OutlinedTextField(
-                    value = key,
-                    onValueChange = { key = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    label = { Text("AccuWeather API key") },
-                    visualTransformation = PasswordVisualTransformation()
-                )
-                Spacer(Modifier.height(8.dp))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    Button(onClick = {
-                        vm.setApiKey(key)
-                        vm.refresh()
-                    }) { Text("Save and refresh") }
-                }
-            }
-
             SettingsCard("Privacy terms") {
                 Text(
                     "Location permission",
@@ -129,13 +98,13 @@ fun SettingsScreen(vm: WeatherViewModel) {
                 Spacer(Modifier.height(12.dp))
                 Text("Network access", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
                 Text(
-                    "To show the weather, the coordinates of your selected city are sent to Open-Meteo, and to AccuWeather when you add an API key. Text returned by weather services may be sent to Google Translate to show it in English. The radar map is loaded from Windy and may collect data under its own policy. Weather icons are downloaded from GitHub.",
+                    "To show the weather, the coordinates of your selected city are sent to Open-Meteo. The radar map is loaded from Windy and may collect data under its own policy. Weather icons are downloaded from GitHub.",
                     style = MaterialTheme.typography.bodySmall
                 )
                 Spacer(Modifier.height(12.dp))
                 Text("Data stored on your device", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
                 Text(
-                    "Saved cities, your unit and sound choices, and your API key are stored locally. The app has no accounts, no analytics and no advertising. Clearing the app data removes everything.",
+                    "Saved cities, and your unit and sound choices are stored locally. The app has no accounts, no analytics and no advertising. Clearing the app data removes everything.",
                     style = MaterialTheme.typography.bodySmall
                 )
                 Spacer(Modifier.height(12.dp))
