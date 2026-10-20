@@ -17,8 +17,6 @@ jobs:
           gradle-version: 8.11.1
       - name: Build release APK
         run: gradle assembleRelease --no-daemon
-        env:
-          ACCUWEATHER_API_KEY: ${{ secrets.ACCUWEATHER_API_KEY }}
       - uses: actions/upload-artifact@v4
         with:
           name: com.catsblock.weather
