@@ -7,7 +7,6 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.catsblock.weather.BuildConfig
 import com.catsblock.weather.data.AppSettings
 import com.catsblock.weather.data.City
 import com.catsblock.weather.data.CitySummary
@@ -216,7 +215,7 @@ class WeatherViewModel(private val app: Application) : AndroidViewModel(app) {
             return
         }
         try {
-            weather.value = WeatherState.Success(repo.fetch(target, effectiveKey(current)))
+            weather.value = WeatherState.Success(repo.fetch(target))
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -225,9 +224,6 @@ class WeatherViewModel(private val app: Application) : AndroidViewModel(app) {
             }
         }
     }
-
-    private fun effectiveKey(current: AppSettings): String =
-        current.apiKey.ifBlank { BuildConfig.ACCUWEATHER_API_KEY }
 
     private fun networkAllowed(current: AppSettings): Boolean {
         if (current.mobileData) return true
@@ -241,10 +237,9 @@ class WeatherViewModel(private val app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             val current = store.settings.first()
             if (!networkAllowed(current)) return@launch
-            val key = effectiveKey(current)
             val list = store.savedCities.first()
             val results = coroutineScope {
-                list.map { c -> async { c.id to runCatching { repo.summary(c, key) }.getOrNull() } }.awaitAll()
+                list.map { c -> async { c.id to runCatching { repo.summary(c) }.getOrNull() } }.awaitAll()
             }
             summaries.value = results.mapNotNull { (id, summary) -> summary?.let { id to it } }.toMap()
         }
@@ -260,9 +255,5 @@ class WeatherViewModel(private val app: Application) : AndroidViewModel(app) {
 
     fun setSounds(value: Boolean) {
         viewModelScope.launch { store.setSounds(value) }
-    }
-
-    fun setApiKey(value: String) {
-        viewModelScope.launch { store.setApiKey(value) }
     }
 }
