@@ -84,8 +84,7 @@ data class WeatherBundle(
     val current: Current,
     val hours: List<Hour>,
     val days: List<Day>,
-    val alerts: List<String>,
-    val usedAccuWeather: Boolean
+    val alerts: List<String>
 )
 
 data class CitySummary(
@@ -98,8 +97,7 @@ data class CitySummary(
 data class AppSettings(
     val fahrenheit: Boolean = false,
     val mobileData: Boolean = true,
-    val sounds: Boolean = true,
-    val apiKey: String = ""
+    val sounds: Boolean = true
 )
 
 data class Continent(val title: String, val cities: List<City>)
