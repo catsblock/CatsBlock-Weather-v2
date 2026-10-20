@@ -4,11 +4,6 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
-val accuWeatherKey: String =
-    (project.findProperty("ACCUWEATHER_API_KEY") as String?)?.takeIf { it.isNotBlank() }
-        ?: System.getenv("ACCUWEATHER_API_KEY")
-        ?: ""
-
 base.archivesName.set("com.catsblock.weather")
 
 android {
@@ -21,7 +16,6 @@ android {
         targetSdk = 36
         versionCode = 1
         versionName = "1.0.0"
-        buildConfigField("String", "ACCUWEATHER_API_KEY", "\"$accuWeatherKey\"")
     }
 
     buildTypes {
@@ -38,7 +32,6 @@ android {
 
     buildFeatures {
         compose = true
-        buildConfig = true
     }
 
     packaging {
@@ -58,7 +51,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.9.0")
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
-    implementation("androidx.compose.material3:material3:1.5.0-alpha26")
+    implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.datastore:datastore-preferences:1.1.2")
     implementation("io.coil-kt:coil-compose:2.7.0")
