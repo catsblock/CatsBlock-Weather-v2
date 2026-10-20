@@ -7,26 +7,12 @@ import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.temporal.ChronoUnit
-import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
-
-private data class AccuCurrent(
-    val text: String,
-    val icon: Int,
-    val isDay: Boolean,
-    val temp: Double?,
-    val feels: Double?,
-    val humidity: Int?,
-    val wind: Double?,
-    val windDir: Double?,
-    val uv: Double?
-)
 
 class WeatherRepository {
 
@@ -34,9 +20,6 @@ class WeatherRepository {
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(20, TimeUnit.SECONDS)
         .build()
-
-    private val locationKeys = ConcurrentHashMap<String, String>()
-    private val translations = ConcurrentHashMap<String, String>()
 
     private suspend fun get(url: String): String = withContext(Dispatchers.IO) {
         client.newCall(Request.Builder().url(url).build()).execute().use { response ->
@@ -49,31 +32,6 @@ class WeatherRepository {
         val builder = base.toHttpUrl().newBuilder()
         params.forEach { builder.addQueryParameter(it.first, it.second) }
         return builder.build().toString()
-    }
-
-    suspend fun translate(text: String): String {
-        if (text.isBlank()) return text
-        translations[text]?.let { return it }
-        return try {
-            val raw = get(
-                url(
-                    "https://translate.googleapis.com/translate_a/single",
-                    "client" to "gtx",
-                    "sl" to "auto",
-                    "tl" to "en",
-                    "dt" to "t",
-                    "q" to text
-                )
-            )
-            val segments = JSONArray(raw).getJSONArray(0)
-            val out = StringBuilder()
-            for (i in 0 until segments.length()) out.append(segments.getJSONArray(i).optString(0))
-            val result = out.toString().ifBlank { text }
-            translations[text] = result
-            result
-        } catch (e: Exception) {
-            text
-        }
     }
 
     suspend fun searchCities(query: String): List<City> {
@@ -100,32 +58,26 @@ class WeatherRepository {
         }
     }
 
-    suspend fun summary(city: City, apiKey: String): CitySummary = coroutineScope {
-        val forecast = async {
-            get(
-                url(
-                    "https://api.open-meteo.com/v1/forecast",
-                    "latitude" to city.lat.toString(),
-                    "longitude" to city.lon.toString(),
-                    "current" to "temperature_2m,weather_code,is_day",
-                    "timezone" to "auto"
-                )
+    suspend fun summary(city: City): CitySummary {
+        val raw = get(
+            url(
+                "https://api.open-meteo.com/v1/forecast",
+                "latitude" to city.lat.toString(),
+                "longitude" to city.lon.toString(),
+                "current" to "temperature_2m,weather_code,is_day",
+                "timezone" to "auto"
             )
-        }
-        val alert = async {
-            if (apiKey.isBlank()) false
-            else runCatching { accuAlerts(city, apiKey).isNotEmpty() }.getOrDefault(false)
-        }
-        val cur = JSONObject(forecast.await()).getJSONObject("current")
-        CitySummary(
+        )
+        val cur = JSONObject(raw).getJSONObject("current")
+        return CitySummary(
             kind = wmoCondition(cur.getInt("weather_code")),
             isDay = cur.getInt("is_day") == 1,
             temp = cur.getDouble("temperature_2m"),
-            hasAlert = alert.await()
+            hasAlert = false
         )
     }
 
-    suspend fun fetch(city: City, apiKey: String): WeatherBundle = coroutineScope {
+    suspend fun fetch(city: City): WeatherBundle = coroutineScope {
         val lat = city.lat.toString()
         val lon = city.lon.toString()
         val forecast = async {
@@ -158,14 +110,6 @@ class WeatherRepository {
                     )
                 )
             }.getOrNull()
-        }
-        val accu = async {
-            if (apiKey.isBlank()) null
-            else runCatching { accuCurrent(city, apiKey) }.getOrNull()
-        }
-        val alerts = async {
-            if (apiKey.isBlank()) emptyList<String>()
-            else runCatching { accuAlerts(city, apiKey) }.getOrDefault(emptyList())
         }
 
         val root = JSONObject(forecast.await())
@@ -228,23 +172,22 @@ class WeatherRepository {
 
         val cur = root.getJSONObject("current")
         val now = LocalDateTime.parse(cur.getString("time"))
-        val omCode = cur.getInt("weather_code")
-        val omDay = cur.getInt("is_day") == 1
+        val code = cur.getInt("weather_code")
+        val day = cur.getInt("is_day") == 1
         val nowKey = now.truncatedTo(ChronoUnit.HOURS).toString()
         val hourNow = hours.firstOrNull { it.time.toString() == nowKey }
-        val a = accu.await()
 
         val current = Current(
             now = now,
-            temp = a?.temp ?: cur.getDouble("temperature_2m"),
-            feels = a?.feels ?: cur.getDouble("apparent_temperature"),
-            text = if (a != null) translate(a.text) else wmoText(omCode, omDay),
-            kind = if (a != null) accuCondition(a.icon) else wmoCondition(omCode),
-            isDay = a?.isDay ?: omDay,
-            windSpeed = a?.wind ?: cur.getDouble("wind_speed_10m"),
-            windDir = a?.windDir ?: cur.getDouble("wind_direction_10m"),
-            humidity = a?.humidity ?: cur.getInt("relative_humidity_2m"),
-            uv = a?.uv ?: hourNow?.uv ?: 0.0,
+            temp = cur.getDouble("temperature_2m"),
+            feels = cur.getDouble("apparent_temperature"),
+            text = wmoText(code, day),
+            kind = wmoCondition(code),
+            isDay = day,
+            windSpeed = cur.getDouble("wind_speed_10m"),
+            windDir = cur.getDouble("wind_direction_10m"),
+            humidity = cur.getInt("relative_humidity_2m"),
+            uv = hourNow?.uv ?: 0.0,
             aqi = aqiMap[nowKey]
         )
 
@@ -252,63 +195,7 @@ class WeatherRepository {
             current = current,
             hours = hours,
             days = days,
-            alerts = alerts.await(),
-            usedAccuWeather = a != null
+            alerts = emptyList()
         )
-    }
-
-    private suspend fun locationKey(city: City, apiKey: String): String {
-        locationKeys[city.id]?.let { return it }
-        val raw = get(
-            url(
-                "https://dataservice.accuweather.com/locations/v1/cities/geoposition/search",
-                "apikey" to apiKey,
-                "q" to "${city.lat},${city.lon}"
-            )
-        )
-        val key = JSONObject(raw).getString("Key")
-        locationKeys[city.id] = key
-        return key
-    }
-
-    private fun JSONObject.metric(name: String): Double? =
-        optJSONObject(name)?.optJSONObject("Metric")?.optDouble("Value", Double.NaN)?.takeIf { !it.isNaN() }
-
-    private suspend fun accuCurrent(city: City, apiKey: String): AccuCurrent {
-        val key = locationKey(city, apiKey)
-        val raw = get(
-            url(
-                "https://dataservice.accuweather.com/currentconditions/v1/$key",
-                "apikey" to apiKey,
-                "details" to "true"
-            )
-        )
-        val o = JSONArray(raw).getJSONObject(0)
-        return AccuCurrent(
-            text = o.optString("WeatherText", ""),
-            icon = o.optInt("WeatherIcon", 7),
-            isDay = o.optBoolean("IsDayTime", true),
-            temp = o.metric("Temperature"),
-            feels = o.metric("RealFeelTemperature"),
-            humidity = if (o.has("RelativeHumidity") && !o.isNull("RelativeHumidity")) o.optInt("RelativeHumidity") else null,
-            wind = o.optJSONObject("Wind")?.metric("Speed"),
-            windDir = o.optJSONObject("Wind")?.optJSONObject("Direction")?.optDouble("Degrees", Double.NaN)?.takeIf { !it.isNaN() },
-            uv = if (o.has("UVIndex") && !o.isNull("UVIndex")) o.optDouble("UVIndex") else null
-        )
-    }
-
-    private suspend fun accuAlerts(city: City, apiKey: String): List<String> {
-        val key = locationKey(city, apiKey)
-        val raw = get(
-            url(
-                "https://dataservice.accuweather.com/alerts/v1/$key",
-                "apikey" to apiKey
-            )
-        )
-        val arr = JSONArray(raw)
-        val titles = (0 until arr.length()).mapNotNull {
-            arr.getJSONObject(it).optJSONObject("Description")?.optString("Localized")?.takeIf { s -> s.isNotBlank() }
-        }
-        return titles.distinct().map { translate(it) }
     }
 }
