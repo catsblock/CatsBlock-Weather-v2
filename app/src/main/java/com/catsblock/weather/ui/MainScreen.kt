@@ -1,6 +1,5 @@
 package com.catsblock.weather.ui
 
-import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -27,20 +26,21 @@ import androidx.compose.material.icons.rounded.Eco
 import androidx.compose.material.icons.rounded.LocationCity
 import androidx.compose.material.icons.rounded.Map
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Spa
 import androidx.compose.material.icons.rounded.Umbrella
 import androidx.compose.material.icons.rounded.WaterDrop
 import androidx.compose.material.icons.rounded.WbSunny
 import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
-import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.ModalDrawerSheet
@@ -104,7 +104,7 @@ private sealed interface Sheet {
 
 private val headerShadow = TextStyle(shadow = androidx.compose.ui.graphics.Shadow(Color(0x66000000), blurRadius = 8f))
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(vm: WeatherViewModel) {
     val state by vm.weather.collectAsStateWithLifecycle()
@@ -200,7 +200,7 @@ fun MainScreen(vm: WeatherViewModel) {
                     FilledTonalButton(onClick = vm::openPicker) { Text("Choose a location") }
                 }
                 else -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    LoadingIndicator(Modifier.size(72.dp))
+                    CircularProgressIndicator(Modifier.size(56.dp))
                 }
             }
 
@@ -293,7 +293,7 @@ private fun CitiesDrawer(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun WeatherDetails(bundle: WeatherBundle, city: City?, fahrenheit: Boolean, scroll: ScrollState) {
+private fun WeatherDetails(bundle: WeatherBundle, city: City?, fahrenheit: Boolean, scroll: androidx.compose.foundation.ScrollState) {
     val cur = bundle.current
     val nowHour = cur.now.truncatedTo(ChronoUnit.HOURS)
     val startIdx = bundle.hours.indexOfFirst { !it.time.isBefore(nowHour) }.coerceAtLeast(0)
