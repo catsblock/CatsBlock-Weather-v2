@@ -18,7 +18,6 @@ class SettingsStore(private val context: Context) {
         val fahrenheit = booleanPreferencesKey("fahrenheit")
         val mobileData = booleanPreferencesKey("mobile_data")
         val sounds = booleanPreferencesKey("sounds")
-        val apiKey = stringPreferencesKey("api_key")
         val saved = stringPreferencesKey("saved_cities")
         val current = stringPreferencesKey("current_city")
     }
@@ -27,8 +26,7 @@ class SettingsStore(private val context: Context) {
         AppSettings(
             fahrenheit = it[Keys.fahrenheit] ?: false,
             mobileData = it[Keys.mobileData] ?: true,
-            sounds = it[Keys.sounds] ?: true,
-            apiKey = it[Keys.apiKey] ?: ""
+            sounds = it[Keys.sounds] ?: true
         )
     }
 
@@ -55,10 +53,6 @@ class SettingsStore(private val context: Context) {
 
     suspend fun setSounds(value: Boolean) {
         context.dataStore.edit { it[Keys.sounds] = value }
-    }
-
-    suspend fun setApiKey(value: String) {
-        context.dataStore.edit { it[Keys.apiKey] = value.trim() }
     }
 
     suspend fun saveCities(cities: List<City>) {
