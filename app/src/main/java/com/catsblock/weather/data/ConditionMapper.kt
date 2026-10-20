@@ -30,15 +30,3 @@ fun wmoText(code: Int, isDay: Boolean): String = when (code) {
     96, 99 -> "Thunderstorm with hail"
     else -> "Cloudy"
 }
-
-fun accuCondition(icon: Int): Condition = when (icon) {
-    1, 2, 30, 31, 32, 33, 34 -> Condition.Clear
-    3, 4, 35, 36 -> Condition.FewClouds
-    6, 38 -> Condition.MoreClouds
-    7, 8 -> Condition.Cloudy
-    5, 11, 37 -> Condition.Fog
-    12, 13, 14, 18, 39, 40 -> Condition.Rain
-    15, 16, 17, 41, 42 -> Condition.Storm
-    in 19..29, 43, 44 -> Condition.Snow
-    else -> Condition.Cloudy
-}
