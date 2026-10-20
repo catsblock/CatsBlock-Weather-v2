@@ -14,8 +14,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Search
-import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
@@ -43,7 +43,7 @@ fun flagEmoji(code: String): String {
     return String(first) + String(second)
 }
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CityPickerScreen(vm: WeatherViewModel) {
     val text by vm.queryText.collectAsStateWithLifecycle()
@@ -79,7 +79,7 @@ fun CityPickerScreen(vm: WeatherViewModel) {
             )
             when {
                 searching && loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    LoadingIndicator(Modifier.size(72.dp))
+                    CircularProgressIndicator(Modifier.size(56.dp))
                 }
                 searching -> {
                     if (results.isEmpty()) {
