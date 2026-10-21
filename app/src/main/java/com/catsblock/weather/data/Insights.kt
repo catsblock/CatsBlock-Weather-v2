@@ -88,7 +88,7 @@ fun lifeIndex(
     dayMax: Double,
     dayMin: Double
 ): List<LifeItem> {
-    val wet = kind == Condition.Rain || kind == Condition.Storm || kind == Condition.Snow
+    val wet = kind.isWet
     val exerciseBad = wet || (aqi != null && aqi > 100.0) || feels > 33.0 || feels < 0.0
     val clothing = when {
         feels < 5.0 -> "Heavy coat, scarf and gloves."
@@ -108,7 +108,7 @@ fun lifeIndex(
         else -> "High" to "Big temperature swings or uncomfortable air raise the flu risk. Keep warm."
     }
     val travel = when {
-        kind == Condition.Storm || wind >= 60.0 || precip > 10.0 -> "Poor" to "Delay non-essential trips if you can."
+        kind == Condition.Storm || kind == Condition.Blizzard || wind >= 60.0 || precip > 10.0 -> "Poor" to "Delay non-essential trips if you can."
         wet || kind == Condition.Fog || wind >= 40.0 -> "Fair" to "Allow extra time and drive carefully."
         else -> "Good" to "Great conditions for traveling."
     }
