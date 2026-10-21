@@ -6,6 +6,10 @@ plugins {
 
 base.archivesName.set("com.catsblock.weather")
 
+val buildNum = (project.findProperty("buildNumber") as String?)?.toIntOrNull() ?: 1
+val ksPath: String? = System.getenv("KS_PATH")
+val ksPass: String? = System.getenv("KS_PASS")
+
 android {
     namespace = "com.catsblock.weather"
     compileSdk = 36
@@ -14,14 +18,25 @@ android {
         applicationId = "com.catsblock.weather"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = buildNum
+        versionName = "1.0.$buildNum"
+    }
+
+    signingConfigs {
+        if (ksPath != null) {
+            create("ci") {
+                storeFile = file(ksPath)
+                storePassword = ksPass
+                keyAlias = "cats"
+                keyPassword = ksPass
+            }
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = if (ksPath != null) signingConfigs.getByName("ci") else signingConfigs.getByName("debug")
         }
     }
 
