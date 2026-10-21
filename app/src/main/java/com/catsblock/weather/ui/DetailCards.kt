@@ -183,29 +183,33 @@ fun HoursCard(
     days: List<Day>,
     today: LocalDate,
     fahrenheit: Boolean,
-    scrollState: ScrollState
+    scrollState: ScrollState,
+    title: String = "Next 36 hours",
+    showDays: Boolean = true
 ) {
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
     var selected by remember { mutableIntStateOf(0) }
     GlassCard(Modifier.fillMaxWidth()) {
-        CardHeader(Icons.Rounded.Schedule, "Next 36 hours")
+        CardHeader(Icons.Rounded.Schedule, title)
         Spacer(Modifier.height(14.dp))
-        Row(
-            Modifier.horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            days.forEachIndexed { i, d ->
-                DayChip(d, today, fahrenheit, selected == i) {
-                    selected = i
-                    val index = hours.indexOfFirst { it.time.toLocalDate() == d.date }.coerceAtLeast(0)
-                    scope.launch {
-                        scrollState.animateScrollTo(with(density) { (HourStep * index).roundToPx() })
+        if (showDays) {
+            Row(
+                Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                days.forEachIndexed { i, d ->
+                    DayChip(d, today, fahrenheit, selected == i) {
+                        selected = i
+                        val index = hours.indexOfFirst { it.time.toLocalDate() == d.date }.coerceAtLeast(0)
+                        scope.launch {
+                            scrollState.animateScrollTo(with(density) { (HourStep * index).roundToPx() })
+                        }
                     }
                 }
             }
+            Spacer(Modifier.height(8.dp))
         }
-        Spacer(Modifier.height(8.dp))
         HoursChart(hours, fahrenheit, scrollState)
     }
 }
