@@ -15,10 +15,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.catsblock.weather.i18n.I18n
 import com.catsblock.weather.ui.CityPickerScreen
 import com.catsblock.weather.ui.MainScreen
 import com.catsblock.weather.ui.MapScreen
@@ -37,7 +39,9 @@ class MainActivity : ComponentActivity() {
         setContent {
             WeatherTheme {
                 val vm: WeatherViewModel = viewModel()
-                AppRoot(vm)
+                val settings by vm.settings.collectAsStateWithLifecycle()
+                I18n.lang = settings.language
+                key(settings.language) { AppRoot(vm) }
             }
         }
     }
