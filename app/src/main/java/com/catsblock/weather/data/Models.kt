@@ -59,6 +59,7 @@ data class Day(
     val min: Double,
     val code: Int,
     val precipSum: Double,
+    val rainChance: Int,
     val sunrise: LocalDateTime,
     val sunset: LocalDateTime,
     val uvMax: Double
@@ -83,15 +84,13 @@ data class Current(
 data class WeatherBundle(
     val current: Current,
     val hours: List<Hour>,
-    val days: List<Day>,
-    val alerts: List<String>
+    val days: List<Day>
 )
 
 data class CitySummary(
     val kind: Condition,
     val isDay: Boolean,
-    val temp: Double,
-    val hasAlert: Boolean
+    val temp: Double
 )
 
 data class AppSettings(
