@@ -182,7 +182,7 @@ class WeatherRepository {
             temp = cur.getDouble("temperature_2m"),
             feels = cur.getDouble("apparent_temperature"),
             text = wmoText(code, day),
-            kind = wmoCondition(code),
+            kind = wmoCondition(code, cur.getDouble("wind_speed_10m")),
             isDay = day,
             windSpeed = cur.getDouble("wind_speed_10m"),
             windDir = cur.getDouble("wind_direction_10m"),
