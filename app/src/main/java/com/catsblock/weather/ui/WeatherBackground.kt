@@ -1,186 +1,138 @@
 package com.catsblock.weather.ui
 
-import android.content.Context
-import android.graphics.SurfaceTexture
-import android.media.MediaCodec
-import android.media.MediaPlayer
-import android.view.Surface
-import android.view.TextureView
-import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.viewinterop.AndroidView
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.compose.ui.layout.ContentScale
+import coil.compose.AsyncImage
 import com.catsblock.weather.data.Condition
-import com.catsblock.weather.media.MediaCache
-import java.io.File
+import kotlin.math.PI
+import kotlin.math.sin
+import kotlin.random.Random
 
-private fun skyColors(kind: Condition, isDay: Boolean): List<Color> = when (kind) {
-    Condition.Clear -> if (isDay) listOf(Color(0xFF2F80ED), Color(0xFF8EC5FC)) else listOf(Color(0xFF0B1026), Color(0xFF283B6E))
-    Condition.FewClouds -> if (isDay) listOf(Color(0xFF3F8AE0), Color(0xFF9CCBF5)) else listOf(Color(0xFF0E1530), Color(0xFF2D3F70))
-    Condition.MoreClouds -> if (isDay) listOf(Color(0xFF5F7C99), Color(0xFFA7B8C8)) else listOf(Color(0xFF1A2236), Color(0xFF3A4660))
-    Condition.Cloudy -> if (isDay) listOf(Color(0xFF6C7A89), Color(0xFFB0BAC4)) else listOf(Color(0xFF222B38), Color(0xFF47515F))
-    Condition.Rain -> if (isDay) listOf(Color(0xFF3E4C5E), Color(0xFF7A8896)) else listOf(Color(0xFF141B26), Color(0xFF2E3846))
-    Condition.Storm -> listOf(Color(0xFF1C2230), Color(0xFF4A5366))
-    Condition.Snow -> if (isDay) listOf(Color(0xFF8FA3B8), Color(0xFFDCE6F0)) else listOf(Color(0xFF2B3646), Color(0xFF5B6B80))
-    Condition.Fog -> if (isDay) listOf(Color(0xFF8C9AA5), Color(0xFFCBD3D9)) else listOf(Color(0xFF2B3238), Color(0xFF566068))
+private const val IMAGE_BASE =
+    "https://raw.githubusercontent.com/catsblock/CatsBlock-Weather-v2/main/weather/image/"
+
+private fun dayPhoto(kind: Condition): String = when (kind) {
+    Condition.Clear, Condition.FewClouds -> "Sunny.jpg"
+    Condition.MoreClouds -> "Partlycloud.jpg"
+    Condition.Cloudy, Condition.Fog -> "cloudy.jpg"
+    Condition.Drizzle, Condition.Rain -> "Rain.jpg"
+    Condition.Storm -> "Storm.jpg"
+    Condition.Sleet, Condition.Hail, Condition.Snow, Condition.HeavySnow, Condition.Blizzard -> "Ssnow.jpg"
 }
 
-private fun mixkit(id: Int) = listOf(
-    "https://assets.mixkit.co/videos/$id/$id-720.mp4",
-    "https://assets.mixkit.co/videos/$id/$id-360.mp4"
+private fun photoFor(kind: Condition, isDay: Boolean): String? {
+    if (isDay) return dayPhoto(kind)
+    return when (kind) {
+        Condition.Clear, Condition.FewClouds, Condition.MoreClouds, Condition.Fog -> null
+        else -> dayPhoto(kind)
+    }
+}
+
+private fun fallbackColors(kind: Condition, isDay: Boolean): List<Color> = when (kind) {
+    Condition.Clear, Condition.FewClouds ->
+        if (isDay) listOf(Color(0xFF2F80ED), Color(0xFF8EC5FC)) else listOf(Color(0xFF0B1026), Color(0xFF283B6E))
+    Condition.MoreClouds, Condition.Cloudy, Condition.Fog ->
+        if (isDay) listOf(Color(0xFF6C7A89), Color(0xFFB0BAC4)) else listOf(Color(0xFF222B38), Color(0xFF47515F))
+    Condition.Drizzle, Condition.Rain ->
+        if (isDay) listOf(Color(0xFF3E4C5E), Color(0xFF7A8896)) else listOf(Color(0xFF141B26), Color(0xFF2E3846))
+    Condition.Storm -> listOf(Color(0xFF1C2230), Color(0xFF4A5366))
+    Condition.Sleet, Condition.Hail, Condition.Snow, Condition.HeavySnow, Condition.Blizzard ->
+        if (isDay) listOf(Color(0xFF8FA3B8), Color(0xFFDCE6F0)) else listOf(Color(0xFF2B3646), Color(0xFF5B6B80))
+}
+
+private data class Star(
+    val x: Float,
+    val y: Float,
+    val radius: Float,
+    val base: Float,
+    val phase: Float,
+    val speed: Int,
+    val glow: Boolean
 )
 
-private fun videoUrls(kind: Condition, isDay: Boolean): List<String> = when (kind) {
-    Condition.Clear -> if (isDay) mixkit(26108) else mixkit(1610)
-    Condition.FewClouds -> if (isDay) mixkit(2408) else mixkit(1610)
-    Condition.MoreClouds -> if (isDay) mixkit(21584) else mixkit(21576)
-    Condition.Cloudy -> if (isDay) mixkit(21576) else mixkit(9680)
-    Condition.Rain -> if (isDay) mixkit(48004) else mixkit(28087)
-    Condition.Storm -> if (isDay) mixkit(4060) else mixkit(4422)
-    Condition.Snow -> mixkit(3350)
-    Condition.Fog -> mixkit(9680)
-}
-
-private class VideoHolder(private val file: File, private val onFirstFrame: () -> Unit) {
-    private var player: MediaPlayer? = null
-    private var surface: Surface? = null
-    private var prepared = false
-    private var inForeground = true
-
-    val listener = object : TextureView.SurfaceTextureListener {
-        override fun onSurfaceTextureAvailable(texture: SurfaceTexture, width: Int, height: Int) {
-            surface = Surface(texture)
-            start()
-        }
-
-        override fun onSurfaceTextureSizeChanged(texture: SurfaceTexture, width: Int, height: Int) = Unit
-
-        override fun onSurfaceTextureDestroyed(texture: SurfaceTexture): Boolean {
-            stopPlayer()
-            surface?.release()
-            surface = null
-            return true
-        }
-
-        override fun onSurfaceTextureUpdated(texture: SurfaceTexture) = Unit
-    }
-
-    private fun start() {
-        val target = surface ?: return
-        stopPlayer()
-        try {
-            val mp = MediaPlayer()
-            mp.setDataSource(file.absolutePath)
-            mp.setSurface(target)
-            mp.isLooping = true
-            mp.setVolume(0f, 0f)
-            mp.setOnPreparedListener {
-                prepared = true
-                it.setVideoScalingMode(MediaCodec.VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING)
-                sync()
-            }
-            mp.setOnInfoListener { _, what, _ ->
-                if (what == MediaPlayer.MEDIA_INFO_VIDEO_RENDERING_START) onFirstFrame()
-                false
-            }
-            mp.setOnErrorListener { _, _, _ -> true }
-            mp.prepareAsync()
-            player = mp
-        } catch (_: Exception) {
-            player = null
-        }
-    }
-
-    fun setForeground(value: Boolean) {
-        inForeground = value
-        sync()
-    }
-
-    private fun sync() {
-        val p = player ?: return
-        if (!prepared) return
-        runCatching {
-            if (inForeground) {
-                if (!p.isPlaying) p.start()
-            } else if (p.isPlaying) {
-                p.pause()
-            }
-        }
-    }
-
-    private fun stopPlayer() {
-        prepared = false
-        runCatching { player?.stop() }
-        runCatching { player?.release() }
-        player = null
-    }
-
-    fun release() {
-        stopPlayer()
-        surface?.release()
-        surface = null
-    }
-}
-
 @Composable
-private fun VideoLayer(file: File, modifier: Modifier = Modifier) {
-    val lifecycleOwner = LocalLifecycleOwner.current
-    var ready by remember(file) { mutableStateOf(false) }
-    val alpha by animateFloatAsState(if (ready) 1f else 0f, tween(900), label = "videoFade")
-    val holder = remember(file) { VideoHolder(file) { ready = true } }
-    DisposableEffect(lifecycleOwner, holder) {
-        val observer = LifecycleEventObserver { _, event ->
-            when (event) {
-                Lifecycle.Event.ON_START -> holder.setForeground(true)
-                Lifecycle.Event.ON_STOP -> holder.setForeground(false)
-                else -> Unit
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose {
-            lifecycleOwner.lifecycle.removeObserver(observer)
-            holder.release()
+private fun StarrySky(modifier: Modifier = Modifier) {
+    val stars = remember {
+        val random = Random(11)
+        List(170) { i ->
+            Star(
+                x = random.nextFloat(),
+                y = random.nextFloat() * 0.9f,
+                radius = 0.5f + random.nextFloat() * 1.4f,
+                base = 0.45f + random.nextFloat() * 0.55f,
+                phase = random.nextFloat() * (2f * PI.toFloat()),
+                speed = 1 + i % 3,
+                glow = random.nextFloat() > 0.9f
+            )
         }
     }
-    AndroidView(
-        modifier = modifier.alpha(alpha),
-        factory = { ctx ->
-            TextureView(ctx).apply {
-                isOpaque = false
-                surfaceTextureListener = holder.listener
+    val t by rememberInfiniteTransition(label = "stars").animateFloat(
+        initialValue = 0f,
+        targetValue = 2f * PI.toFloat(),
+        animationSpec = infiniteRepeatable(tween(7000, easing = LinearEasing)),
+        label = "twinkle"
+    )
+    Box(
+        modifier.background(
+            Brush.verticalGradient(
+                listOf(Color(0xFF02040D), Color(0xFF081029), Color(0xFF14224A))
+            )
+        )
+    ) {
+        Canvas(Modifier.fillMaxSize()) {
+            stars.forEach { s ->
+                val twinkle = 0.55f + 0.45f * sin(t * s.speed + s.phase)
+                val alpha = (s.base * twinkle).coerceIn(0f, 1f)
+                val center = Offset(s.x * size.width, s.y * size.height)
+                if (s.glow) drawCircle(Color.White.copy(alpha = alpha * 0.18f), s.radius.dp.toPx() * 4f, center)
+                drawCircle(Color.White.copy(alpha = alpha), s.radius.dp.toPx(), center)
             }
         }
-    )
+    }
 }
 
 @Composable
 fun WeatherBackground(kind: Condition, isDay: Boolean, modifier: Modifier = Modifier) {
-    val context: Context = LocalContext.current.applicationContext
-    val urls = remember(kind, isDay) { videoUrls(kind, isDay) }
-    val file by produceState<File?>(null, urls) {
-        value = null
-        value = MediaCache.fetch(context, urls)
-    }
+    val photo = remember(kind, isDay) { photoFor(kind, isDay) }
+    val fallback = remember(kind, isDay) { fallbackColors(kind, isDay) }
     Box(modifier) {
-        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(skyColors(kind, isDay))))
-        file?.let { VideoLayer(it, Modifier.fillMaxSize()) }
+        Crossfade(
+            targetState = photo to isDay,
+            animationSpec = tween(800),
+            label = "background"
+        ) { (name, day) ->
+            Box(Modifier.fillMaxSize().background(Brush.verticalGradient(fallback))) {
+                if (name == null) {
+                    StarrySky(Modifier.fillMaxSize())
+                } else {
+                    AsyncImage(
+                        model = IMAGE_BASE + name,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                    if (!day) {
+                        Box(Modifier.fillMaxSize().background(Color(0xFF050B1E).copy(alpha = 0.52f)))
+                    }
+                }
+            }
+        }
         Box(
             Modifier.fillMaxSize().background(
                 Brush.verticalGradient(
