@@ -15,17 +15,22 @@ import java.util.Locale
 import kotlin.math.roundToInt
 
 private const val ICON_BASE =
-    "https://raw.githubusercontent.com/mrdarrengriffin/google-weather-icons/refs/heads/main/sets/set-4/light/"
+    "https://raw.githubusercontent.com/mrdarrengriffin/google-weather-icons/refs/heads/main/sets/set-5/light/"
 
 fun iconUrl(kind: Condition, isDay: Boolean): String = ICON_BASE + when (kind) {
-    Condition.Clear -> if (isDay) "clear_day.svg" else "clear_night.svg"
-    Condition.FewClouds -> if (isDay) "mostly_clear_day.svg" else "mostly_clear_night.svg"
-    Condition.MoreClouds -> if (isDay) "mostly_cloudy_day.svg" else "mostly_cloudy_night.svg"
+    Condition.Clear -> if (isDay) "sunny.svg" else "clear_night.svg"
+    Condition.FewClouds -> if (isDay) "mostly_sunny.svg" else "mostly_clear_night.svg"
+    Condition.MoreClouds -> if (isDay) "partly_cloudy.svg" else "partly_cloudy_night.svg"
     Condition.Cloudy -> "cloudy.svg"
-    Condition.Rain -> "showers_rain.svg"
-    Condition.Storm -> "isolated_thunderstorms.svg"
-    Condition.Snow -> "showers_snow.svg"
-    Condition.Fog -> "haze_fog_dust_smoke.svg"
+    Condition.Fog -> "windy.svg"
+    Condition.Drizzle -> "drizzle.svg"
+    Condition.Rain -> "heavy_rain.svg"
+    Condition.Storm -> "thunderstorms.svg"
+    Condition.Sleet -> "wintry_mix.svg"
+    Condition.Hail -> "sleet_hail.svg"
+    Condition.Snow -> "snow_showers.svg"
+    Condition.HeavySnow -> "heavy_snow.svg"
+    Condition.Blizzard -> "blizzard.svg"
 }
 
 fun Condition.label(isDay: Boolean): String = tr(
@@ -34,10 +39,15 @@ fun Condition.label(isDay: Boolean): String = tr(
         Condition.FewClouds -> "Mostly clear"
         Condition.MoreClouds -> "Mostly cloudy"
         Condition.Cloudy -> "Cloudy"
+        Condition.Fog -> "Fog"
+        Condition.Drizzle -> "Drizzle"
         Condition.Rain -> "Rain"
         Condition.Storm -> "Thunderstorm"
+        Condition.Sleet -> "Wintry mix"
+        Condition.Hail -> "Hail"
         Condition.Snow -> "Snow"
-        Condition.Fog -> "Fog"
+        Condition.HeavySnow -> "Heavy snow"
+        Condition.Blizzard -> "Blizzard"
     }
 )
 
