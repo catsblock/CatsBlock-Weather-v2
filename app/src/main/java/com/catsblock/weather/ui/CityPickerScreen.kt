@@ -1,14 +1,17 @@
 package com.catsblock.weather.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
@@ -19,16 +22,19 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.catsblock.weather.data.Cities
@@ -51,6 +57,7 @@ fun CityPickerScreen(vm: WeatherViewModel) {
     val loading by vm.searchLoading.collectAsStateWithLifecycle()
     val message by vm.searchMessage.collectAsStateWithLifecycle()
     val searching = text.trim().length >= 2
+    val scheme = MaterialTheme.colorScheme
 
     Scaffold(
         topBar = {
@@ -63,7 +70,7 @@ fun CityPickerScreen(vm: WeatherViewModel) {
         }
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
-            OutlinedTextField(
+            TextField(
                 value = text,
                 onValueChange = vm::onQuery,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
@@ -75,32 +82,38 @@ fun CityPickerScreen(vm: WeatherViewModel) {
                     if (text.isNotEmpty()) {
                         IconButton(onClick = { vm.onQuery("") }) { Icon(Icons.Rounded.Close, "Clear") }
                     }
-                }
+                },
+                colors = TextFieldDefaults.colors(
+                    focusedContainerColor = scheme.surfaceContainerHigh,
+                    unfocusedContainerColor = scheme.surfaceContainerHigh,
+                    focusedIndicatorColor = Color.Transparent,
+                    unfocusedIndicatorColor = Color.Transparent,
+                    disabledIndicatorColor = Color.Transparent
+                )
             )
             when {
                 searching && loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(Modifier.size(56.dp))
+                    CircularProgressIndicator(Modifier.size(48.dp))
                 }
                 searching -> {
                     if (results.isEmpty()) {
                         Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.TopCenter) {
-                            Text(message ?: "Keep typing to search", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(message ?: "Keep typing to search", color = scheme.onSurfaceVariant)
                         }
                     } else {
-                        LazyColumn(Modifier.fillMaxSize()) {
+                        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
                             items(results) { city -> CityRow(city) { vm.selectCity(city) } }
                         }
                     }
                 }
-                else -> LazyColumn(Modifier.fillMaxSize()) {
+                else -> LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
                     Cities.continents.forEach { continent ->
                         item(key = continent.title) {
                             Text(
                                 continent.title,
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.padding(start = 20.dp, top = 16.dp, bottom = 4.dp)
+                                style = MaterialTheme.typography.labelLarge,
+                                color = scheme.primary,
+                                modifier = Modifier.padding(start = 20.dp, top = 20.dp, bottom = 4.dp)
                             )
                         }
                         items(continent.cities, key = { it.id }) { city -> CityRow(city) { vm.selectCity(city) } }
@@ -115,13 +128,18 @@ fun CityPickerScreen(vm: WeatherViewModel) {
 private fun CityRow(city: City, onClick: () -> Unit) {
     ListItem(
         modifier = Modifier.clickable(onClick = onClick),
-        headlineContent = { Text(city.name) },
-        supportingContent = if (city.region.isNotBlank()) ({ Text(city.region) }) else null,
-        trailingContent = {
-            Column(horizontalAlignment = Alignment.End) {
-                Text(flagEmoji(city.code), style = MaterialTheme.typography.titleLarge)
-                Text(city.country, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        leadingContent = {
+            Box(
+                Modifier.size(40.dp).clip(CircleShape).background(MaterialTheme.colorScheme.secondaryContainer),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(flagEmoji(city.code), style = MaterialTheme.typography.titleMedium)
             }
-        }
+        },
+        headlineContent = { Text(city.name) },
+        supportingContent = {
+            Text(listOf(city.region, city.country).filter { it.isNotBlank() }.joinToString(", "))
+        },
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
     )
 }
