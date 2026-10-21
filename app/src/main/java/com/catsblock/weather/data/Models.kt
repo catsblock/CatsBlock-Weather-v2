@@ -6,7 +6,16 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 import java.util.Locale
 
-enum class Condition { Clear, FewClouds, MoreClouds, Cloudy, Rain, Storm, Snow, Fog }
+enum class Condition {
+    Clear, FewClouds, MoreClouds, Cloudy, Fog,
+    Drizzle, Rain, Storm,
+    Sleet, Hail, Snow, HeavySnow, Blizzard
+}
+
+val Condition.isWet: Boolean
+    get() = this == Condition.Drizzle || this == Condition.Rain || this == Condition.Storm ||
+        this == Condition.Sleet || this == Condition.Hail || this == Condition.Snow ||
+        this == Condition.HeavySnow || this == Condition.Blizzard
 
 data class City(
     val name: String,
@@ -51,7 +60,7 @@ data class Hour(
     val uv: Double,
     val aqi: Double?
 ) {
-    val kind: Condition get() = wmoCondition(code)
+    val kind: Condition get() = wmoCondition(code, windSpeed)
 }
 
 data class Day(
