@@ -72,8 +72,7 @@ class WeatherRepository {
         return CitySummary(
             kind = wmoCondition(cur.getInt("weather_code")),
             isDay = cur.getInt("is_day") == 1,
-            temp = cur.getDouble("temperature_2m"),
-            hasAlert = false
+            temp = cur.getDouble("temperature_2m")
         )
     }
 
@@ -88,7 +87,7 @@ class WeatherRepository {
                     "longitude" to lon,
                     "current" to "temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,is_day,wind_speed_10m,wind_direction_10m",
                     "hourly" to "temperature_2m,apparent_temperature,relative_humidity_2m,precipitation,weather_code,wind_speed_10m,wind_direction_10m,uv_index,is_day",
-                    "daily" to "weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,sunrise,sunset,uv_index_max",
+                    "daily" to "weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,sunrise,sunset,uv_index_max",
                     "timezone" to "auto",
                     "past_days" to "1",
                     "forecast_days" to "7",
@@ -164,6 +163,7 @@ class WeatherRepository {
                 min = daily.getJSONArray("temperature_2m_min").optDouble(i, 0.0),
                 code = daily.getJSONArray("weather_code").optInt(i, 3),
                 precipSum = daily.getJSONArray("precipitation_sum").optDouble(i, 0.0),
+                rainChance = daily.getJSONArray("precipitation_probability_max").optInt(i, 0),
                 sunrise = LocalDateTime.parse(daily.getJSONArray("sunrise").getString(i)),
                 sunset = LocalDateTime.parse(daily.getJSONArray("sunset").getString(i)),
                 uvMax = daily.getJSONArray("uv_index_max").optDouble(i, 0.0)
@@ -191,11 +191,6 @@ class WeatherRepository {
             aqi = aqiMap[nowKey]
         )
 
-        WeatherBundle(
-            current = current,
-            hours = hours,
-            days = days,
-            alerts = emptyList()
-        )
+        WeatherBundle(current = current, hours = hours, days = days)
     }
 }
