@@ -5,6 +5,7 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.catsblock.weather.i18n.AppLanguage
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import org.json.JSONArray
@@ -18,6 +19,7 @@ class SettingsStore(private val context: Context) {
         val fahrenheit = booleanPreferencesKey("fahrenheit")
         val mobileData = booleanPreferencesKey("mobile_data")
         val sounds = booleanPreferencesKey("sounds")
+        val language = stringPreferencesKey("language")
         val saved = stringPreferencesKey("saved_cities")
         val current = stringPreferencesKey("current_city")
     }
@@ -26,7 +28,8 @@ class SettingsStore(private val context: Context) {
         AppSettings(
             fahrenheit = it[Keys.fahrenheit] ?: false,
             mobileData = it[Keys.mobileData] ?: true,
-            sounds = it[Keys.sounds] ?: true
+            sounds = it[Keys.sounds] ?: true,
+            language = AppLanguage.from(it[Keys.language])
         )
     }
 
@@ -53,6 +56,10 @@ class SettingsStore(private val context: Context) {
 
     suspend fun setSounds(value: Boolean) {
         context.dataStore.edit { it[Keys.sounds] = value }
+    }
+
+    suspend fun setLanguage(value: AppLanguage) {
+        context.dataStore.edit { it[Keys.language] = value.code }
     }
 
     suspend fun saveCities(cities: List<City>) {
