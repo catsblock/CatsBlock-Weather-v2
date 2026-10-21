@@ -1,46 +1,46 @@
 package com.catsblock.weather.ui
 
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Air
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Eco
-import androidx.compose.material.icons.rounded.LocationCity
 import androidx.compose.material.icons.rounded.Map
+import androidx.compose.material.icons.rounded.Menu
+import androidx.compose.material.icons.rounded.NearMe
 import androidx.compose.material.icons.rounded.Settings
-import androidx.compose.material.icons.rounded.Spa
 import androidx.compose.material.icons.rounded.Umbrella
 import androidx.compose.material.icons.rounded.WaterDrop
 import androidx.compose.material.icons.rounded.WbSunny
-import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.FilledTonalIconButton
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.ModalDrawerSheet
@@ -61,12 +61,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.BlurredEdgeTreatment
 import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
@@ -79,14 +83,12 @@ import com.catsblock.weather.data.Condition
 import com.catsblock.weather.data.Day
 import com.catsblock.weather.data.WeatherBundle
 import com.catsblock.weather.data.aqiAdvice
-import com.catsblock.weather.data.aqiStatus
 import com.catsblock.weather.data.compassLabel
 import com.catsblock.weather.data.humidityDescription
 import com.catsblock.weather.data.humidityLabel
 import com.catsblock.weather.data.lifeIndex
 import com.catsblock.weather.data.precipLabel
 import com.catsblock.weather.data.uvAdvice
-import com.catsblock.weather.data.uvLevel
 import com.catsblock.weather.data.windDescription
 import com.catsblock.weather.sound.WeatherSoundPlayer
 import kotlinx.coroutines.delay
@@ -95,6 +97,7 @@ import java.time.temporal.ChronoUnit
 
 private sealed interface Sheet {
     data class DaySheet(val day: Day) : Sheet
+    data object Days : Sheet
     data object Precip : Sheet
     data object Wind : Sheet
     data object Air : Sheet
@@ -102,7 +105,50 @@ private sealed interface Sheet {
     data object Humidity : Sheet
 }
 
-private val headerShadow = TextStyle(shadow = androidx.compose.ui.graphics.Shadow(Color(0x66000000), blurRadius = 8f))
+private val textShadow = TextStyle(
+    shadow = Shadow(Color(0x66000000), offset = Offset(0f, 2f), blurRadius = 10f)
+)
+
+private fun beaufort(kmh: Double): Int = when {
+    kmh < 1 -> 0
+    kmh < 6 -> 1
+    kmh < 12 -> 2
+    kmh < 20 -> 3
+    kmh < 29 -> 4
+    kmh < 39 -> 5
+    kmh < 50 -> 6
+    kmh < 62 -> 7
+    kmh < 75 -> 8
+    kmh < 89 -> 9
+    kmh < 103 -> 10
+    kmh < 118 -> 11
+    else -> 12
+}
+
+private fun windShort(kmh: Double): String = when {
+    kmh < 1 -> "Calm air."
+    kmh < 12 -> "A light breeze, very comfortable."
+    kmh < 29 -> "A pleasant breeze."
+    kmh < 50 -> "Strong wind, hold on to your hat."
+    kmh < 75 -> "Very strong wind. Be careful outside."
+    else -> "Dangerous winds. Stay indoors."
+}
+
+private fun aqiShort(v: Double): String = when {
+    v <= 50.0 -> "Air quality is ideal."
+    v <= 100.0 -> "Air quality is acceptable."
+    v <= 150.0 -> "Unhealthy for sensitive groups."
+    v <= 200.0 -> "Unhealthy air quality."
+    else -> "Hazardous air quality."
+}
+
+private fun uvShort(v: Double): String = when {
+    v < 3.0 -> "UV is low right now."
+    v < 5.0 -> "Wear SPF 30 if outside long."
+    v < 7.0 -> "SPF 30 and sunglasses advised."
+    v < 10.0 -> "SPF 50+ and a hat advised."
+    else -> "Avoid direct midday sun."
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -115,11 +161,13 @@ fun MainScreen(vm: WeatherViewModel) {
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
     val scroll = rememberScrollState()
+    val scheme = MaterialTheme.colorScheme
 
     val bundle = (state as? WeatherState.Success)?.bundle
     val kind = bundle?.current?.kind ?: Condition.Clear
     val isDay = bundle?.current?.isDay ?: true
     val progress = (scroll.value / 700f).coerceIn(0f, 1f)
+    val headerHeight = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 66.dp
 
     val sound = remember { WeatherSoundPlayer() }
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -152,8 +200,6 @@ fun MainScreen(vm: WeatherViewModel) {
                 CitiesDrawer(
                     saved = saved,
                     summaries = summaries,
-                    current = city,
-                    currentHasAlert = bundle?.alerts?.isNotEmpty() == true,
                     fahrenheit = settings.fahrenheit,
                     onSelect = {
                         scope.launch { drawerState.close() }
@@ -172,16 +218,17 @@ fun MainScreen(vm: WeatherViewModel) {
             WeatherBackground(
                 kind,
                 isDay,
-                Modifier.fillMaxSize().blur((progress * 28f).dp, BlurredEdgeTreatment.Unbounded)
+                Modifier.fillMaxSize().blur((progress * 30f).dp, BlurredEdgeTreatment.Unbounded)
             )
-            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = progress * 0.35f)))
+            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = progress * 0.32f)))
+            Box(Modifier.fillMaxSize().background(scheme.primary.copy(alpha = progress * 0.14f)))
 
             when {
                 bundle != null -> WeatherDetails(
                     bundle = bundle,
-                    city = city,
                     fahrenheit = settings.fahrenheit,
-                    scroll = scroll
+                    scroll = scroll,
+                    headerHeight = headerHeight
                 )
                 state is WeatherState.Error -> Column(
                     Modifier.fillMaxSize().padding(32.dp),
@@ -190,7 +237,7 @@ fun MainScreen(vm: WeatherViewModel) {
                 ) {
                     Text(
                         (state as WeatherState.Error).message,
-                        style = MaterialTheme.typography.titleMedium.merge(headerShadow),
+                        style = MaterialTheme.typography.titleMedium.merge(textShadow),
                         color = Color.White,
                         textAlign = TextAlign.Center
                     )
@@ -200,35 +247,69 @@ fun MainScreen(vm: WeatherViewModel) {
                     FilledTonalButton(onClick = vm::openPicker) { Text("Choose a location") }
                 }
                 else -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(Modifier.size(56.dp))
+                    CircularProgressIndicator(Modifier.size(48.dp), color = Color.White)
                 }
             }
 
-            Row(
-                Modifier.fillMaxWidth().statusBarsPadding().padding(12.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                val colors = IconButtonDefaults.filledTonalIconButtonColors(
-                    containerColor = Color.Black.copy(alpha = 0.28f),
-                    contentColor = Color.White
-                )
-                FilledTonalIconButton(
-                    onClick = {
-                        vm.loadSummaries()
-                        scope.launch { drawerState.open() }
-                    },
-                    colors = colors
-                ) { Icon(Icons.Rounded.LocationCity, "Saved cities") }
-                FilledTonalIconButton(onClick = vm::openMap, colors = colors) {
-                    Icon(Icons.Rounded.Map, "Radar map")
-                }
-                Spacer(Modifier.weight(1f))
-                FilledTonalIconButton(onClick = vm::openSettings, colors = colors) {
-                    Icon(Icons.Rounded.Settings, "Settings")
+            HeaderBar(
+                name = city?.name.orEmpty(),
+                temp = bundle?.let { tempText(it.current.temp, settings.fahrenheit) },
+                progress = progress,
+                dots = saved.size.coerceIn(1, 6),
+                current = saved.indexOfFirst { it.id == city?.id }.coerceAtLeast(0),
+                onMap = vm::openMap,
+                onCities = {
+                    vm.loadSummaries()
+                    scope.launch { drawerState.open() }
+                },
+                onSettings = vm::openSettings
+            )
+        }
+    }
+}
+
+@Composable
+private fun HeaderBar(
+    name: String,
+    temp: String?,
+    progress: Float,
+    dots: Int,
+    current: Int,
+    onMap: () -> Unit,
+    onCities: () -> Unit,
+    onSettings: () -> Unit
+) {
+    Row(
+        Modifier.fillMaxWidth().statusBarsPadding().padding(start = 24.dp, end = 4.dp, top = 6.dp),
+        verticalAlignment = Alignment.Top
+    ) {
+        Column(Modifier.weight(1f).padding(top = 6.dp)) {
+            Text(
+                if (temp != null && progress > 0.55f) "$name $temp" else name,
+                style = MaterialTheme.typography.headlineSmall.merge(textShadow),
+                fontWeight = FontWeight.Medium,
+                color = Color.White,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Spacer(Modifier.height(6.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Rounded.NearMe, null, Modifier.size(14.dp), tint = Color.White)
+                Spacer(Modifier.width(6.dp))
+                repeat(dots) { i ->
+                    Box(
+                        Modifier
+                            .padding(end = 5.dp)
+                            .size(6.dp)
+                            .clip(CircleShape)
+                            .background(Color.White.copy(alpha = if (i == current) 0.95f else 0.4f))
+                    )
                 }
             }
         }
+        IconButton(onClick = onMap) { Icon(Icons.Rounded.Map, "Radar map", tint = Color.White) }
+        IconButton(onClick = onCities) { Icon(Icons.Rounded.Menu, "Saved cities", tint = Color.White) }
+        IconButton(onClick = onSettings) { Icon(Icons.Rounded.Settings, "Settings", tint = Color.White) }
     }
 }
 
@@ -236,8 +317,6 @@ fun MainScreen(vm: WeatherViewModel) {
 private fun CitiesDrawer(
     saved: List<City>,
     summaries: Map<String, CitySummary>,
-    current: City?,
-    currentHasAlert: Boolean,
     fahrenheit: Boolean,
     onSelect: (City) -> Unit,
     onRemove: (City) -> Unit,
@@ -247,10 +326,9 @@ private fun CitiesDrawer(
         Text("Saved cities", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(8.dp))
         saved.forEach { c ->
             val summary = summaries[c.id]
-            val alert = summary?.hasAlert == true || (c.id == current?.id && currentHasAlert)
             Surface(
                 shape = MaterialTheme.shapes.large,
-                color = if (alert) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
                 modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).clickable { onSelect(c) }
             ) {
                 Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -268,17 +346,6 @@ private fun CitiesDrawer(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    if (alert) {
-                        Surface(shape = CircleShape, color = MaterialTheme.colorScheme.error) {
-                            Icon(
-                                Icons.Rounded.Warning,
-                                "Weather alert",
-                                Modifier.padding(4.dp).size(16.dp),
-                                tint = MaterialTheme.colorScheme.onError
-                            )
-                        }
-                        Spacer(Modifier.size(8.dp))
-                    }
                     if (summary != null) {
                         Text(tempText(summary.temp, fahrenheit), style = MaterialTheme.typography.titleLarge)
                     }
@@ -293,130 +360,120 @@ private fun CitiesDrawer(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun WeatherDetails(bundle: WeatherBundle, city: City?, fahrenheit: Boolean, scroll: androidx.compose.foundation.ScrollState) {
+private fun WeatherDetails(
+    bundle: WeatherBundle,
+    fahrenheit: Boolean,
+    scroll: ScrollState,
+    headerHeight: Dp
+) {
     val cur = bundle.current
     val nowHour = cur.now.truncatedTo(ChronoUnit.HOURS)
     val startIdx = bundle.hours.indexOfFirst { !it.time.isBefore(nowHour) }.coerceAtLeast(0)
     val next36 = bundle.hours.drop(startIdx).take(36)
     val next24 = bundle.hours.drop(startIdx).take(24)
     val today = cur.now.toLocalDate()
-    val todayDay = bundle.days.firstOrNull { it.date == today } ?: bundle.days.first()
+    val upcoming = bundle.days.filter { !it.date.isBefore(today) }.take(7)
+    val todayDay = upcoming.firstOrNull() ?: bundle.days.first()
+    val chipDays = upcoming.filter { d -> next36.any { it.time.toLocalDate() == d.date } }
     val chartScroll = rememberScrollState()
-    val scope = rememberCoroutineScope()
-    val density = LocalDensity.current
     var sheet by remember { mutableStateOf<Sheet?>(null) }
     val screenHeight = LocalConfiguration.current.screenHeightDp
+    val heroHeight = ((screenHeight * 0.66f).dp - headerHeight).coerceAtLeast(320.dp)
 
-    Column(
-        Modifier.fillMaxSize().verticalScroll(scroll).statusBarsPadding()
-    ) {
-        Spacer(Modifier.height(72.dp))
+    Column(Modifier.fillMaxSize().padding(top = headerHeight).verticalScroll(scroll)) {
         Column(
-            Modifier.fillMaxWidth().height((screenHeight * 0.6f).dp).padding(horizontal = 24.dp),
+            Modifier.fillMaxWidth().height(heroHeight).padding(horizontal = 24.dp, vertical = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+            verticalArrangement = Arrangement.Bottom
         ) {
             Text(
-                city?.name.orEmpty(),
-                style = MaterialTheme.typography.titleLarge.merge(headerShadow),
-                color = Color.White
-            )
-            Text(
                 tempText(cur.temp, fahrenheit),
-                style = MaterialTheme.typography.displayLarge.merge(headerShadow),
-                fontSize = 96.sp,
-                fontWeight = FontWeight.Light,
-                color = Color.White
-            )
-            Text(
-                "Feels like ${tempText(cur.feels, fahrenheit)}",
-                style = MaterialTheme.typography.titleMedium.merge(headerShadow),
+                style = MaterialTheme.typography.displayLarge.merge(textShadow),
+                fontSize = 150.sp,
+                lineHeight = 160.sp,
+                fontWeight = FontWeight.W200,
                 color = Color.White
             )
             Text(
                 cur.text,
-                style = MaterialTheme.typography.titleLarge.merge(headerShadow),
+                style = MaterialTheme.typography.titleLarge.merge(textShadow),
+                fontWeight = FontWeight.Medium,
                 color = Color.White
             )
-            Spacer(Modifier.height(8.dp))
-            WeatherIcon(cur.kind, cur.isDay, Modifier.size(150.dp))
-            if (bundle.alerts.isNotEmpty()) {
-                Spacer(Modifier.height(8.dp))
-                Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.errorContainer) {
-                    Row(Modifier.padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Rounded.Warning, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.error)
-                        Spacer(Modifier.size(8.dp))
-                        Text(
-                            bundle.alerts.first(),
-                            style = MaterialTheme.typography.labelLarge,
-                            maxLines = 2,
-                            color = MaterialTheme.colorScheme.onErrorContainer
-                        )
-                    }
-                }
-            }
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "Feels like ${tempText(cur.feels, fahrenheit)}    Wind ${compassLabel(cur.windDir)} ${beaufort(cur.windSpeed)}",
+                style = MaterialTheme.typography.bodyMedium.merge(textShadow),
+                color = Color.White.copy(alpha = 0.85f)
+            )
         }
 
         Column(
             Modifier.padding(horizontal = 16.dp).navigationBarsPadding().padding(bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            HourlyListCard(next36, fahrenheit) { index ->
-                scope.launch { chartScroll.animateScrollTo(with(density) { (64.dp * index).roundToPx() }) }
-            }
-            HourlyChartCard(next36, fahrenheit, chartScroll)
-            DaysCard(bundle.days, today, fahrenheit) { sheet = Sheet.DaySheet(it) }
+            HoursCard(next36, chipDays, today, fahrenheit, chartScroll)
+            DaysCard(
+                days = upcoming,
+                today = today,
+                fahrenheit = fahrenheit,
+                onDayClick = { sheet = Sheet.DaySheet(it) },
+                onMore = { sheet = Sheet.Days }
+            )
 
-            Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 MetricCard(
                     title = "Precipitation",
                     icon = Icons.Rounded.Umbrella,
-                    value = "${f1(todayDay.precipSum)} mm",
-                    label = precipLabel(todayDay.precipSum),
-                    description = "Accumulated today",
-                    modifier = Modifier.weight(1f).fillMaxHeight(),
+                    value = f1(todayDay.precipSum),
+                    unit = "mm",
+                    description = if (todayDay.precipSum <= 0.0) "No precipitation expected today."
+                    else "${precipLabel(todayDay.precipSum)} rain accumulated today.",
+                    modifier = Modifier.weight(1f),
                     onClick = { sheet = Sheet.Precip }
                 )
                 MetricCard(
                     title = "Wind",
                     icon = Icons.Rounded.Air,
-                    value = "${compassLabel(cur.windDir)} ${cur.windSpeed.toInt()} km/h",
-                    label = "Speed and direction",
-                    description = windDescription(cur.windSpeed),
-                    modifier = Modifier.weight(1f).fillMaxHeight(),
+                    value = beaufort(cur.windSpeed).toString(),
+                    unit = "${compassLabel(cur.windDir)} | ${cur.windSpeed.toInt()} km/h",
+                    description = windShort(cur.windSpeed),
+                    modifier = Modifier.weight(1f),
                     onClick = { sheet = Sheet.Wind }
                 )
             }
-            Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 MetricCard(
                     title = "Air quality",
                     icon = Icons.Rounded.Eco,
                     value = cur.aqi?.toInt()?.toString() ?: "--",
-                    label = cur.aqi?.let { aqiStatus(it) } ?: "Unavailable",
-                    description = cur.aqi?.let { aqiAdvice(it) } ?: "Air quality data is not available for this location.",
-                    modifier = Modifier.weight(1f).fillMaxHeight(),
+                    unit = cur.aqi?.let { com.catsblock.weather.data.aqiStatus(it) },
+                    description = cur.aqi?.let { aqiShort(it) } ?: "Air quality data is not available here.",
+                    modifier = Modifier.weight(1f),
                     onClick = if (cur.aqi != null) ({ sheet = Sheet.Air }) else null
                 )
                 MetricCard(
                     title = "UV index",
                     icon = Icons.Rounded.WbSunny,
-                    value = f1(cur.uv),
-                    label = uvLevel(cur.uv),
-                    description = uvAdvice(cur.uv),
-                    modifier = Modifier.weight(1f).fillMaxHeight(),
+                    value = cur.uv.toInt().toString(),
+                    unit = com.catsblock.weather.data.uvLevel(cur.uv),
+                    description = uvShort(cur.uv),
+                    modifier = Modifier.weight(1f),
                     onClick = { sheet = Sheet.Uv }
                 )
             }
-            MetricCard(
-                title = "Humidity",
-                icon = Icons.Rounded.WaterDrop,
-                value = "${cur.humidity}%",
-                label = humidityLabel(cur.humidity),
-                description = humidityDescription(cur.humidity),
-                modifier = Modifier.fillMaxWidth(),
-                onClick = { sheet = Sheet.Humidity }
-            )
-            SunCard(todayDay.sunrise, todayDay.sunset, cur.now)
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                MetricCard(
+                    title = "Humidity",
+                    icon = Icons.Rounded.WaterDrop,
+                    value = "${cur.humidity}%",
+                    unit = null,
+                    description = humidityLabel(cur.humidity),
+                    modifier = Modifier.weight(1f),
+                    onClick = { sheet = Sheet.Humidity }
+                )
+                SunCard(todayDay.sunrise, todayDay.sunset, cur.now, Modifier.weight(1f))
+            }
             LifeIndexCard(
                 lifeIndex(
                     temp = cur.temp,
@@ -438,7 +495,8 @@ private fun WeatherDetails(bundle: WeatherBundle, city: City?, fahrenheit: Boole
         val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         ModalBottomSheet(onDismissRequest = { sheet = null }, sheetState = sheetState) {
             Column(
-                Modifier.verticalScroll(rememberScrollState()).navigationBarsPadding().padding(horizontal = 16.dp, vertical = 8.dp)
+                Modifier.verticalScroll(rememberScrollState()).navigationBarsPadding()
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
             ) {
                 when (current) {
                     is Sheet.DaySheet -> {
@@ -468,6 +526,43 @@ private fun WeatherDetails(bundle: WeatherBundle, city: City?, fahrenheit: Boole
                         )
                         Text("Hourly precipitation (mm)", style = MaterialTheme.typography.labelMedium)
                     }
+                    Sheet.Days -> {
+                        Text("Next 7 days", style = MaterialTheme.typography.titleLarge)
+                        Spacer(Modifier.height(12.dp))
+                        upcoming.forEach { d ->
+                            Row(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .clickable { sheet = Sheet.DaySheet(d) }
+                                    .padding(vertical = 10.dp, horizontal = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(dayLabel(d.date, today), style = MaterialTheme.typography.titleSmall)
+                                    Text(
+                                        dateLabel(d.date),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                WeatherIcon(d.kind, true, Modifier.size(36.dp))
+                                Text(
+                                    if (d.rainChance >= 30) "${d.rainChance}%" else "",
+                                    modifier = Modifier.width(52.dp),
+                                    textAlign = TextAlign.Center,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.secondary
+                                )
+                                Text(
+                                    "${tempText(d.max, fahrenheit)} / ${tempText(d.min, fahrenheit)}",
+                                    modifier = Modifier.width(88.dp),
+                                    textAlign = TextAlign.End,
+                                    style = MaterialTheme.typography.titleSmall
+                                )
+                            }
+                        }
+                    }
                     Sheet.Precip -> {
                         Text("Precipitation, next 24 hours", style = MaterialTheme.typography.titleLarge)
                         Spacer(Modifier.height(12.dp))
@@ -483,6 +578,11 @@ private fun WeatherDetails(bundle: WeatherBundle, city: City?, fahrenheit: Boole
                     }
                     Sheet.Wind -> {
                         Text("Wind, next 24 hours", style = MaterialTheme.typography.titleLarge)
+                        Text(
+                            windDescription(cur.windSpeed),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                         Spacer(Modifier.height(12.dp))
                         SimpleChart(
                             values = next24.map { it.windSpeed },
@@ -496,10 +596,19 @@ private fun WeatherDetails(bundle: WeatherBundle, city: City?, fahrenheit: Boole
                     Sheet.Air -> {
                         val aqiHours = next24.filter { it.aqi != null }
                         Text("Air quality, next 24 hours", style = MaterialTheme.typography.titleLarge)
+                        cur.aqi?.let {
+                            Text(
+                                aqiAdvice(it),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                         Spacer(Modifier.height(12.dp))
                         SimpleChart(
                             values = aqiHours.map { it.aqi ?: 0.0 },
-                            labels = aqiHours.map { "${hourLabel(it.time)}\n${aqiStatus(it.aqi ?: 0.0)}" },
+                            labels = aqiHours.map {
+                                "${hourLabel(it.time)}\n${com.catsblock.weather.data.aqiStatus(it.aqi ?: 0.0)}"
+                            },
                             valueLabel = { it.toInt().toString() },
                             minY = 0.0,
                             maxY = aqiHours.maxOfOrNull { it.aqi ?: 0.0 }?.coerceAtLeast(50.0) ?: 50.0,
@@ -513,6 +622,11 @@ private fun WeatherDetails(bundle: WeatherBundle, city: City?, fahrenheit: Boole
                             d == today || d == today.plusDays(1)
                         }
                         Text("UV index, today and tomorrow", style = MaterialTheme.typography.titleLarge)
+                        Text(
+                            uvAdvice(cur.uv),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                         Spacer(Modifier.height(12.dp))
                         SimpleChart(
                             values = uvHours.map { it.uv },
@@ -525,6 +639,11 @@ private fun WeatherDetails(bundle: WeatherBundle, city: City?, fahrenheit: Boole
                     }
                     Sheet.Humidity -> {
                         Text("Humidity, next 24 hours", style = MaterialTheme.typography.titleLarge)
+                        Text(
+                            humidityDescription(cur.humidity),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                         Spacer(Modifier.height(12.dp))
                         SimpleChart(
                             values = next24.map { it.humidity.toDouble() },
