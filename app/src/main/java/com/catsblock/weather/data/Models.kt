@@ -1,5 +1,6 @@
 package com.catsblock.weather.data
 
+import com.catsblock.weather.i18n.AppLanguage
 import org.json.JSONObject
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -96,7 +97,8 @@ data class CitySummary(
 data class AppSettings(
     val fahrenheit: Boolean = false,
     val mobileData: Boolean = true,
-    val sounds: Boolean = true
+    val sounds: Boolean = true,
+    val language: AppLanguage = AppLanguage.English
 )
 
 data class Continent(val title: String, val cities: List<City>)
