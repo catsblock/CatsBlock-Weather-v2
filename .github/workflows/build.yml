@@ -1,3 +1,5 @@
+# One-time (keeps update signatures stable): keytool -genkeypair -keystore release.jks -alias cats -keyalg RSA -keysize 2048 -validity 36500
+# Then add repo secrets KEYSTORE_B64 (base64 -w0 release.jks) and KEYSTORE_PASSWORD.
 name: Build APK
 
 on:
@@ -9,8 +11,6 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    env:
-      BUILD_NUMBER: ${{ github.run_number }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -20,8 +20,30 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: 8.11.1
+      - name: Google Weather launcher icon
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq librsvg2-bin imagemagick
+          curl -fsSL "https://raw.githubusercontent.com/mrdarrengriffin/google-weather-icons/refs/heads/main/sets/set-4/light/mostly_clear_day.svg" -o /tmp/icon.svg
+          rsvg-convert -w 260 --keep-aspect-ratio /tmp/icon.svg -o /tmp/fg.png
+          mkdir -p app/src/main/res/drawable-nodpi
+          convert -size 432x432 xc:none /tmp/fg.png -gravity center -composite app/src/main/res/drawable-nodpi/ic_launcher_foreground.png
+          rm -f app/src/main/res/drawable/ic_launcher_foreground.xml app/src/main/res/drawable/ic_launcher_monochrome.xml
+      - name: Keystore
+        env:
+          KS_B64: ${{ secrets.KEYSTORE_B64 }}
+          KS_SECRET: ${{ secrets.KEYSTORE_PASSWORD }}
+        run: |
+          if [ -n "$KS_B64" ]; then
+            echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
+            echo "KS_PASS=$KS_SECRET" >> $GITHUB_ENV
+          else
+            keytool -genkeypair -keystore "$RUNNER_TEMP/release.jks" -alias cats -keyalg RSA -keysize 2048 -validity 36500 -storepass catsblock -keypass catsblock -dname "CN=CatsBlock"
+            echo "KS_PASS=catsblock" >> $GITHUB_ENV
+          fi
+          echo "KS_PATH=$RUNNER_TEMP/release.jks" >> $GITHUB_ENV
       - name: Build release APK
-        run: gradle assembleRelease --no-daemon
+        run: gradle assembleRelease --no-daemon -PbuildNumber=${{ github.run_number }}
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}
