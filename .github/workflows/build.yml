@@ -9,19 +9,21 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
 
-      - uses: actions/setup-java@v4
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: 17
+          java-version: '17'
 
-      - uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: 8.11.1
+      - name: Make gradlew executable
+        run: chmod +x ./gradlew
 
-      - name: Google Weather launcher icon
+      - name: Process Google Weather launcher icon
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq librsvg2-bin imagemagick
@@ -32,9 +34,16 @@ jobs:
           rm -f app/src/main/res/drawable/ic_launcher_foreground.xml app/src/main/res/drawable/ic_launcher_monochrome.xml
 
       - name: Build Debug APK
-        run: gradle assembleDebug --no-daemon
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
 
-      - name: Upload Release
+      - name: Verify APK build
+        run: |
+          if [ -z "$(ls -A app/build/outputs/apk/debug/*.apk 2>/dev/null)" ]; then
+            echo "O arquivo APK não foi gerado no diretório esperado!"
+            exit 1
+          fi
+
+      - name: Create Release and Upload APK
         uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}
