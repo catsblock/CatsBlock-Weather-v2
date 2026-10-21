@@ -109,7 +109,7 @@ private val textShadow = TextStyle(
     shadow = Shadow(Color(0x66000000), offset = Offset(0f, 2f), blurRadius = 10f)
 )
 
-private fun beaufort(kmh: Double): Int = when {
+fun beaufort(kmh: Double): Int = when {
     kmh < 1 -> 0
     kmh < 6 -> 1
     kmh < 12 -> 2
@@ -125,7 +125,7 @@ private fun beaufort(kmh: Double): Int = when {
     else -> 12
 }
 
-private fun windShort(kmh: Double): String = when {
+fun windShort(kmh: Double): String = when {
     kmh < 1 -> "Calm air."
     kmh < 12 -> "A light breeze, very comfortable."
     kmh < 29 -> "A pleasant breeze."
@@ -134,7 +134,7 @@ private fun windShort(kmh: Double): String = when {
     else -> "Dangerous winds. Stay indoors."
 }
 
-private fun aqiShort(v: Double): String = when {
+fun aqiShort(v: Double): String = when {
     v <= 50.0 -> "Air quality is ideal."
     v <= 100.0 -> "Air quality is acceptable."
     v <= 150.0 -> "Unhealthy for sensitive groups."
@@ -142,7 +142,7 @@ private fun aqiShort(v: Double): String = when {
     else -> "Hazardous air quality."
 }
 
-private fun uvShort(v: Double): String = when {
+fun uvShort(v: Double): String = when {
     v < 3.0 -> "UV is low right now."
     v < 5.0 -> "Wear SPF 30 if outside long."
     v < 7.0 -> "SPF 30 and sunglasses advised."
@@ -491,7 +491,11 @@ private fun WeatherDetails(
         }
     }
 
-    sheet?.let { current ->
+    (sheet as? Sheet.DaySheet)?.let { current ->
+        DayDetailSheet(current.day, bundle.hours, fahrenheit, today, cur.now) { sheet = null }
+    }
+
+    sheet?.takeIf { it !is Sheet.DaySheet }?.let { current ->
         val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         ModalBottomSheet(onDismissRequest = { sheet = null }, sheetState = sheetState) {
             Column(
@@ -499,33 +503,7 @@ private fun WeatherDetails(
                     .padding(horizontal = 16.dp, vertical = 8.dp)
             ) {
                 when (current) {
-                    is Sheet.DaySheet -> {
-                        val dayHours = bundle.hours.filter { it.time.toLocalDate() == current.day.date }
-                        Text(longDateLabel(current.day.date), style = MaterialTheme.typography.titleLarge)
-                        Text(
-                            "${current.day.kind.label(true)}  ·  ${tempText(current.day.max, fahrenheit)} / ${tempText(current.day.min, fahrenheit)}",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(Modifier.height(12.dp))
-                        SimpleChart(
-                            values = dayHours.map { it.temp.toUnit(fahrenheit) },
-                            labels = dayHours.map { hourLabel(it.time) },
-                            valueLabel = { "${it.toInt()}°" }
-                        )
-                        Spacer(Modifier.height(8.dp))
-                        SimpleChart(
-                            values = dayHours.map { it.precip },
-                            labels = dayHours.map { "${hourLabel(it.time)}\n${it.kind.label(it.isDay)}" },
-                            valueLabel = { f1(it) },
-                            bar = true,
-                            minY = 0.0,
-                            maxY = dayHours.maxOfOrNull { it.precip }?.coerceAtLeast(1.0) ?: 1.0,
-                            color = MaterialTheme.colorScheme.tertiary,
-                            stepWidth = 72.dp
-                        )
-                        Text("Hourly precipitation (mm)", style = MaterialTheme.typography.labelMedium)
-                    }
+                    is Sheet.DaySheet -> Unit
                     Sheet.Days -> {
                         Text("Next 7 days", style = MaterialTheme.typography.titleLarge)
                         Spacer(Modifier.height(12.dp))
