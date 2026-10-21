@@ -1,114 +1,78 @@
 package com.catsblock.weather.sound
 
 import android.media.AudioAttributes
-import android.media.AudioFormat
-import android.media.AudioTrack
+import android.media.MediaPlayer
+import com.catsblock.weather.WeatherApp
 import com.catsblock.weather.data.Condition
+import com.catsblock.weather.media.MediaCache
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.isActive
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import java.util.Random
-import kotlin.math.max
-import kotlin.math.sin
+import kotlinx.coroutines.withContext
 
-private const val SAMPLE_RATE = 22050
+private const val BASE = "https://actions.google.com/sounds/v1/weather/"
 
-private data class SoundProfile(val wind: Float, val rain: Float, val thunder: Boolean)
+private data class Track(val urls: List<String>, val volume: Float)
 
-private fun profileFor(kind: Condition): SoundProfile = when (kind) {
-    Condition.Clear -> SoundProfile(0.08f, 0f, false)
-    Condition.FewClouds -> SoundProfile(0.10f, 0f, false)
-    Condition.MoreClouds -> SoundProfile(0.15f, 0f, false)
-    Condition.Cloudy -> SoundProfile(0.20f, 0f, false)
-    Condition.Rain -> SoundProfile(0.15f, 0.6f, false)
-    Condition.Storm -> SoundProfile(0.35f, 0.9f, true)
-    Condition.Snow -> SoundProfile(0.20f, 0f, false)
-    Condition.Fog -> SoundProfile(0.08f, 0f, false)
+private fun trackFor(kind: Condition): Track = when (kind) {
+    Condition.Clear -> Track(listOf(BASE + "wind.ogg"), 0.25f)
+    Condition.FewClouds -> Track(listOf(BASE + "wind.ogg"), 0.30f)
+    Condition.MoreClouds -> Track(listOf(BASE + "wind.ogg"), 0.40f)
+    Condition.Cloudy -> Track(listOf(BASE + "wind_quiet_creaks.ogg", BASE + "wind.ogg"), 0.40f)
+    Condition.Rain -> Track(listOf(BASE + "light_rain.ogg", BASE + "rain_heavy_loud.ogg"), 0.75f)
+    Condition.Storm -> Track(listOf(BASE + "thunderstorm.ogg", BASE + "rain_heavy_loud.ogg"), 0.85f)
+    Condition.Snow -> Track(listOf(BASE + "strong_wind.ogg", BASE + "wind.ogg"), 0.30f)
+    Condition.Fog -> Track(listOf(BASE + "rumbling_wind.ogg", BASE + "wind.ogg"), 0.30f)
 }
 
 class WeatherSoundPlayer {
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var job: Job? = null
+    private var player: MediaPlayer? = null
     private var current: Condition? = null
 
     fun play(kind: Condition) {
-        if (current == kind && job?.isActive == true) return
+        if (current == kind && (player != null || job?.isActive == true)) return
         stop()
         current = kind
-        val profile = profileFor(kind)
-        job = scope.launch { render(profile) }
+        val track = trackFor(kind)
+        job = scope.launch {
+            val file = MediaCache.fetch(WeatherApp.instance, track.urls) ?: return@launch
+            if (current != kind) return@launch
+            val mp = MediaPlayer()
+            player = mp
+            try {
+                mp.setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_MEDIA)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                        .build()
+                )
+                mp.setDataSource(file.absolutePath)
+                mp.isLooping = true
+                mp.setVolume(0f, 0f)
+                withContext(Dispatchers.IO) { mp.prepare() }
+                mp.start()
+                for (i in 1..20) {
+                    val v = track.volume * i / 20f
+                    mp.setVolume(v, v)
+                    delay(100)
+                }
+            } catch (_: Exception) {
+            }
+        }
     }
 
     fun stop() {
         job?.cancel()
         job = null
+        runCatching { player?.stop() }
+        runCatching { player?.release() }
+        player = null
         current = null
-    }
-
-    private suspend fun render(profile: SoundProfile) {
-        val minBuffer = AudioTrack.getMinBufferSize(
-            SAMPLE_RATE,
-            AudioFormat.CHANNEL_OUT_MONO,
-            AudioFormat.ENCODING_PCM_16BIT
-        )
-        val track = AudioTrack.Builder()
-            .setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_MEDIA)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                    .build()
-            )
-            .setAudioFormat(
-                AudioFormat.Builder()
-                    .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                    .setSampleRate(SAMPLE_RATE)
-                    .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
-                    .build()
-            )
-            .setBufferSizeInBytes(max(minBuffer, SAMPLE_RATE))
-            .setTransferMode(AudioTrack.MODE_STREAM)
-            .build()
-        try {
-            track.play()
-            val buffer = ShortArray(2048)
-            val random = Random()
-            var windLow = 0f
-            var rainLow = 0f
-            var rumbleLow = 0f
-            var gustPhase = 0.0
-            var thunderEnvelope = 0f
-            while (currentCoroutineContext().isActive) {
-                for (i in buffer.indices) {
-                    val white = random.nextFloat() * 2f - 1f
-                    windLow += 0.015f * (white - windLow)
-                    rainLow += 0.35f * (white - rainLow)
-                    rumbleLow += 0.003f * (white - rumbleLow)
-                    gustPhase += 0.00006
-                    val gust = 0.65f + 0.35f * sin(gustPhase).toFloat()
-                    var sample = windLow * profile.wind * gust * 10f
-                    if (profile.rain > 0f) {
-                        sample += (white - rainLow) * profile.rain * 0.5f
-                        if (random.nextFloat() < 0.002f) {
-                            sample += (random.nextFloat() * 2f - 1f) * profile.rain * 0.8f
-                        }
-                    }
-                    if (profile.thunder) {
-                        if (thunderEnvelope < 0.001f && random.nextFloat() < 0.000002f) thunderEnvelope = 1f
-                        thunderEnvelope *= 0.99996f
-                        sample += rumbleLow * thunderEnvelope * 25f
-                    }
-                    buffer[i] = (sample.coerceIn(-1f, 1f) * Short.MAX_VALUE * 0.8f).toInt().toShort()
-                }
-                track.write(buffer, 0, buffer.size)
-            }
-        } finally {
-            runCatching { track.stop() }
-            track.release()
-        }
     }
 }
