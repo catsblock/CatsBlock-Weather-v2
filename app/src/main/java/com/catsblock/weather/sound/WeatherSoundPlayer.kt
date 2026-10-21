@@ -5,6 +5,7 @@ import android.media.MediaPlayer
 import com.catsblock.weather.WeatherApp
 import com.catsblock.weather.data.Condition
 import com.catsblock.weather.media.MediaCache
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -14,18 +15,22 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 private const val BASE = "https://actions.google.com/sounds/v1/weather/"
+private const val RAIN_ASSET = "rain-sound.mp3"
 
-private data class Track(val urls: List<String>, val volume: Float)
+private data class Track(val asset: String?, val urls: List<String>, val volume: Float)
 
 private fun trackFor(kind: Condition): Track = when (kind) {
-    Condition.Clear -> Track(listOf(BASE + "wind.ogg"), 0.25f)
-    Condition.FewClouds -> Track(listOf(BASE + "wind.ogg"), 0.30f)
-    Condition.MoreClouds -> Track(listOf(BASE + "wind.ogg"), 0.40f)
-    Condition.Cloudy -> Track(listOf(BASE + "wind_quiet_creaks.ogg", BASE + "wind.ogg"), 0.40f)
-    Condition.Rain -> Track(listOf(BASE + "light_rain.ogg", BASE + "rain_heavy_loud.ogg"), 0.75f)
-    Condition.Storm -> Track(listOf(BASE + "thunderstorm.ogg", BASE + "rain_heavy_loud.ogg"), 0.85f)
-    Condition.Snow -> Track(listOf(BASE + "strong_wind.ogg", BASE + "wind.ogg"), 0.30f)
-    Condition.Fog -> Track(listOf(BASE + "rumbling_wind.ogg", BASE + "wind.ogg"), 0.30f)
+    Condition.Clear -> Track(null, listOf(BASE + "wind.ogg"), 0.25f)
+    Condition.FewClouds -> Track(null, listOf(BASE + "wind.ogg"), 0.30f)
+    Condition.MoreClouds -> Track(null, listOf(BASE + "wind.ogg"), 0.40f)
+    Condition.Cloudy -> Track(null, listOf(BASE + "wind_quiet_creaks.ogg", BASE + "wind.ogg"), 0.40f)
+    Condition.Fog -> Track(null, listOf(BASE + "rumbling_wind.ogg", BASE + "wind.ogg"), 0.30f)
+    Condition.Drizzle -> Track(RAIN_ASSET, emptyList(), 0.55f)
+    Condition.Rain -> Track(RAIN_ASSET, emptyList(), 0.80f)
+    Condition.Storm -> Track(RAIN_ASSET, emptyList(), 1.00f)
+    Condition.Sleet, Condition.Hail -> Track(RAIN_ASSET, emptyList(), 0.50f)
+    Condition.Snow, Condition.HeavySnow -> Track(null, listOf(BASE + "strong_wind.ogg", BASE + "wind.ogg"), 0.30f)
+    Condition.Blizzard -> Track(null, listOf(BASE + "strong_wind.ogg", BASE + "wind.ogg"), 0.55f)
 }
 
 class WeatherSoundPlayer {
@@ -41,8 +46,7 @@ class WeatherSoundPlayer {
         current = kind
         val track = trackFor(kind)
         job = scope.launch {
-            val file = MediaCache.fetch(WeatherApp.instance, track.urls) ?: return@launch
-            if (current != kind) return@launch
+            val app = WeatherApp.instance
             val mp = MediaPlayer()
             player = mp
             try {
@@ -52,7 +56,15 @@ class WeatherSoundPlayer {
                         .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
                         .build()
                 )
-                mp.setDataSource(file.absolutePath)
+                if (track.asset != null) {
+                    app.assets.openFd(track.asset).use {
+                        mp.setDataSource(it.fileDescriptor, it.startOffset, it.length)
+                    }
+                } else {
+                    val file = MediaCache.fetch(app, track.urls) ?: return@launch
+                    if (current != kind) return@launch
+                    mp.setDataSource(file.absolutePath)
+                }
                 mp.isLooping = true
                 mp.setVolume(0f, 0f)
                 withContext(Dispatchers.IO) { mp.prepare() }
@@ -62,7 +74,11 @@ class WeatherSoundPlayer {
                     mp.setVolume(v, v)
                     delay(100)
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (_: Exception) {
+                runCatching { mp.release() }
+                if (player === mp) player = null
             }
         }
     }
