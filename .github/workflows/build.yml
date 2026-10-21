@@ -15,13 +15,18 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up Java 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          # The default value ("tools platform-tools") fails because the
+          # "tools" package no longer exists. The runner already ships the
+          # SDK, and the Android Gradle Plugin downloads what it needs.
+          packages: ''
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -50,11 +55,15 @@ jobs:
           set -e
           sudo apt-get update -qq
           sudo apt-get install -y -qq librsvg2-bin imagemagick
-          curl -fsSL "https://raw.githubusercontent.com/mrdarrengriffin/google-weather-icons/refs/heads/main/sets/set-5/light/mostly_sunny.svg" -o "$RUNNER_TEMP/icon.svg"
-          rsvg-convert -w 280 --keep-aspect-ratio "$RUNNER_TEMP/icon.svg" -o "$RUNNER_TEMP/fg.png"
           mkdir -p app/src/main/res/drawable-nodpi
-          convert -size 432x432 xc:none "$RUNNER_TEMP/fg.png" -gravity center -composite app/src/main/res/drawable-nodpi/ic_launcher_foreground.png
-          rm -f app/src/main/res/drawable/ic_launcher_foreground.xml app/src/main/res/drawable/ic_launcher_monochrome.xml
+          if curl -fsSL "https://raw.githubusercontent.com/mrdarrengriffin/google-weather-icons/refs/heads/main/sets/set-5/light/mostly_sunny.svg" -o "$RUNNER_TEMP/icon.svg" \
+            && rsvg-convert -w 280 --keep-aspect-ratio "$RUNNER_TEMP/icon.svg" -o "$RUNNER_TEMP/fg.png" \
+            && convert -size 432x432 xc:none "$RUNNER_TEMP/fg.png" -gravity center -composite app/src/main/res/drawable-nodpi/ic_launcher_foreground.png; then
+            rm -f app/src/main/res/drawable/ic_launcher_foreground.xml app/src/main/res/drawable/ic_launcher_monochrome.xml
+          else
+            echo "::warning::Could not generate the launcher icon; keeping the bundled vector icon."
+            rm -f app/src/main/res/drawable-nodpi/ic_launcher_foreground.png
+          fi
 
       - name: Build release APK
         env:
