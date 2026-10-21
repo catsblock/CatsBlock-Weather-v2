@@ -6,13 +6,20 @@ import android.media.MediaCodec
 import android.media.MediaPlayer
 import android.view.Surface
 import android.view.TextureView
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -21,6 +28,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.catsblock.weather.data.Condition
+import com.catsblock.weather.media.MediaCache
+import java.io.File
 
 private fun skyColors(kind: Condition, isDay: Boolean): List<Color> = when (kind) {
     Condition.Clear -> if (isDay) listOf(Color(0xFF2F80ED), Color(0xFF8EC5FC)) else listOf(Color(0xFF0B1026), Color(0xFF283B6E))
@@ -33,35 +42,23 @@ private fun skyColors(kind: Condition, isDay: Boolean): List<Color> = when (kind
     Condition.Fog -> if (isDay) listOf(Color(0xFF8C9AA5), Color(0xFFCBD3D9)) else listOf(Color(0xFF2B3238), Color(0xFF566068))
 }
 
-private fun keysFor(kind: Condition): List<String> = when (kind) {
-    Condition.Clear -> listOf("clear")
-    Condition.FewClouds -> listOf("few_clouds", "clear")
-    Condition.MoreClouds -> listOf("more_clouds", "cloudy")
-    Condition.Cloudy -> listOf("cloudy", "more_clouds")
-    Condition.Rain -> listOf("rain")
-    Condition.Storm -> listOf("storm", "rain")
-    Condition.Snow -> listOf("snow")
-    Condition.Fog -> listOf("fog", "cloudy")
+private fun mixkit(id: Int) = listOf(
+    "https://assets.mixkit.co/videos/$id/$id-720.mp4",
+    "https://assets.mixkit.co/videos/$id/$id-360.mp4"
+)
+
+private fun videoUrls(kind: Condition, isDay: Boolean): List<String> = when (kind) {
+    Condition.Clear -> if (isDay) mixkit(26108) else mixkit(1610)
+    Condition.FewClouds -> if (isDay) mixkit(2408) else mixkit(1610)
+    Condition.MoreClouds -> if (isDay) mixkit(21584) else mixkit(21576)
+    Condition.Cloudy -> if (isDay) mixkit(21576) else mixkit(9680)
+    Condition.Rain -> if (isDay) mixkit(48004) else mixkit(28087)
+    Condition.Storm -> if (isDay) mixkit(4060) else mixkit(4422)
+    Condition.Snow -> mixkit(3350)
+    Condition.Fog -> mixkit(9680)
 }
 
-private fun findVideo(context: Context, kind: Condition, isDay: Boolean): Int? {
-    val period = if (isDay) "day" else "night"
-    val names = buildList {
-        keysFor(kind).forEach {
-            add("weather_${it}_$period")
-            add("weather_$it")
-        }
-        add("weather_default_$period")
-        add("weather_default")
-    }
-    for (name in names) {
-        val id = context.resources.getIdentifier(name, "raw", context.packageName)
-        if (id != 0) return id
-    }
-    return null
-}
-
-private class VideoHolder(private val context: Context, private val resId: Int) {
+private class VideoHolder(private val file: File, private val onFirstFrame: () -> Unit) {
     private var player: MediaPlayer? = null
     private var surface: Surface? = null
     private var prepared = false
@@ -90,9 +87,7 @@ private class VideoHolder(private val context: Context, private val resId: Int) 
         stopPlayer()
         try {
             val mp = MediaPlayer()
-            context.resources.openRawResourceFd(resId).use { afd ->
-                mp.setDataSource(afd.fileDescriptor, afd.startOffset, afd.length)
-            }
+            mp.setDataSource(file.absolutePath)
             mp.setSurface(target)
             mp.isLooping = true
             mp.setVolume(0f, 0f)
@@ -100,6 +95,10 @@ private class VideoHolder(private val context: Context, private val resId: Int) 
                 prepared = true
                 it.setVideoScalingMode(MediaCodec.VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING)
                 sync()
+            }
+            mp.setOnInfoListener { _, what, _ ->
+                if (what == MediaPlayer.MEDIA_INFO_VIDEO_RENDERING_START) onFirstFrame()
+                false
             }
             mp.setOnErrorListener { _, _, _ -> true }
             mp.prepareAsync()
@@ -141,10 +140,11 @@ private class VideoHolder(private val context: Context, private val resId: Int) 
 }
 
 @Composable
-private fun VideoLayer(resId: Int, modifier: Modifier = Modifier) {
-    val context = LocalContext.current
+private fun VideoLayer(file: File, modifier: Modifier = Modifier) {
     val lifecycleOwner = LocalLifecycleOwner.current
-    val holder = remember(resId) { VideoHolder(context.applicationContext, resId) }
+    var ready by remember(file) { mutableStateOf(false) }
+    val alpha by animateFloatAsState(if (ready) 1f else 0f, tween(900), label = "videoFade")
+    val holder = remember(file) { VideoHolder(file) { ready = true } }
     DisposableEffect(lifecycleOwner, holder) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
@@ -160,7 +160,7 @@ private fun VideoLayer(resId: Int, modifier: Modifier = Modifier) {
         }
     }
     AndroidView(
-        modifier = modifier,
+        modifier = modifier.alpha(alpha),
         factory = { ctx ->
             TextureView(ctx).apply {
                 isOpaque = false
@@ -172,20 +172,22 @@ private fun VideoLayer(resId: Int, modifier: Modifier = Modifier) {
 
 @Composable
 fun WeatherBackground(kind: Condition, isDay: Boolean, modifier: Modifier = Modifier) {
-    val context = LocalContext.current
-    val resId = remember(kind, isDay) { findVideo(context, kind, isDay) }
+    val context: Context = LocalContext.current.applicationContext
+    val urls = remember(kind, isDay) { videoUrls(kind, isDay) }
+    val file by produceState<File?>(null, urls) {
+        value = null
+        value = MediaCache.fetch(context, urls)
+    }
     Box(modifier) {
         Box(Modifier.fillMaxSize().background(Brush.verticalGradient(skyColors(kind, isDay))))
-        if (resId != null) {
-            VideoLayer(resId, Modifier.fillMaxSize())
-        }
+        file?.let { VideoLayer(it, Modifier.fillMaxSize()) }
         Box(
             Modifier.fillMaxSize().background(
                 Brush.verticalGradient(
-                    0f to Color.Black.copy(alpha = 0.30f),
+                    0f to Color.Black.copy(alpha = 0.32f),
                     0.22f to Color.Transparent,
-                    0.5f to Color.Transparent,
-                    1f to Color.Black.copy(alpha = 0.35f)
+                    0.55f to Color.Transparent,
+                    1f to Color.Black.copy(alpha = 0.42f)
                 )
             )
         )
