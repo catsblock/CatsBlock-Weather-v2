@@ -5,6 +5,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
 import coil.compose.AsyncImage
 import com.catsblock.weather.data.Condition
+import com.catsblock.weather.i18n.AppLanguage
+import com.catsblock.weather.i18n.I18n
+import com.catsblock.weather.i18n.tr
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
@@ -25,16 +28,18 @@ fun iconUrl(kind: Condition, isDay: Boolean): String = ICON_BASE + when (kind) {
     Condition.Fog -> "haze_fog_dust_smoke.svg"
 }
 
-fun Condition.label(isDay: Boolean): String = when (this) {
-    Condition.Clear -> if (isDay) "Sunny" else "Clear"
-    Condition.FewClouds -> "Mostly clear"
-    Condition.MoreClouds -> "Mostly cloudy"
-    Condition.Cloudy -> "Cloudy"
-    Condition.Rain -> "Rain"
-    Condition.Storm -> "Thunderstorm"
-    Condition.Snow -> "Snow"
-    Condition.Fog -> "Fog"
-}
+fun Condition.label(isDay: Boolean): String = tr(
+    when (this) {
+        Condition.Clear -> if (isDay) "Sunny" else "Clear"
+        Condition.FewClouds -> "Mostly clear"
+        Condition.MoreClouds -> "Mostly cloudy"
+        Condition.Cloudy -> "Cloudy"
+        Condition.Rain -> "Rain"
+        Condition.Storm -> "Thunderstorm"
+        Condition.Snow -> "Snow"
+        Condition.Fog -> "Fog"
+    }
+)
 
 fun Double.toUnit(fahrenheit: Boolean): Double = if (fahrenheit) this * 9.0 / 5.0 + 32.0 else this
 
@@ -43,27 +48,25 @@ fun tempText(celsius: Double, fahrenheit: Boolean): String =
 
 fun f1(value: Double): String = String.format(Locale.US, "%.1f", value)
 
-private val hourFormat = DateTimeFormatter.ofPattern("h a", Locale.ENGLISH)
-private val clockFormat = DateTimeFormatter.ofPattern("h:mm a", Locale.ENGLISH)
-private val dateFormat = DateTimeFormatter.ofPattern("MMM d", Locale.ENGLISH)
-private val longDateFormat = DateTimeFormatter.ofPattern("EEEE, MMM d", Locale.ENGLISH)
-private val weekdayFormat = DateTimeFormatter.ofPattern("EEE", Locale.ENGLISH)
+private val english get() = I18n.lang == AppLanguage.English
+private fun fmt(en: String, other: String): DateTimeFormatter =
+    DateTimeFormatter.ofPattern(if (english) en else other, I18n.lang.locale)
 
-fun hourLabel(time: LocalDateTime): String = time.format(hourFormat)
+fun hourLabel(time: LocalDateTime): String = time.format(fmt("h a", "HH:mm"))
 
-fun clockLabel(time: LocalDateTime): String = time.format(clockFormat)
+fun clockLabel(time: LocalDateTime): String = time.format(fmt("h:mm a", "HH:mm"))
 
-fun dateLabel(date: LocalDate): String = date.format(dateFormat)
+fun dateLabel(date: LocalDate): String = date.format(fmt("MMM d", "d MMM"))
 
-fun longDateLabel(date: LocalDate): String = date.format(longDateFormat)
+fun longDateLabel(date: LocalDate): String = date.format(fmt("EEEE, MMM d", "EEEE, d MMM"))
 
-fun weekdayLabel(time: LocalDateTime): String = time.format(weekdayFormat)
+fun weekdayLabel(time: LocalDateTime): String = time.format(fmt("EEE", "EEE"))
 
 fun dayLabel(date: LocalDate, today: LocalDate): String = when (date) {
-    today.minusDays(1) -> "Yesterday"
-    today -> "Today"
-    today.plusDays(1) -> "Tomorrow"
-    else -> date.format(weekdayFormat)
+    today.minusDays(1) -> tr("Yesterday")
+    today -> tr("Today")
+    today.plusDays(1) -> tr("Tomorrow")
+    else -> date.format(fmt("EEE", "EEE"))
 }
 
 @Composable
