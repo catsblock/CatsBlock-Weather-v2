@@ -87,6 +87,8 @@ class WeatherRepository {
                     "longitude" to lon,
                     "current" to "temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,is_day,wind_speed_10m,wind_direction_10m",
                     "hourly" to "temperature_2m,apparent_temperature,relative_humidity_2m,precipitation,weather_code,wind_speed_10m,wind_direction_10m,uv_index,is_day",
+                    "minutely_15" to "precipitation",
+                    "forecast_minutely_15" to "48",
                     "daily" to "weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,sunrise,sunset,uv_index_max",
                     "timezone" to "auto",
                     "past_days" to "1",
@@ -154,6 +156,15 @@ class WeatherRepository {
             )
         }
 
+        val rain = runCatching {
+            val minutely = root.getJSONObject("minutely_15")
+            val t = minutely.getJSONArray("time")
+            val v = minutely.getJSONArray("precipitation")
+            (0 until t.length()).map { i ->
+                RainSlot(LocalDateTime.parse(t.getString(i)), v.optDouble(i, 0.0))
+            }
+        }.getOrDefault(emptyList())
+
         val daily = root.getJSONObject("daily")
         val dTimes = daily.getJSONArray("time")
         val days = (0 until dTimes.length()).map { i ->
@@ -191,6 +202,12 @@ class WeatherRepository {
             aqi = aqiMap[nowKey]
         )
 
-        WeatherBundle(current = current, hours = hours, days = days)
+        WeatherBundle(
+            current = current,
+            hours = hours,
+            days = days,
+            rain = rain,
+            utcOffsetSeconds = root.optInt("utc_offset_seconds", 0)
+        )
     }
 }
