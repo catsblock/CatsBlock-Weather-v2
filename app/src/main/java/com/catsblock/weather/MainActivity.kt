@@ -34,7 +34,6 @@ import com.catsblock.weather.ui.CityPickerScreen
 import com.catsblock.weather.ui.IconKitScreen
 import com.catsblock.weather.ui.LiveMoonScreen
 import com.catsblock.weather.ui.MainScreen
-import com.catsblock.weather.ui.NightSkyScreen
 import com.catsblock.weather.ui.Screen
 import com.catsblock.weather.ui.SettingsScreen
 import com.catsblock.weather.ui.WeatherTheme
@@ -67,7 +66,7 @@ private fun AppRoot(vm: WeatherViewModel) {
     val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
     LaunchedEffect(screen, dark) {
-        val style = if (screen == Screen.Main || screen == Screen.LiveMoon || screen == Screen.NightSky) {
+        val style = if (screen == Screen.Main || screen == Screen.LiveMoon) {
             SystemBarStyle.dark(AndroidColor.TRANSPARENT)
         } else {
             SystemBarStyle.auto(AndroidColor.TRANSPARENT, AndroidColor.TRANSPARENT)
@@ -97,6 +96,5 @@ private fun AppRoot(vm: WeatherViewModel) {
         Screen.BackgroundKit -> BackgroundKitScreen(vm)
         Screen.AppIcon -> AppIconScreen(vm)
         Screen.LiveMoon -> LiveMoonScreen(vm)
-        Screen.NightSky -> NightSkyScreen(vm)
     }
 }
