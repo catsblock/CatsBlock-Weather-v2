@@ -163,6 +163,7 @@ fun MoonCard(
     val ms = now.toInstant(offset).toEpochMilli()
     val phase = remember(ms / 60_000L) { Moon.phase(ms) }
     val eclipse = remember(ms / 60_000L) { Moon.eclipse(ms) }
+    val dayEclipse = remember(date, offsetSeconds) { Moon.dayEclipse(date, offset) }
     val times = remember(city.id, date, offsetSeconds) { Moon.riseSet(date, city.lat, city.lon, offset) }
     GlassCard(modifier.fillMaxWidth(), onClick) {
         CardHeader(Icons.Rounded.NightsStay, tr("Moon"))
@@ -172,7 +173,7 @@ fun MoonCard(
             Spacer(Modifier.width(16.dp))
             Column(Modifier.weight(1f)) {
                 Text(tr(Moon.phaseName(phase.cycle)), style = MaterialTheme.typography.titleLarge)
-                eclipse?.let {
+                (eclipse ?: dayEclipse?.second)?.let {
                     Text(
                         tr(Moon.eclipseName(it)),
                         style = MaterialTheme.typography.labelLarge,
@@ -212,6 +213,13 @@ fun MoonCalendarSheet(
     val rows = (lead + length + 6) / 7
 
     fun noon(date: LocalDate): Long = date.atTime(12, 0).toInstant(offset).toEpochMilli()
+
+    val events = remember(month, offsetSeconds) {
+        (1..month.lengthOfMonth()).associate { d ->
+            val date = month.atDay(d)
+            date to Moon.dayEclipse(date, offset)
+        }
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -276,7 +284,12 @@ fun MoonCalendarSheet(
                             ) {
                                 Text(day.toString(), style = MaterialTheme.typography.labelMedium)
                                 Spacer(Modifier.height(4.dp))
-                                MoonDisc(Moon.phase(noon(date)).cycle, Modifier.size(28.dp), Moon.eclipse(noon(date)))
+                                val event = events[date]
+                                MoonDisc(
+                                    Moon.phase(event?.first ?: noon(date)).cycle,
+                                    Modifier.size(28.dp),
+                                    event?.second
+                                )
                             }
                         } else {
                             Spacer(Modifier.weight(1f))
@@ -285,8 +298,9 @@ fun MoonCalendarSheet(
                 }
             }
             Spacer(Modifier.height(16.dp))
-            val selectedMs = noon(selected)
-            val selectedPhase = remember(selected) { Moon.phase(selectedMs) }
+            val selectedEvent = remember(selected, offsetSeconds) { Moon.dayEclipse(selected, offset) }
+            val selectedMs = selectedEvent?.first ?: noon(selected)
+            val selectedPhase = remember(selectedMs) { Moon.phase(selectedMs) }
             val selectedTimes = remember(selected, city.id) { Moon.riseSet(selected, city.lat, city.lon, offset) }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 MoonImage(selectedMs, selectedPhase.cycle, Modifier.size(120.dp))
@@ -296,6 +310,13 @@ fun MoonCalendarSheet(
                     Text(dateLabel(selected), style = MaterialTheme.typography.bodySmall)
                     Spacer(Modifier.height(6.dp))
                     Text(tr(Moon.phaseName(selectedPhase.cycle)), style = MaterialTheme.typography.titleLarge)
+                    selectedEvent?.second?.let {
+                        Text(
+                            tr(Moon.eclipseName(it)),
+                            style = MaterialTheme.typography.labelLarge,
+                            color = Color(0xFFFF8A65)
+                        )
+                    }
                     Text(
                         "${(selectedPhase.illumination * 100).roundToInt()}% ${tr("illuminated")}",
                         style = MaterialTheme.typography.bodyMedium,
