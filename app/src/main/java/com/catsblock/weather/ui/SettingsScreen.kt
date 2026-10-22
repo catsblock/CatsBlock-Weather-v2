@@ -40,6 +40,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.AppShortcut
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.ChevronRight
@@ -289,6 +290,13 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
                     trx("Choose your own backgrounds (images or GIFs) and sounds (MP3) for each weather."),
                     vm::openBackgroundKit
                 )
+                GroupDivider()
+                NavRow(
+                    Icons.Rounded.AppShortcut,
+                    trx("App icon changer"),
+                    trx("Use any image as your app icon on the home screen, or restore the default."),
+                    vm::openAppIcon
+                )
             }
 
             GroupLabel(trx("Notifications"))
@@ -350,7 +358,7 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
                 GroupDivider()
                 InfoRow(
                     tr("Network access"),
-                    tr("City coordinates are sent to Open-Meteo. The radar map loads from Windy. Media is downloaded from public CDNs.")
+                    tr("City coordinates are sent to Open-Meteo. Moon images come from NASA and map tiles from OpenStreetMap. Media is downloaded from public CDNs.")
                 )
                 GroupDivider()
                 InfoRow(
