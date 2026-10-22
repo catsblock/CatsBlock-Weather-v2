@@ -8,6 +8,7 @@ import coil.imageLoader
 import coil.request.ImageRequest
 import coil.request.SuccessResult
 import com.catsblock.weather.data.Condition
+import com.catsblock.weather.kit.IconKit
 import com.catsblock.weather.ui.iconUrl
 import java.io.File
 
@@ -21,6 +22,7 @@ object WidgetIcons {
     }
 
     fun cached(context: Context, kind: Condition, day: Boolean): Bitmap? {
+        IconKit.bitmap(context, kind, day)?.let { return it }
         val target = file(context, kind, day)
         if (!target.exists()) return null
         return BitmapFactory.decodeFile(target.absolutePath)
