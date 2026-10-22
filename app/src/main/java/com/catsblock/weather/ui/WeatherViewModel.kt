@@ -3,15 +3,22 @@ package com.catsblock.weather.ui
 import android.annotation.SuppressLint
 import android.app.Application
 import android.location.Geocoder
+import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.catsblock.weather.alerts.RainAlerts
 import com.catsblock.weather.data.AppSettings
 import com.catsblock.weather.data.City
 import com.catsblock.weather.data.CitySummary
+import com.catsblock.weather.data.Condition
 import com.catsblock.weather.data.NetworkPolicy
 import com.catsblock.weather.data.SettingsStore
 import com.catsblock.weather.data.WeatherBundle
+import com.catsblock.weather.data.WeatherBus
 import com.catsblock.weather.data.WeatherRepository
+import com.catsblock.weather.kit.BackgroundKit
+import com.catsblock.weather.kit.IconKit
+import com.catsblock.weather.kit.Slot
 import com.catsblock.weather.widget.WidgetUpdater
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
@@ -36,7 +43,7 @@ import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 import java.util.Locale
 
-enum class Screen { Welcome, Picker, Main, Map, Settings }
+enum class Screen { Welcome, Picker, Main, Map, Settings, IconKit, BackgroundKit }
 
 sealed interface WeatherState {
     data object Idle : WeatherState
@@ -85,6 +92,20 @@ class WeatherViewModel(private val app: Application) : AndroidViewModel(app) {
                 .drop(1)
                 .collect { runCatching { WidgetUpdater.refresh(app) } }
         }
+        viewModelScope.launch {
+            settings
+                .map { it.rainAlerts to it.rainLeadMinutes }
+                .distinctUntilChanged()
+                .drop(1)
+                .collect { runCatching { RainAlerts.reschedule(app) } }
+        }
+        viewModelScope.launch {
+            WeatherBus.updates.collect { update ->
+                if (update.city.id == city.value?.id) {
+                    weather.value = WeatherState.Success(update.bundle)
+                }
+            }
+        }
     }
 
     private suspend fun runSearch(query: String) {
@@ -132,10 +153,19 @@ class WeatherViewModel(private val app: Application) : AndroidViewModel(app) {
         screen.value = Screen.Settings
     }
 
+    fun openIconKit() {
+        screen.value = Screen.IconKit
+    }
+
+    fun openBackgroundKit() {
+        screen.value = Screen.BackgroundKit
+    }
+
     fun back() {
         screen.value = when (screen.value) {
             Screen.Picker -> if (city.value != null) Screen.Main else Screen.Welcome
             Screen.Map, Screen.Settings -> Screen.Main
+            Screen.IconKit, Screen.BackgroundKit -> Screen.Settings
             else -> screen.value
         }
     }
@@ -228,6 +258,7 @@ class WeatherViewModel(private val app: Application) : AndroidViewModel(app) {
             val bundle = repo.fetch(target)
             weather.value = WeatherState.Success(bundle)
             runCatching { WidgetUpdater.publish(app, target, bundle) }
+            runCatching { RainAlerts.onFresh(app, target, bundle) }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -259,5 +290,55 @@ class WeatherViewModel(private val app: Application) : AndroidViewModel(app) {
 
     fun setSounds(value: Boolean) {
         viewModelScope.launch { store.setSounds(value) }
+    }
+
+    fun setRainAlerts(value: Boolean) {
+        viewModelScope.launch { store.setRainAlerts(value) }
+    }
+
+    fun setRainLead(minutes: Int) {
+        viewModelScope.launch { store.setRainLead(minutes) }
+    }
+
+    fun importIcon(slot: Slot, uri: Uri, done: (Boolean) -> Unit) {
+        viewModelScope.launch {
+            val ok = IconKit.import(app, slot, uri)
+            if (ok) runCatching { WidgetUpdater.refresh(app) }
+            done(ok)
+        }
+    }
+
+    fun resetIcon(slot: Slot) {
+        viewModelScope.launch {
+            IconKit.reset(app, slot)
+            runCatching { WidgetUpdater.refresh(app) }
+        }
+    }
+
+    fun resetAllIcons() {
+        viewModelScope.launch {
+            IconKit.resetAll(app)
+            runCatching { WidgetUpdater.refresh(app) }
+        }
+    }
+
+    fun importBackground(slot: Slot, uri: Uri, done: (Boolean) -> Unit) {
+        viewModelScope.launch { done(BackgroundKit.importVisual(app, slot, uri)) }
+    }
+
+    fun importSound(kind: Condition, uri: Uri, done: (Boolean) -> Unit) {
+        viewModelScope.launch { done(BackgroundKit.importSound(app, kind, uri)) }
+    }
+
+    fun resetBackground(slot: Slot) {
+        viewModelScope.launch { BackgroundKit.resetVisual(app, slot) }
+    }
+
+    fun resetSound(kind: Condition) {
+        viewModelScope.launch { BackgroundKit.resetSound(app, kind) }
+    }
+
+    fun resetAllBackgrounds() {
+        viewModelScope.launch { BackgroundKit.resetAll(app) }
     }
 }
