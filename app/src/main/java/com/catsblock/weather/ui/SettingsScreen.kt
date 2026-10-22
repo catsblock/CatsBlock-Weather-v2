@@ -1,5 +1,13 @@
 package com.catsblock.weather.ui
 
+import android.Manifest
+import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
+import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -36,7 +44,9 @@ import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Language
+import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.SystemUpdate
+import androidx.compose.material.icons.rounded.Wallpaper
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -74,17 +84,23 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.catsblock.weather.data.RainLeadOptions
 import com.catsblock.weather.data.SettingsStore
 import com.catsblock.weather.i18n.AppLanguage
+import com.catsblock.weather.i18n.leadFull
 import com.catsblock.weather.i18n.tr
+import com.catsblock.weather.i18n.trx
 import com.catsblock.weather.update.UpdateInfo
 import com.catsblock.weather.update.UpdateState
 import com.catsblock.weather.update.UpdateViewModel
@@ -95,6 +111,16 @@ import kotlin.math.sin
 
 private fun mb(bytes: Long) = String.format(Locale.US, "%.1f MB", bytes / 1048576.0)
 
+private fun notificationsAllowed(context: Context): Boolean =
+    NotificationManagerCompat.from(context).areNotificationsEnabled()
+
+private fun openNotificationSettings(context: Context) {
+    val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+        .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    runCatching { context.startActivity(intent) }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
@@ -103,10 +129,35 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var langDialog by remember { mutableStateOf(false) }
+    var leadDialog by remember { mutableStateOf(false) }
+    var notificationsOn by remember { mutableStateOf(notificationsAllowed(ctx)) }
+    var openSettingsOnDeny by remember { mutableStateOf(false) }
     val owner = LocalLifecycleOwner.current
 
+    val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        notificationsOn = notificationsAllowed(ctx)
+        if (!granted && openSettingsOnDeny) openNotificationSettings(ctx)
+        openSettingsOnDeny = false
+    }
+
+    fun askNotifications(explicit: Boolean) {
+        val missing = Build.VERSION.SDK_INT >= 33 &&
+            ContextCompat.checkSelfPermission(ctx, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        if (missing) {
+            openSettingsOnDeny = explicit
+            permission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        } else if (explicit) {
+            openNotificationSettings(ctx)
+        }
+    }
+
     DisposableEffect(owner) {
-        val o = LifecycleEventObserver { _, e -> if (e == Lifecycle.Event.ON_RESUME) up.onResume() }
+        val o = LifecycleEventObserver { _, e ->
+            if (e == Lifecycle.Event.ON_RESUME) {
+                up.onResume()
+                notificationsOn = notificationsAllowed(ctx)
+            }
+        }
         owner.lifecycle.addObserver(o)
         onDispose { owner.lifecycle.removeObserver(o) }
     }
@@ -137,6 +188,35 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
             },
             confirmButton = {},
             dismissButton = { TextButton(onClick = { langDialog = false }) { Text("OK") } }
+        )
+    }
+
+    if (leadDialog) {
+        AlertDialog(
+            onDismissRequest = { leadDialog = false },
+            title = { Text(trx("Alert time")) },
+            text = {
+                Column {
+                    RainLeadOptions.forEach { minutes ->
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    leadDialog = false
+                                    vm.setRainLead(minutes)
+                                }
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(selected = settings.rainLeadMinutes == minutes, onClick = null)
+                            Spacer(Modifier.width(12.dp))
+                            Text(leadFull(minutes), style = MaterialTheme.typography.bodyLarge)
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = { TextButton(onClick = { leadDialog = false }) { Text("OK") } }
         )
     }
 
@@ -190,6 +270,56 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
                             onClick = { vm.setFahrenheit(true) },
                             shape = SegmentedButtonDefaults.itemShape(1, 2)
                         ) { Text(tr("Fahrenheit")) }
+                    }
+                }
+            }
+
+            GroupLabel(trx("Customization"))
+            Group {
+                NavRow(
+                    Icons.Rounded.Palette,
+                    trx("Weather Icon Kit"),
+                    trx("Replace the weather icons used in the app and widgets."),
+                    vm::openIconKit
+                )
+                GroupDivider()
+                NavRow(
+                    Icons.Rounded.Wallpaper,
+                    trx("Weather Background Kit"),
+                    trx("Choose your own backgrounds (images or GIFs) and sounds (MP3) for each weather."),
+                    vm::openBackgroundKit
+                )
+            }
+
+            GroupLabel(trx("Notifications"))
+            Group {
+                SwitchRow(
+                    trx("Rain alerts"),
+                    trx("Get notified before rain arrives."),
+                    settings.rainAlerts
+                ) { enabled ->
+                    vm.setRainAlerts(enabled)
+                    if (enabled) askNotifications(false)
+                }
+                if (settings.rainAlerts) {
+                    GroupDivider()
+                    ListItem(
+                        modifier = Modifier.clickable { leadDialog = true },
+                        headlineContent = { Text(trx("Alert time")) },
+                        supportingContent = { Text(leadFull(settings.rainLeadMinutes)) },
+                        trailingContent = { Icon(Icons.Rounded.ChevronRight, null) },
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                    )
+                    if (!notificationsOn) {
+                        GroupDivider()
+                        ListItem(
+                            headlineContent = { Text(trx("Notifications are turned off")) },
+                            supportingContent = { Text(trx("Allow notifications so rain alerts can reach you.")) },
+                            trailingContent = {
+                                TextButton(onClick = { askNotifications(true) }) { Text(trx("Allow")) }
+                            },
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                        )
                     }
                 }
             }
@@ -399,6 +529,18 @@ private fun GroupDivider() {
     HorizontalDivider(
         Modifier.padding(horizontal = 16.dp),
         color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+    )
+}
+
+@Composable
+private fun NavRow(icon: ImageVector, title: String, description: String, onClick: () -> Unit) {
+    ListItem(
+        modifier = Modifier.clickable(onClick = onClick),
+        leadingContent = { Icon(icon, null, tint = MaterialTheme.colorScheme.primary) },
+        headlineContent = { Text(title) },
+        supportingContent = { Text(description) },
+        trailingContent = { Icon(Icons.Rounded.ChevronRight, null) },
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
     )
 }
 
