@@ -43,7 +43,7 @@ import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 import java.util.Locale
 
-enum class Screen { Welcome, Picker, Main, Map, Settings, IconKit, BackgroundKit }
+enum class Screen { Welcome, Picker, Main, Settings, IconKit, BackgroundKit, AppIcon, LiveMoon }
 
 sealed interface WeatherState {
     data object Idle : WeatherState
@@ -145,8 +145,12 @@ class WeatherViewModel(private val app: Application) : AndroidViewModel(app) {
         screen.value = Screen.Picker
     }
 
-    fun openMap() {
-        screen.value = Screen.Map
+    fun openAppIcon() {
+        screen.value = Screen.AppIcon
+    }
+
+    fun openLiveMoon() {
+        screen.value = Screen.LiveMoon
     }
 
     fun openSettings() {
@@ -164,8 +168,8 @@ class WeatherViewModel(private val app: Application) : AndroidViewModel(app) {
     fun back() {
         screen.value = when (screen.value) {
             Screen.Picker -> if (city.value != null) Screen.Main else Screen.Welcome
-            Screen.Map, Screen.Settings -> Screen.Main
-            Screen.IconKit, Screen.BackgroundKit -> Screen.Settings
+            Screen.Settings, Screen.LiveMoon -> Screen.Main
+            Screen.IconKit, Screen.BackgroundKit, Screen.AppIcon -> Screen.Settings
             else -> screen.value
         }
     }
@@ -187,7 +191,24 @@ class WeatherViewModel(private val app: Application) : AndroidViewModel(app) {
 
     fun removeCity(target: City) {
         viewModelScope.launch {
-            store.saveCities(store.savedCities.first().filter { it.id != target.id })
+            val list = store.savedCities.first()
+            val index = list.indexOfFirst { it.id == target.id }
+            val remaining = list.filter { it.id != target.id }
+            store.saveCities(remaining)
+            if (city.value?.id == target.id) {
+                val next = remaining.getOrNull(index.coerceAtLeast(0)) ?: remaining.lastOrNull()
+                if (next != null) {
+                    city.value = next
+                    store.setCurrent(next)
+                    refresh()
+                } else {
+                    loadJob?.cancel()
+                    city.value = null
+                    weather.value = WeatherState.Idle
+                    store.clearCurrent()
+                    screen.value = Screen.Welcome
+                }
+            }
         }
     }
 
