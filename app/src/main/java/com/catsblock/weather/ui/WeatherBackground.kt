@@ -11,6 +11,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
@@ -18,9 +19,12 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.catsblock.weather.data.Condition
+import com.catsblock.weather.kit.BackgroundKit
+import java.io.File
 import kotlin.math.PI
 import kotlin.math.sin
 import kotlin.random.Random
@@ -67,6 +71,13 @@ private data class Star(
     val glow: Boolean
 )
 
+private data class BackgroundSource(
+    val file: String?,
+    val stamp: Long,
+    val photo: String?,
+    val day: Boolean
+)
+
 @Composable
 private fun StarrySky(modifier: Modifier = Modifier) {
     val stars = remember {
@@ -110,26 +121,37 @@ private fun StarrySky(modifier: Modifier = Modifier) {
 
 @Composable
 fun WeatherBackground(kind: Condition, isDay: Boolean, modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    val version by BackgroundKit.version.collectAsState()
+    val custom = remember(kind, isDay, version) { BackgroundKit.visual(context, kind, isDay) }
     val photo = remember(kind, isDay) { photoFor(kind, isDay) }
     val fallback = remember(kind, isDay) { fallbackColors(kind, isDay) }
+    val source = BackgroundSource(custom?.path, custom?.lastModified() ?: 0L, photo, isDay)
     Box(modifier) {
         Crossfade(
-            targetState = photo to isDay,
+            targetState = source,
             animationSpec = tween(800),
             label = "background"
-        ) { (name, day) ->
+        ) { current ->
             Box(Modifier.fillMaxSize().background(Brush.verticalGradient(fallback))) {
-                if (name == null) {
-                    StarrySky(Modifier.fillMaxSize())
-                } else {
-                    AsyncImage(
-                        model = IMAGE_BASE + name,
+                when {
+                    current.file != null -> AsyncImage(
+                        model = File(current.file),
                         contentDescription = null,
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.fillMaxSize()
                     )
-                    if (!day) {
-                        Box(Modifier.fillMaxSize().background(Color(0xFF050B1E).copy(alpha = 0.52f)))
+                    current.photo == null -> StarrySky(Modifier.fillMaxSize())
+                    else -> {
+                        AsyncImage(
+                            model = IMAGE_BASE + current.photo,
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                        if (!current.day) {
+                            Box(Modifier.fillMaxSize().background(Color(0xFF050B1E).copy(alpha = 0.52f)))
+                        }
                     }
                 }
             }
