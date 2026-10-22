@@ -4,6 +4,7 @@ import android.media.AudioAttributes
 import android.media.MediaPlayer
 import com.catsblock.weather.WeatherApp
 import com.catsblock.weather.data.Condition
+import com.catsblock.weather.kit.BackgroundKit
 import com.catsblock.weather.media.MediaCache
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -17,6 +18,7 @@ import kotlinx.coroutines.withContext
 private const val WIND_BASE = "https://actions.google.com/sounds/v1/weather/"
 private const val RAIN_URL =
     "https://raw.githubusercontent.com/catsblock/CatsBlock-Weather-v2/main/sounds/rain-sound.mp3"
+private const val CUSTOM_VOLUME = 0.8f
 
 private data class Track(val urls: List<String>, val volume: Float)
 
@@ -47,7 +49,10 @@ class WeatherSoundPlayer {
         current = kind
         val track = trackFor(kind)
         job = scope.launch {
-            val file = MediaCache.fetch(WeatherApp.instance, track.urls) ?: return@launch
+            val app = WeatherApp.instance
+            val custom = withContext(Dispatchers.IO) { BackgroundKit.sound(app, kind) }
+            val file = custom ?: MediaCache.fetch(app, track.urls) ?: return@launch
+            val volume = if (custom != null) CUSTOM_VOLUME else track.volume
             if (current != kind) return@launch
             val mp = MediaPlayer()
             player = mp
@@ -64,7 +69,7 @@ class WeatherSoundPlayer {
                 withContext(Dispatchers.IO) { mp.prepare() }
                 mp.start()
                 for (i in 1..20) {
-                    val v = track.volume * i / 20f
+                    val v = volume * i / 20f
                     mp.setVolume(v, v)
                     delay(100)
                 }
