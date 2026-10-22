@@ -1,5 +1,8 @@
 package com.catsblock.weather.data
 
+import com.catsblock.weather.i18n.AppLanguage
+import com.catsblock.weather.i18n.I18n
+import com.catsblock.weather.i18n.trx
 import java.time.temporal.ChronoUnit
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -13,9 +16,32 @@ private val lightCodes = setOf(51, 53, 55, 56, 57, 61, 66, 71, 77, 80, 85)
 private val heavyCodes = setOf(63, 65, 67, 73, 75, 81, 82, 86, 95, 96, 99)
 private val fogCodes = setOf(45, 48)
 
-private fun hoursText(n: Int) = if (n == 1) "1 hour" else "$n hours"
+private fun ruPlural(n: Int, one: String, few: String, many: String): String {
+    val m10 = n % 10
+    val m100 = n % 100
+    return when {
+        m10 == 1 && m100 != 11 -> one
+        m10 in 2..4 && m100 !in 12..14 -> few
+        else -> many
+    }
+}
 
-private fun daysText(n: Int) = if (n == 1) "1 day" else "$n days"
+private fun hoursText(n: Int, duration: Boolean): String {
+    if (I18n.lang == AppLanguage.Russian) {
+        val word = if (duration) {
+            if (n % 10 == 1 && n % 100 != 11) "часа" else "часов"
+        } else {
+            ruPlural(n, "час", "часа", "часов")
+        }
+        return "$n $word"
+    }
+    return if (n == 1) trx("1 hour") else trx("%d hours").format(n)
+}
+
+private fun daysText(n: Int): String {
+    if (I18n.lang == AppLanguage.Russian) return "$n " + ruPlural(n, "день", "дня", "дней")
+    return if (n == 1) trx("1 day") else trx("%d days").format(n)
+}
 
 fun buildAlert(bundle: WeatherBundle, fahrenheit: Boolean): WeatherAlert? {
     val nowHour = bundle.current.now.truncatedTo(ChronoUnit.HOURS)
@@ -26,24 +52,30 @@ fun buildAlert(bundle: WeatherBundle, fahrenheit: Boolean): WeatherAlert? {
     val heavyAt = soon.indexOfFirst { it.code in heavyCodes }
     if (heavyAt >= 0) {
         val snow = soon[heavyAt].code in snowCodes
-        val word = if (snow) "snow" else "rain"
-        val verb = if (snow) "snows" else "rains"
+        val template = if (snow) {
+            "A moderate, heavy snow is arriving here in %s, be alert in case it snows."
+        } else {
+            "A moderate, heavy rain is arriving here in %s, be alert in case it rains."
+        }
         return WeatherAlert(
             if (snow) AlertKind.HeavySnow else AlertKind.HeavyRain,
-            "A moderate, heavy $word is arriving here at ${hoursText(heavyAt.coerceAtLeast(1))}, be alert in case it $verb."
+            trx(template).format(hoursText(heavyAt.coerceAtLeast(1), false))
         )
     }
 
     val lightAt = soon.indexOfFirst { it.code in lightCodes }
     if (lightAt >= 0) {
         val snow = soon[lightAt].code in snowCodes
-        val word = if (snow) "snow" else "rain"
-        val verb = if (snow) "snows" else "rains"
         var count = 0
         while (lightAt + count < ahead.size && ahead[lightAt + count].code in lightCodes) count++
+        val template = if (snow) {
+            "A light snow is expected here for %s. Be concerned if it snows."
+        } else {
+            "A light rain is expected here for %s. Be concerned if it rains."
+        }
         return WeatherAlert(
             if (snow) AlertKind.LightSnow else AlertKind.LightRain,
-            "A light $word is expected here for ${hoursText(count)}. Be concerned if it $verb."
+            trx(template).format(hoursText(count, true))
         )
     }
 
@@ -54,7 +86,8 @@ fun buildAlert(bundle: WeatherBundle, fahrenheit: Boolean): WeatherAlert? {
         if (count <= 4) {
             return WeatherAlert(
                 AlertKind.Fog,
-                "The city may be shrouded in fog for ${hoursText(count)}. Do not travel when there is fog."
+                trx("The city may be shrouded in fog for %s. Do not travel when there is fog.")
+                    .format(hoursText(count, true))
             )
         }
     }
@@ -68,9 +101,17 @@ fun buildAlert(bundle: WeatherBundle, fahrenheit: Boolean): WeatherAlert? {
         if (abs(delta) >= 4.0) {
             val shown = (abs(delta) * (if (fahrenheit) 1.8 else 1.0)).roundToInt()
             return if (delta > 0) {
-                WeatherAlert(AlertKind.Warm, "The temperature will increase by approximately $shown° in ${daysText(i)}.")
+                WeatherAlert(
+                    AlertKind.Warm,
+                    trx("The temperature will increase by approximately %1\$s° in %2\$s.")
+                        .format(shown.toString(), daysText(i))
+                )
             } else {
-                WeatherAlert(AlertKind.Cool, "The temperature will decrease by $shown° in ${daysText(i)}.")
+                WeatherAlert(
+                    AlertKind.Cool,
+                    trx("The temperature will decrease by %1\$s° in %2\$s.")
+                        .format(shown.toString(), daysText(i))
+                )
             }
         }
     }
