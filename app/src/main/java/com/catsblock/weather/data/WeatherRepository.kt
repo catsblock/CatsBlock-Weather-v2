@@ -86,7 +86,7 @@ class WeatherRepository {
                     "latitude" to lat,
                     "longitude" to lon,
                     "current" to "temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,is_day,wind_speed_10m,wind_direction_10m",
-                    "hourly" to "temperature_2m,apparent_temperature,relative_humidity_2m,precipitation,weather_code,wind_speed_10m,wind_direction_10m,uv_index,is_day",
+                    "hourly" to "temperature_2m,apparent_temperature,relative_humidity_2m,precipitation,weather_code,wind_speed_10m,wind_direction_10m,uv_index,is_day,pressure_msl,visibility",
                     "minutely_15" to "precipitation",
                     "forecast_minutely_15" to "48",
                     "daily" to "weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,sunrise,sunset,uv_index_max",
@@ -138,6 +138,8 @@ class WeatherRepository {
         val windDir = hourly.getJSONArray("wind_direction_10m")
         val uv = hourly.getJSONArray("uv_index")
         val isDay = hourly.getJSONArray("is_day")
+        val pressureArr = hourly.getJSONArray("pressure_msl")
+        val visArr = hourly.getJSONArray("visibility")
 
         val hours = (0 until times.length()).map { i ->
             val time = LocalDateTime.parse(times.getString(i))
@@ -152,7 +154,9 @@ class WeatherRepository {
                 windDir = windDir.optDouble(i, 0.0),
                 humidity = hum.optInt(i, 0),
                 uv = uv.optDouble(i, 0.0),
-                aqi = aqiMap[time.toString()]
+                aqi = aqiMap[time.toString()],
+                pressure = pressureArr.optDouble(i, 1013.0),
+                visibility = visArr.optDouble(i, 10000.0)
             )
         }
 
@@ -199,7 +203,9 @@ class WeatherRepository {
             windDir = cur.getDouble("wind_direction_10m"),
             humidity = cur.getInt("relative_humidity_2m"),
             uv = hourNow?.uv ?: 0.0,
-            aqi = aqiMap[nowKey]
+            aqi = aqiMap[nowKey],
+            pressure = hourNow?.pressure ?: 1013.0,
+            visibility = hourNow?.visibility ?: 10000.0
         )
 
         WeatherBundle(
