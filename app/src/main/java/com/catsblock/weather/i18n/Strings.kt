@@ -24,7 +24,7 @@ object I18n {
 fun tr(en: String): String {
     val l = I18n.lang
     if (l == AppLanguage.English) return en
-    return T[en]?.getOrNull(l.ordinal - 1) ?: en
+    return T[en]?.getOrNull(l.ordinal - 1) ?: extra(en) ?: en
 }
 
 private fun s(en: String, a: String, b: String, c: String, d: String, e: String, f: String) =
