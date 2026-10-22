@@ -68,6 +68,8 @@ import androidx.compose.ui.unit.sp
 import com.catsblock.weather.data.Day
 import com.catsblock.weather.data.Hour
 import com.catsblock.weather.data.LifeItem
+import com.catsblock.weather.data.LifeKind
+import com.catsblock.weather.i18n.tr
 import kotlinx.coroutines.launch
 import java.time.Duration
 import java.time.LocalDate
@@ -184,7 +186,7 @@ fun HoursCard(
     today: LocalDate,
     fahrenheit: Boolean,
     scrollState: ScrollState,
-    title: String = "Next 36 hours",
+    title: String = tr("Next 36 hours"),
     showDays: Boolean = true
 ) {
     val scope = rememberCoroutineScope()
@@ -254,6 +256,7 @@ private fun HoursChart(hours: List<Hour>, fahrenheit: Boolean, scrollState: Scro
     val minT = hours.minOf { it.temp }
     val maxT = hours.maxOf { it.temp }
     val span = (maxT - minT).coerceAtLeast(4.0)
+    val nowLabel = tr("Now")
     Column(Modifier.horizontalScroll(scrollState)) {
         Canvas(Modifier.width(HourStep * hours.size).height(150.dp)) {
             val topPad = 36.dp.toPx()
@@ -305,7 +308,7 @@ private fun HoursChart(hours: List<Hour>, fahrenheit: Boolean, scrollState: Scro
                     )
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        if (i == 0) "Now" else hourLabel(h.time),
+                        if (i == 0) nowLabel else hourLabel(h.time),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -324,7 +327,7 @@ fun DaysCard(
     onMore: () -> Unit
 ) {
     GlassCard(Modifier.fillMaxWidth()) {
-        CardHeader(Icons.Rounded.CalendarMonth, "Next 7 days")
+        CardHeader(Icons.Rounded.CalendarMonth, tr("Next 7 days"))
         Spacer(Modifier.height(14.dp))
         DaysChart(days, today, fahrenheit, onDayClick)
         Spacer(Modifier.height(8.dp))
@@ -338,7 +341,7 @@ fun DaysCard(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text("Show more", style = MaterialTheme.typography.labelLarge)
+            Text(tr("Show more"), style = MaterialTheme.typography.labelLarge)
             Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
@@ -357,6 +360,8 @@ private fun DaysChart(days: List<Day>, today: LocalDate, fahrenheit: Boolean, on
     val maxAll = days.maxOf { it.max }
     val minAll = days.minOf { it.min }
     val span = (maxAll - minAll).coerceAtLeast(4.0)
+    val todayLabel = tr("Today")
+    val tomorrowLabel = tr("Tomorrow")
     Column(Modifier.horizontalScroll(rememberScrollState())) {
         Canvas(Modifier.width(DayStep * days.size).height(170.dp)) {
             val topPad = 34.dp.toPx()
@@ -413,8 +418,8 @@ private fun DaysChart(days: List<Day>, today: LocalDate, fahrenheit: Boolean, on
                     Spacer(Modifier.height(6.dp))
                     Text(
                         when (d.date) {
-                            today -> "Today"
-                            today.plusDays(1) -> "Tomorrow"
+                            today -> todayLabel
+                            today.plusDays(1) -> tomorrowLabel
                             else -> dateLabel(d.date)
                         },
                         style = MaterialTheme.typography.labelMedium,
@@ -436,7 +441,7 @@ fun SunCard(sunrise: LocalDateTime, sunset: LocalDateTime, now: LocalDateTime, m
     val primary = scheme.primary
     val track = scheme.onSurface.copy(alpha = 0.25f)
     GlassCard(modifier.height(176.dp), contentModifier = Modifier.fillMaxSize()) {
-        CardHeader(Icons.Rounded.WbTwilight, "Sun")
+        CardHeader(Icons.Rounded.WbTwilight, tr("Sun"))
         Spacer(Modifier.weight(1f))
         Canvas(Modifier.fillMaxWidth().height(62.dp)) {
             val r = min(size.width / 2f - 12.dp.toPx(), size.height - 8.dp.toPx())
@@ -475,19 +480,19 @@ fun SunCard(sunrise: LocalDateTime, sunset: LocalDateTime, now: LocalDateTime, m
     }
 }
 
-private fun lifeIcon(title: String): ImageVector = when {
-    title.contains("Sun", ignoreCase = true) -> Icons.Rounded.WbSunny
-    title.contains("exercise", ignoreCase = true) -> Icons.Rounded.DirectionsRun
-    title.contains("Clothing", ignoreCase = true) -> Icons.Rounded.Checkroom
-    title.contains("Flu", ignoreCase = true) -> Icons.Rounded.MedicalServices
-    title.contains("Travel", ignoreCase = true) -> Icons.Rounded.DirectionsCar
-    else -> Icons.Rounded.BugReport
+private fun lifeIcon(kind: LifeKind): ImageVector = when (kind) {
+    LifeKind.Sun -> Icons.Rounded.WbSunny
+    LifeKind.Exercise -> Icons.Rounded.DirectionsRun
+    LifeKind.Clothing -> Icons.Rounded.Checkroom
+    LifeKind.Flu -> Icons.Rounded.MedicalServices
+    LifeKind.Travel -> Icons.Rounded.DirectionsCar
+    LifeKind.Mosquito -> Icons.Rounded.BugReport
 }
 
 @Composable
 fun LifeIndexCard(items: List<LifeItem>) {
     GlassCard(Modifier.fillMaxWidth()) {
-        CardHeader(Icons.Rounded.BeachAccess, "Life index")
+        CardHeader(Icons.Rounded.BeachAccess, tr("Life index"))
         Spacer(Modifier.height(8.dp))
         items.chunked(2).forEach { row ->
             Row(Modifier.fillMaxWidth().padding(vertical = 12.dp)) {
@@ -496,7 +501,7 @@ fun LifeIndexCard(items: List<LifeItem>) {
                         Modifier.weight(1f).padding(horizontal = 6.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Icon(lifeIcon(item.title), null, Modifier.size(34.dp), tint = MaterialTheme.colorScheme.primary)
+                        Icon(lifeIcon(item.kind), null, Modifier.size(34.dp), tint = MaterialTheme.colorScheme.primary)
                         Spacer(Modifier.height(8.dp))
                         Text(
                             item.title,
