@@ -265,8 +265,7 @@ fun MainScreen(vm: WeatherViewModel) {
                     fahrenheit = settings.fahrenheit,
                     scroll = scroll,
                     headerHeight = headerHeight,
-                    onLiveMoon = vm::openLiveMoon,
-                    onNightSky = vm::openNightSky
+                    onLiveMoon = vm::openLiveMoon
                 )
                 state is WeatherState.Error -> Column(
                     Modifier.fillMaxSize().padding(32.dp),
@@ -401,8 +400,7 @@ private fun WeatherDetails(
     fahrenheit: Boolean,
     scroll: ScrollState,
     headerHeight: Dp,
-    onLiveMoon: () -> Unit,
-    onNightSky: () -> Unit
+    onLiveMoon: () -> Unit
 ) {
     val cur = bundle.current
     val nowHour = cur.now.truncatedTo(ChronoUnit.HOURS)
@@ -555,11 +553,9 @@ private fun WeatherDetails(
                             onClick = { sheet = Sheet.Visibility }
                         )
                     }
-                    city?.let { EarthCard(it) }
                     city?.let {
                         MoonCard(it, bundle.utcOffsetSeconds, cur.now) { sheet = Sheet.Moon }
                     }
-                    NightSkyCard(onNightSky)
                     LifeIndexCard(
                         lifeIndex(
                             temp = cur.temp,
