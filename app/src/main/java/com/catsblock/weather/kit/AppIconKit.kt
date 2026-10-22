@@ -71,7 +71,7 @@ object AppIconKit {
     private fun disablePrevious(context: Context) {
         val previous = prefs(context).getString("shortcut_id", null) ?: return
         runCatching {
-            ShortcutManagerCompat.disableShortcuts(context, listOf(previous), "This icon was removed")
+            ShortcutManagerCompat.disableShortcuts(context, listOf(previous), trx("This icon was removed"))
             ShortcutManagerCompat.removeDynamicShortcuts(context, listOf(previous))
         }
         prefs(context).edit().remove("shortcut_id").apply()
