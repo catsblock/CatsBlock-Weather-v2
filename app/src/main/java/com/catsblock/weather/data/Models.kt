@@ -60,7 +60,9 @@ data class Hour(
     val windDir: Double,
     val humidity: Int,
     val uv: Double,
-    val aqi: Double?
+    val aqi: Double?,
+    val pressure: Double = 1013.0,
+    val visibility: Double = 10000.0
 ) {
     val kind: Condition get() = wmoCondition(code, windSpeed)
 }
@@ -90,7 +92,9 @@ data class Current(
     val windDir: Double,
     val humidity: Int,
     val uv: Double,
-    val aqi: Double?
+    val aqi: Double?,
+    val pressure: Double = 1013.0,
+    val visibility: Double = 10000.0
 )
 
 data class RainSlot(
