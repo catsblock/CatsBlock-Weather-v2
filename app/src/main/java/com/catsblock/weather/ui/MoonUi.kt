@@ -44,14 +44,21 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathOperation
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import coil.compose.SubcomposeAsyncImage
 import com.catsblock.weather.data.City
+import com.catsblock.weather.data.Eclipse
 import com.catsblock.weather.data.Moon
 import com.catsblock.weather.i18n.I18n
 import com.catsblock.weather.i18n.tr
@@ -67,9 +74,27 @@ import kotlin.math.cos
 import kotlin.math.min
 import kotlin.math.roundToInt
 
+internal fun DrawScope.drawEclipse(e: Eclipse, c: Offset, r: Float) {
+    val sc = Offset(c.x + (e.dx * r).toFloat(), c.y - (e.dy * r).toFloat())
+    val rp = (e.penumbra * r).toFloat()
+    val uf = (e.umbra / e.penumbra).toFloat()
+    val brush = Brush.radialGradient(
+        0f to Color(0xFF7A220C),
+        uf * 0.6f to Color(0xFF983414),
+        uf to Color(0xFFD9662A),
+        uf * 1.05f to Color(0xFFE9E0D6),
+        1f to Color.White,
+        center = sc,
+        radius = rp
+    )
+    clipPath(Path().apply { addOval(Rect(c, r)) }) {
+        drawRect(brush, blendMode = BlendMode.Multiply)
+    }
+}
+
 @Composable
-fun MoonDisc(cycle: Double, modifier: Modifier = Modifier) {
-    Canvas(modifier) {
+fun MoonDisc(cycle: Double, modifier: Modifier = Modifier, eclipse: Eclipse? = null) {
+    Canvas(modifier.graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)) {
         val r = min(size.width, size.height) / 2f
         val c = Offset(size.width / 2f, size.height / 2f)
         drawCircle(Color(0xFF2A2F3C), r, c)
@@ -86,13 +111,21 @@ fun MoonDisc(cycle: Double, modifier: Modifier = Modifier) {
         val lit = Path.combine(PathOperation.Intersect, circle, half)
         val shape = Path.combine(if (k > 0f) PathOperation.Difference else PathOperation.Union, lit, ellipse)
         drawPath(shape, Color(0xFFF4EFD8))
+        if (eclipse != null) drawEclipse(eclipse, c, r)
     }
 }
 
 @Composable
 fun MoonImage(ms: Long, cycle: Double, modifier: Modifier = Modifier) {
     val url by produceState<String?>(null, ms / 3_600_000L) { value = Moon.imageUrl(ms) }
-    Box(modifier.clip(CircleShape).background(Color.Black), contentAlignment = Alignment.Center) {
+    val eclipse = remember(ms / 60_000L) { Moon.eclipse(ms) }
+    Box(
+        modifier
+            .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)
+            .clip(CircleShape)
+            .background(Color.Black),
+        contentAlignment = Alignment.Center
+    ) {
         val u = url
         if (u == null) {
             MoonDisc(cycle, Modifier.fillMaxSize())
@@ -105,6 +138,11 @@ fun MoonImage(ms: Long, cycle: Double, modifier: Modifier = Modifier) {
                 loading = { MoonDisc(cycle, Modifier.fillMaxSize()) },
                 error = { MoonDisc(cycle, Modifier.fillMaxSize()) }
             )
+        }
+        if (eclipse != null) {
+            Canvas(Modifier.fillMaxSize()) {
+                drawEclipse(eclipse, Offset(size.width / 2f, size.height / 2f), min(size.width, size.height) / 2f)
+            }
         }
     }
 }
@@ -124,6 +162,7 @@ fun MoonCard(
     val date = now.toLocalDate()
     val ms = now.toInstant(offset).toEpochMilli()
     val phase = remember(ms / 60_000L) { Moon.phase(ms) }
+    val eclipse = remember(ms / 60_000L) { Moon.eclipse(ms) }
     val times = remember(city.id, date, offsetSeconds) { Moon.riseSet(date, city.lat, city.lon, offset) }
     GlassCard(modifier.fillMaxWidth(), onClick) {
         CardHeader(Icons.Rounded.NightsStay, tr("Moon"))
@@ -133,6 +172,13 @@ fun MoonCard(
             Spacer(Modifier.width(16.dp))
             Column(Modifier.weight(1f)) {
                 Text(tr(Moon.phaseName(phase.cycle)), style = MaterialTheme.typography.titleLarge)
+                eclipse?.let {
+                    Text(
+                        tr(Moon.eclipseName(it)),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = Color(0xFFFF8A65)
+                    )
+                }
                 Text(
                     "${(phase.illumination * 100).roundToInt()}% ${tr("illuminated")}",
                     style = MaterialTheme.typography.bodyMedium,
