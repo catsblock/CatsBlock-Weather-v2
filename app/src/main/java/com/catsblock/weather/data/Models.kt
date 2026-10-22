@@ -17,6 +17,8 @@ val Condition.isWet: Boolean
         this == Condition.Sleet || this == Condition.Hail || this == Condition.Snow ||
         this == Condition.HeavySnow || this == Condition.Blizzard
 
+val RainLeadOptions: List<Int> = listOf(120, 60, 30, 15)
+
 data class City(
     val name: String,
     val region: String,
@@ -91,10 +93,17 @@ data class Current(
     val aqi: Double?
 )
 
+data class RainSlot(
+    val time: LocalDateTime,
+    val mm: Double
+)
+
 data class WeatherBundle(
     val current: Current,
     val hours: List<Hour>,
-    val days: List<Day>
+    val days: List<Day>,
+    val rain: List<RainSlot> = emptyList(),
+    val utcOffsetSeconds: Int = 0
 )
 
 data class CitySummary(
@@ -107,7 +116,9 @@ data class AppSettings(
     val fahrenheit: Boolean = false,
     val mobileData: Boolean = true,
     val sounds: Boolean = true,
-    val language: AppLanguage = AppLanguage.English
+    val language: AppLanguage = AppLanguage.English,
+    val rainAlerts: Boolean = true,
+    val rainLeadMinutes: Int = 60
 )
 
 data class Continent(val title: String, val cities: List<City>)
