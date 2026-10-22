@@ -128,12 +128,11 @@ fun beaufort(kmh: Double): Int = when {
     kmh < 29 -> 4
     kmh < 39 -> 5
     kmh < 50 -> 6
-    kmh < 62 -> 7
-    kmh < 75 -> 8
-    kmh < 89 -> 9
-    kmh < 103 -> 10
-    kmh < 118 -> 11
-    else -> 12
+    kmh < 75 -> 7
+    kmh < 89 -> 8
+    kmh < 103 -> 9
+    kmh < 118 -> 10
+    else -> 11
 }
 
 fun windShort(kmh: Double): String = tr(
@@ -266,7 +265,8 @@ fun MainScreen(vm: WeatherViewModel) {
                     fahrenheit = settings.fahrenheit,
                     scroll = scroll,
                     headerHeight = headerHeight,
-                    onLiveMoon = vm::openLiveMoon
+                    onLiveMoon = vm::openLiveMoon,
+                    onNightSky = vm::openNightSky
                 )
                 state is WeatherState.Error -> Column(
                     Modifier.fillMaxSize().padding(32.dp),
@@ -401,7 +401,8 @@ private fun WeatherDetails(
     fahrenheit: Boolean,
     scroll: ScrollState,
     headerHeight: Dp,
-    onLiveMoon: () -> Unit
+    onLiveMoon: () -> Unit,
+    onNightSky: () -> Unit
 ) {
     val cur = bundle.current
     val nowHour = cur.now.truncatedTo(ChronoUnit.HOURS)
@@ -554,9 +555,11 @@ private fun WeatherDetails(
                             onClick = { sheet = Sheet.Visibility }
                         )
                     }
+                    city?.let { EarthCard(it) }
                     city?.let {
                         MoonCard(it, bundle.utcOffsetSeconds, cur.now) { sheet = Sheet.Moon }
                     }
+                    NightSkyCard(onNightSky)
                     LifeIndexCard(
                         lifeIndex(
                             temp = cur.temp,
