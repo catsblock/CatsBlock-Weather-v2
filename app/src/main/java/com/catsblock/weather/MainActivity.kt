@@ -66,7 +66,7 @@ private fun AppRoot(vm: WeatherViewModel) {
     val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
     LaunchedEffect(screen, dark) {
-        val style = if (screen == Screen.Main || screen == Screen.LiveMoon) {
+        val style = if (screen == Screen.Main || screen == Screen.LiveMoon || screen == Screen.NightSky) {
             SystemBarStyle.dark(AndroidColor.TRANSPARENT)
         } else {
             SystemBarStyle.auto(AndroidColor.TRANSPARENT, AndroidColor.TRANSPARENT)
@@ -96,5 +96,6 @@ private fun AppRoot(vm: WeatherViewModel) {
         Screen.BackgroundKit -> BackgroundKitScreen(vm)
         Screen.AppIcon -> AppIconScreen(vm)
         Screen.LiveMoon -> LiveMoonScreen(vm)
+        Screen.NightSky -> NightSkyScreen(vm)
     }
 }
