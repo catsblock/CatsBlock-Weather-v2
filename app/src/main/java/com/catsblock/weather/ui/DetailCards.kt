@@ -40,6 +40,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
@@ -81,6 +82,8 @@ import kotlin.math.sin
 private val HourStep = 68.dp
 private val DayStep = 70.dp
 
+val LocalGlass = compositionLocalOf { false }
+
 @Composable
 fun GlassCard(
     modifier: Modifier = Modifier,
@@ -88,21 +91,41 @@ fun GlassCard(
     contentModifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit
 ) {
+    val glass = LocalGlass.current
     val dark = isSystemInDarkTheme()
     val scheme = MaterialTheme.colorScheme
-    val colors = CardDefaults.cardColors(
-        containerColor = scheme.surfaceContainer.copy(alpha = if (dark) 0.58f else 0.74f),
-        contentColor = scheme.onSurface
-    )
-    val border = BorderStroke(0.5.dp, scheme.onSurface.copy(alpha = 0.08f))
     val shape = MaterialTheme.shapes.extraLarge
+    val colors = CardDefaults.cardColors(
+        containerColor = if (glass) Color.Transparent else scheme.surfaceContainer.copy(alpha = if (dark) 0.58f else 0.74f),
+        contentColor = if (glass) Color.White else scheme.onSurface
+    )
+    val border = if (glass) {
+        BorderStroke(
+            1.dp,
+            Brush.linearGradient(
+                listOf(Color.White.copy(alpha = 0.6f), Color.White.copy(alpha = 0.08f), Color.White.copy(alpha = 0.3f))
+            )
+        )
+    } else {
+        BorderStroke(0.5.dp, scheme.onSurface.copy(alpha = 0.08f))
+    }
+    val surface = if (glass) {
+        modifier
+            .background(Color(0x26000000), shape)
+            .background(
+                Brush.linearGradient(listOf(Color.White.copy(alpha = 0.28f), Color.White.copy(alpha = 0.08f))),
+                shape
+            )
+    } else {
+        modifier
+    }
     val elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     if (onClick != null) {
-        Card(onClick = onClick, modifier = modifier, shape = shape, colors = colors, elevation = elevation, border = border) {
+        Card(onClick = onClick, modifier = surface, shape = shape, colors = colors, elevation = elevation, border = border) {
             Column(contentModifier.padding(18.dp), content = content)
         }
     } else {
-        Card(modifier = modifier, shape = shape, colors = colors, elevation = elevation, border = border) {
+        Card(modifier = surface, shape = shape, colors = colors, elevation = elevation, border = border) {
             Column(contentModifier.padding(18.dp), content = content)
         }
     }
