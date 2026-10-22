@@ -17,12 +17,22 @@ import kotlin.math.acos
 import kotlin.math.asin
 import kotlin.math.atan2
 import kotlin.math.cos
+import kotlin.math.hypot
 import kotlin.math.sin
 import kotlin.math.tan
 
 data class MoonPhase(val cycle: Double, val illumination: Double)
 
 data class MoonPosition(val azimuth: Double, val altitude: Double)
+
+class Eclipse(
+    val kind: Int,
+    val magnitude: Double,
+    val dx: Double,
+    val dy: Double,
+    val umbra: Double,
+    val penumbra: Double
+)
 
 object Moon {
 
@@ -70,6 +80,53 @@ object Moon {
         )
         val sign = if (angle < 0) -1.0 else 1.0
         return MoonPhase((0.5 + 0.5 * inc * sign / PI).coerceIn(0.0, 1.0), (1 + cos(inc)) / 2)
+    }
+
+    fun eclipse(ms: Long): Eclipse? {
+        val t = days(ms) / 36525.0
+        val lp = 218.3164477 + 481267.88123421 * t
+        val d = RAD * (297.8501921 + 445267.1114034 * t)
+        val m = RAD * (357.5291092 + 35999.0502909 * t)
+        val mp = RAD * (134.9633964 + 477198.8675055 * t)
+        val f = RAD * (93.2720950 + 483202.0175233 * t)
+        val lon = lp + 6.288774 * sin(mp) + 1.274027 * sin(2 * d - mp) + 0.658314 * sin(2 * d) +
+            0.213618 * sin(2 * mp) - 0.185116 * sin(m) - 0.114332 * sin(2 * f) +
+            0.058793 * sin(2 * d - 2 * mp) + 0.057066 * sin(2 * d - m - mp) +
+            0.053322 * sin(2 * d + mp) + 0.045758 * sin(2 * d - m)
+        val lat = 5.128122 * sin(f) + 0.280602 * sin(mp + f) + 0.277693 * sin(mp - f) +
+            0.173237 * sin(2 * d - f) + 0.055413 * sin(2 * d - mp + f) +
+            0.046271 * sin(2 * d - mp - f) + 0.032573 * sin(2 * d + f)
+        val par = 0.950724 + 0.051818 * cos(mp) + 0.009531 * cos(2 * d - mp) +
+            0.007843 * cos(2 * d) + 0.002824 * cos(2 * mp)
+        val sunLon = 280.46646 + 36000.76983 * t + 1.914602 * sin(m) + 0.019993 * sin(2 * m)
+        val sr = 1.000140612 - 0.016708617 * cos(m) - 0.000139589 * cos(2 * m)
+        val sSun = 0.2666 / sr
+        val pSun = 0.0024 / sr
+        val sMoon = 0.2725076 * par
+        val dl = ((sunLon + 180.0 - lon) % 360.0 + 540.0) % 360.0 - 180.0
+        val dx0 = dl * cos(RAD * lat)
+        val dy0 = -lat
+        val sep = hypot(dx0, dy0)
+        val ru = 1.02 * (par + pSun - sSun)
+        val rp = 1.02 * (par + pSun + sSun)
+        val umbral = (ru + sMoon - sep) / (2 * sMoon)
+        val penumbral = (rp + sMoon - sep) / (2 * sMoon)
+        if (penumbral <= 0.0) return null
+        val q = atan2(sin(OBLIQUITY) * cos(RAD * lon), cos(OBLIQUITY))
+        val sx = (dx0 * -cos(q) + dy0 * sin(q)) / sMoon
+        val sy = (dx0 * sin(q) + dy0 * cos(q)) / sMoon
+        val kind = when {
+            umbral >= 1.0 -> 2
+            umbral > 0.0 -> 1
+            else -> 0
+        }
+        return Eclipse(kind, if (umbral > 0.0) umbral else penumbral, sx, sy, ru / sMoon, rp / sMoon)
+    }
+
+    fun eclipseName(e: Eclipse): String = when (e.kind) {
+        2 -> "Blood Moon · total lunar eclipse"
+        1 -> "Partial lunar eclipse"
+        else -> "Penumbral lunar eclipse"
     }
 
     fun position(ms: Long, lat: Double, lon: Double): MoonPosition {
