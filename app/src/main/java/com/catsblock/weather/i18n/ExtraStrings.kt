@@ -3,7 +3,7 @@ package com.catsblock.weather.i18n
 fun extra(en: String): String? {
     val l = I18n.lang
     if (l == AppLanguage.English) return null
-    return E[en]?.getOrNull(l.ordinal - 1)
+    return E[en]?.getOrNull(l.ordinal - 1) ?: nova(en)
 }
 
 private fun e(en: String, br: String, pt: String, es: String, fr: String, ru: String, de: String) =
