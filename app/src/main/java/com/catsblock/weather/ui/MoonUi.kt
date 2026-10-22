@@ -263,7 +263,7 @@ fun MoonCalendarSheet(
             Button(onClick = onLive, modifier = Modifier.fillMaxWidth()) {
                 Icon(Icons.Rounded.CameraAlt, null, Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
-                Text("LIVE moon")
+                Text(tr("LIVE moon"))
             }
             Spacer(Modifier.height(16.dp))
         }
