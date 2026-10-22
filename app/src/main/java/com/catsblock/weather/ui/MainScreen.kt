@@ -27,11 +27,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Air
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Eco
-import androidx.compose.material.icons.rounded.Map
 import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material.icons.rounded.NearMe
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.Umbrella
+import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.WaterDrop
 import androidx.compose.material.icons.rounded.WbSunny
 import androidx.compose.material3.Button
@@ -50,6 +51,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -83,9 +85,11 @@ import com.catsblock.weather.data.Condition
 import com.catsblock.weather.data.Day
 import com.catsblock.weather.data.WeatherBundle
 import com.catsblock.weather.data.aqiAdvice
+import com.catsblock.weather.data.buildAlert
 import com.catsblock.weather.data.compassLabel
 import com.catsblock.weather.data.humidityDescription
 import com.catsblock.weather.data.humidityLabel
+import com.catsblock.weather.data.isWet
 import com.catsblock.weather.data.lifeIndex
 import com.catsblock.weather.data.precipToday
 import com.catsblock.weather.data.uvAdvice
@@ -95,6 +99,7 @@ import com.catsblock.weather.sound.WeatherSoundPlayer
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.temporal.ChronoUnit
+import kotlin.math.roundToInt
 
 private sealed interface Sheet {
     data class DaySheet(val day: Day) : Sheet
@@ -104,11 +109,16 @@ private sealed interface Sheet {
     data object Air : Sheet
     data object Uv : Sheet
     data object Humidity : Sheet
+    data object Pressure : Sheet
+    data object Visibility : Sheet
+    data object Moon : Sheet
 }
 
 private val textShadow = TextStyle(
     shadow = Shadow(Color(0x66000000), offset = Offset(0f, 2f), blurRadius = 10f)
 )
+
+private val snowKinds = setOf(Condition.Snow, Condition.HeavySnow, Condition.Blizzard, Condition.Sleet)
 
 fun beaufort(kmh: Double): Int = when {
     kmh < 1 -> 0
@@ -156,6 +166,25 @@ fun uvShort(v: Double): String = tr(
         else -> "Avoid direct midday sun."
     }
 )
+
+fun pressureShort(hpa: Double): String = tr(
+    when {
+        hpa < 1000.0 -> "Low pressure. Unsettled weather is possible."
+        hpa < 1020.0 -> "Normal pressure."
+        else -> "High pressure. Stable weather is likely."
+    }
+)
+
+fun visibilityShort(km: Double): String = tr(
+    when {
+        km < 1.0 -> "Very poor visibility. Drive carefully."
+        km < 4.0 -> "Poor visibility."
+        km < 10.0 -> "Moderate visibility."
+        else -> "Excellent visibility."
+    }
+)
+
+private fun visibilityText(km: Double): String = if (km >= 10.0) km.roundToInt().toString() else f1(km)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -233,9 +262,11 @@ fun MainScreen(vm: WeatherViewModel) {
             when {
                 bundle != null -> WeatherDetails(
                     bundle = bundle,
+                    city = city,
                     fahrenheit = settings.fahrenheit,
                     scroll = scroll,
-                    headerHeight = headerHeight
+                    headerHeight = headerHeight,
+                    onLiveMoon = vm::openLiveMoon
                 )
                 state is WeatherState.Error -> Column(
                     Modifier.fillMaxSize().padding(32.dp),
@@ -264,7 +295,6 @@ fun MainScreen(vm: WeatherViewModel) {
                 progress = progress,
                 dots = saved.size.coerceIn(1, 6),
                 current = saved.indexOfFirst { it.id == city?.id }.coerceAtLeast(0),
-                onMap = vm::openMap,
                 onCities = {
                     vm.loadSummaries()
                     scope.launch { drawerState.open() }
@@ -282,7 +312,6 @@ private fun HeaderBar(
     progress: Float,
     dots: Int,
     current: Int,
-    onMap: () -> Unit,
     onCities: () -> Unit,
     onSettings: () -> Unit
 ) {
@@ -314,7 +343,6 @@ private fun HeaderBar(
                 }
             }
         }
-        IconButton(onClick = onMap) { Icon(Icons.Rounded.Map, tr("Radar map"), tint = Color.White) }
         IconButton(onClick = onCities) { Icon(Icons.Rounded.Menu, tr("Saved cities"), tint = Color.White) }
         IconButton(onClick = onSettings) { Icon(Icons.Rounded.Settings, tr("Settings"), tint = Color.White) }
     }
@@ -369,9 +397,11 @@ private fun CitiesDrawer(
 @Composable
 private fun WeatherDetails(
     bundle: WeatherBundle,
+    city: City?,
     fahrenheit: Boolean,
     scroll: ScrollState,
-    headerHeight: Dp
+    headerHeight: Dp,
+    onLiveMoon: () -> Unit
 ) {
     val cur = bundle.current
     val nowHour = cur.now.truncatedTo(ChronoUnit.HOURS)
@@ -386,6 +416,24 @@ private fun WeatherDetails(
     var sheet by remember { mutableStateOf<Sheet?>(null) }
     val screenHeight = LocalConfiguration.current.screenHeightDp
     val heroHeight = ((screenHeight * 0.66f).dp - headerHeight).coerceAtLeast(320.dp)
+    val alert = remember(bundle, fahrenheit) { buildAlert(bundle, fahrenheit) }
+    val baseScheme = MaterialTheme.colorScheme
+    val glassScheme = remember(baseScheme) {
+        baseScheme.copy(
+            primary = Color(0xFFCDE6FF),
+            onPrimary = Color(0xFF0B1B2E),
+            secondary = Color(0xFF9FD8FF),
+            onSurface = Color.White,
+            onSurfaceVariant = Color(0xCCFFFFFF),
+            outline = Color(0x99FFFFFF),
+            outlineVariant = Color(0x44FFFFFF)
+        )
+    }
+    val pressureLow = next24.minOfOrNull { it.pressure } ?: cur.pressure
+    val pressureHigh = next24.maxOfOrNull { it.pressure } ?: cur.pressure
+    val visibilityKm = cur.visibility / 1000.0
+    val rainingNow = cur.kind.isWet
+    val snowingNow = cur.kind in snowKinds
 
     Column(Modifier.fillMaxSize().padding(top = headerHeight).verticalScroll(scroll)) {
         Column(
@@ -415,85 +463,116 @@ private fun WeatherDetails(
             )
         }
 
-        Column(
-            Modifier.padding(horizontal = 16.dp).navigationBarsPadding().padding(bottom = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            HoursCard(next36, chipDays, today, fahrenheit, chartScroll)
-            DaysCard(
-                days = upcoming,
-                today = today,
-                fahrenheit = fahrenheit,
-                onDayClick = { sheet = Sheet.DaySheet(it) },
-                onMore = { sheet = Sheet.Days }
-            )
+        CompositionLocalProvider(LocalGlass provides true) {
+            MaterialTheme(colorScheme = glassScheme, typography = MaterialTheme.typography, shapes = MaterialTheme.shapes) {
+                Column(
+                    Modifier.padding(horizontal = 16.dp).navigationBarsPadding().padding(bottom = 24.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    alert?.let { AlertCard(it) }
+                    HoursCard(next36, chipDays, today, fahrenheit, chartScroll)
+                    DaysCard(
+                        days = upcoming,
+                        today = today,
+                        fahrenheit = fahrenheit,
+                        onDayClick = { sheet = Sheet.DaySheet(it) },
+                        onMore = { sheet = Sheet.Days }
+                    )
+                    if (rainingNow && city != null) {
+                        PrecipMapCard(city, snowingNow, next36.firstOrNull()?.precip ?: 0.0)
+                    }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                MetricCard(
-                    title = tr("Precipitation"),
-                    icon = Icons.Rounded.Umbrella,
-                    value = f1(todayDay.precipSum),
-                    unit = "mm",
-                    description = precipToday(todayDay.precipSum),
-                    modifier = Modifier.weight(1f),
-                    onClick = { sheet = Sheet.Precip }
-                )
-                MetricCard(
-                    title = tr("Wind"),
-                    icon = Icons.Rounded.Air,
-                    value = beaufort(cur.windSpeed).toString(),
-                    unit = "${compassLabel(cur.windDir)} | ${cur.windSpeed.toInt()} km/h",
-                    description = windShort(cur.windSpeed),
-                    modifier = Modifier.weight(1f),
-                    onClick = { sheet = Sheet.Wind }
-                )
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        MetricCard(
+                            title = tr("Precipitation"),
+                            icon = Icons.Rounded.Umbrella,
+                            value = f1(todayDay.precipSum),
+                            unit = "mm",
+                            description = precipToday(todayDay.precipSum),
+                            modifier = Modifier.weight(1f),
+                            onClick = { sheet = Sheet.Precip }
+                        )
+                        MetricCard(
+                            title = tr("Wind"),
+                            icon = Icons.Rounded.Air,
+                            value = beaufort(cur.windSpeed).toString(),
+                            unit = "${compassLabel(cur.windDir)} | ${cur.windSpeed.toInt()} km/h",
+                            description = windShort(cur.windSpeed),
+                            modifier = Modifier.weight(1f),
+                            onClick = { sheet = Sheet.Wind }
+                        )
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        MetricCard(
+                            title = tr("Air quality"),
+                            icon = Icons.Rounded.Eco,
+                            value = cur.aqi?.toInt()?.toString() ?: "--",
+                            unit = cur.aqi?.let { com.catsblock.weather.data.aqiStatus(it) },
+                            description = cur.aqi?.let { aqiShort(it) } ?: tr("Air quality data is not available here."),
+                            modifier = Modifier.weight(1f),
+                            onClick = if (cur.aqi != null) ({ sheet = Sheet.Air }) else null
+                        )
+                        MetricCard(
+                            title = tr("UV index"),
+                            icon = Icons.Rounded.WbSunny,
+                            value = cur.uv.toInt().toString(),
+                            unit = com.catsblock.weather.data.uvLevel(cur.uv),
+                            description = uvShort(cur.uv),
+                            modifier = Modifier.weight(1f),
+                            onClick = { sheet = Sheet.Uv }
+                        )
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        MetricCard(
+                            title = tr("Humidity"),
+                            icon = Icons.Rounded.WaterDrop,
+                            value = "${cur.humidity}%",
+                            unit = null,
+                            description = humidityLabel(cur.humidity),
+                            modifier = Modifier.weight(1f),
+                            onClick = { sheet = Sheet.Humidity }
+                        )
+                        SunCard(todayDay.sunrise, todayDay.sunset, cur.now, Modifier.weight(1f))
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        MetricCard(
+                            title = tr("Pressure"),
+                            icon = Icons.Rounded.Speed,
+                            value = cur.pressure.roundToInt().toString(),
+                            unit = "hPa",
+                            description = pressureShort(cur.pressure),
+                            modifier = Modifier.weight(1f),
+                            onClick = { sheet = Sheet.Pressure }
+                        )
+                        MetricCard(
+                            title = tr("Visibility"),
+                            icon = Icons.Rounded.Visibility,
+                            value = visibilityText(visibilityKm),
+                            unit = "km",
+                            description = visibilityShort(visibilityKm),
+                            modifier = Modifier.weight(1f),
+                            onClick = { sheet = Sheet.Visibility }
+                        )
+                    }
+                    city?.let {
+                        MoonCard(it, bundle.utcOffsetSeconds, cur.now) { sheet = Sheet.Moon }
+                    }
+                    LifeIndexCard(
+                        lifeIndex(
+                            temp = cur.temp,
+                            feels = cur.feels,
+                            humidity = cur.humidity,
+                            uv = cur.uv,
+                            aqi = cur.aqi,
+                            wind = cur.windSpeed,
+                            precip = todayDay.precipSum,
+                            kind = cur.kind,
+                            dayMax = todayDay.max,
+                            dayMin = todayDay.min
+                        )
+                    )
+                }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                MetricCard(
-                    title = tr("Air quality"),
-                    icon = Icons.Rounded.Eco,
-                    value = cur.aqi?.toInt()?.toString() ?: "--",
-                    unit = cur.aqi?.let { com.catsblock.weather.data.aqiStatus(it) },
-                    description = cur.aqi?.let { aqiShort(it) } ?: tr("Air quality data is not available here."),
-                    modifier = Modifier.weight(1f),
-                    onClick = if (cur.aqi != null) ({ sheet = Sheet.Air }) else null
-                )
-                MetricCard(
-                    title = tr("UV index"),
-                    icon = Icons.Rounded.WbSunny,
-                    value = cur.uv.toInt().toString(),
-                    unit = com.catsblock.weather.data.uvLevel(cur.uv),
-                    description = uvShort(cur.uv),
-                    modifier = Modifier.weight(1f),
-                    onClick = { sheet = Sheet.Uv }
-                )
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                MetricCard(
-                    title = tr("Humidity"),
-                    icon = Icons.Rounded.WaterDrop,
-                    value = "${cur.humidity}%",
-                    unit = null,
-                    description = humidityLabel(cur.humidity),
-                    modifier = Modifier.weight(1f),
-                    onClick = { sheet = Sheet.Humidity }
-                )
-                SunCard(todayDay.sunrise, todayDay.sunset, cur.now, Modifier.weight(1f))
-            }
-            LifeIndexCard(
-                lifeIndex(
-                    temp = cur.temp,
-                    feels = cur.feels,
-                    humidity = cur.humidity,
-                    uv = cur.uv,
-                    aqi = cur.aqi,
-                    wind = cur.windSpeed,
-                    precip = todayDay.precipSum,
-                    kind = cur.kind,
-                    dayMax = todayDay.max,
-                    dayMin = todayDay.min
-                )
-            )
         }
     }
 
@@ -501,7 +580,11 @@ private fun WeatherDetails(
         DayDetailSheet(current.day, bundle.hours, fahrenheit, today, cur.now) { sheet = null }
     }
 
-    sheet?.takeIf { it !is Sheet.DaySheet }?.let { current ->
+    if (sheet is Sheet.Moon && city != null) {
+        MoonCalendarSheet(city, bundle.utcOffsetSeconds, cur.now, onLiveMoon) { sheet = null }
+    }
+
+    sheet?.takeIf { it !is Sheet.DaySheet && it !is Sheet.Moon }?.let { current ->
         val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         ModalBottomSheet(onDismissRequest = { sheet = null }, sheetState = sheetState) {
             Column(
@@ -510,6 +593,7 @@ private fun WeatherDetails(
             ) {
                 when (current) {
                     is Sheet.DaySheet -> Unit
+                    Sheet.Moon -> Unit
                     Sheet.Days -> {
                         Text(tr("Next 7 days"), style = MaterialTheme.typography.titleLarge)
                         Spacer(Modifier.height(12.dp))
@@ -636,6 +720,40 @@ private fun WeatherDetails(
                             minY = 0.0,
                             maxY = 100.0
                         )
+                    }
+                    Sheet.Pressure -> {
+                        Text(tr("Pressure, next 24 hours"), style = MaterialTheme.typography.titleLarge)
+                        Text(
+                            pressureShort(cur.pressure),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(Modifier.height(12.dp))
+                        SimpleChart(
+                            values = next24.map { it.pressure },
+                            labels = next24.map { hourLabel(it.time) },
+                            valueLabel = { it.roundToInt().toString() },
+                            minY = pressureLow - 2.0,
+                            maxY = pressureHigh + 2.0
+                        )
+                        Text(tr("Hectopascals (hPa)"), style = MaterialTheme.typography.labelMedium)
+                    }
+                    Sheet.Visibility -> {
+                        Text(tr("Visibility, next 24 hours"), style = MaterialTheme.typography.titleLarge)
+                        Text(
+                            visibilityShort(visibilityKm),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(Modifier.height(12.dp))
+                        SimpleChart(
+                            values = next24.map { it.visibility / 1000.0 },
+                            labels = next24.map { hourLabel(it.time) },
+                            valueLabel = { visibilityText(it) },
+                            minY = 0.0,
+                            maxY = (next24.maxOfOrNull { it.visibility / 1000.0 } ?: 10.0).coerceAtLeast(1.0)
+                        )
+                        Text(tr("Kilometers"), style = MaterialTheme.typography.labelMedium)
                     }
                 }
                 Spacer(Modifier.height(16.dp))
