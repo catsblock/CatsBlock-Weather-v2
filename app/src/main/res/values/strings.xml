@@ -1,3 +1,11 @@
 <resources>
     <string name="app_name">Weather</string>
+    <string name="widget_compact">Weather compact</string>
+    <string name="widget_square">Weather 2x2</string>
+    <string name="widget_tips">Weather life tips</string>
+    <string name="widget_hourly">Weather hourly</string>
+    <string name="widget_compact_description">Current temperature and condition.</string>
+    <string name="widget_square_description">Location, temperature, condition and daily range.</string>
+    <string name="widget_tips_description">Current temperature with clothing, exercise, travel and air tips.</string>
+    <string name="widget_hourly_description">Current weather with the next hours.</string>
 </resources>
