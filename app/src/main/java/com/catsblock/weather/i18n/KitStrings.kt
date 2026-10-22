@@ -3,7 +3,7 @@ package com.catsblock.weather.i18n
 fun trx(en: String): String {
     val l = I18n.lang
     if (l == AppLanguage.English) return en
-    return X[en]?.getOrNull(l.ordinal - 1) ?: en
+    return X[en]?.getOrNull(l.ordinal - 1) ?: extra(en) ?: en
 }
 
 fun leadFull(minutes: Int): String = trx(
