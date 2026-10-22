@@ -59,24 +59,27 @@ fun tempText(celsius: Double, fahrenheit: Boolean): String =
 fun f1(value: Double): String = String.format(Locale.US, "%.1f", value)
 
 private val english get() = I18n.lang == AppLanguage.English
+
 private fun fmt(en: String, other: String): DateTimeFormatter =
     DateTimeFormatter.ofPattern(if (english) en else other, I18n.lang.locale)
+
+private fun String.cap(): String = replaceFirstChar { it.titlecase(I18n.lang.locale) }
 
 fun hourLabel(time: LocalDateTime): String = time.format(fmt("h a", "HH:mm"))
 
 fun clockLabel(time: LocalDateTime): String = time.format(fmt("h:mm a", "HH:mm"))
 
-fun dateLabel(date: LocalDate): String = date.format(fmt("MMM d", "d MMM"))
+fun dateLabel(date: LocalDate): String = date.format(fmt("MMM d", "d MMM")).cap()
 
-fun longDateLabel(date: LocalDate): String = date.format(fmt("EEEE, MMM d", "EEEE, d MMM"))
+fun longDateLabel(date: LocalDate): String = date.format(fmt("EEEE, MMM d", "EEEE, d MMM")).cap()
 
-fun weekdayLabel(time: LocalDateTime): String = time.format(fmt("EEE", "EEE"))
+fun weekdayLabel(time: LocalDateTime): String = time.format(fmt("EEE", "EEE")).cap()
 
 fun dayLabel(date: LocalDate, today: LocalDate): String = when (date) {
     today.minusDays(1) -> tr("Yesterday")
     today -> tr("Today")
     today.plusDays(1) -> tr("Tomorrow")
-    else -> date.format(fmt("EEE", "EEE"))
+    else -> date.format(fmt("EEE", "EEE")).cap()
 }
 
 @Composable
