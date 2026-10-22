@@ -12,8 +12,10 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
+import com.catsblock.weather.alerts.RainAlerts
 import com.catsblock.weather.data.NetworkPolicy
 import com.catsblock.weather.data.SettingsStore
+import com.catsblock.weather.data.WeatherBus
 import com.catsblock.weather.data.WeatherRepository
 import com.catsblock.weather.widget.WidgetUpdater
 import kotlinx.coroutines.CancellationException
@@ -26,13 +28,13 @@ object BackgroundUpdates {
     private const val PERIODIC_NAME = "weather_periodic_update"
     private const val NOW_NAME = "weather_update_now"
 
+    private val connected: Constraints = Constraints.Builder()
+        .setRequiredNetworkType(NetworkType.CONNECTED)
+        .build()
+
     fun schedule(context: Context) {
         val request = PeriodicWorkRequestBuilder<WeatherWorker>(2, TimeUnit.HOURS)
-            .setConstraints(
-                Constraints.Builder()
-                    .setRequiredNetworkType(NetworkType.UNMETERED)
-                    .build()
-            )
+            .setConstraints(connected)
             .setBackoffCriteria(BackoffPolicy.LINEAR, 15, TimeUnit.MINUTES)
             .build()
         WorkManager.getInstance(context.applicationContext)
@@ -42,11 +44,7 @@ object BackgroundUpdates {
     fun runNow(context: Context) {
         val request = OneTimeWorkRequestBuilder<WeatherWorker>()
             .setInputData(workDataOf(KEY_MANUAL to true))
-            .setConstraints(
-                Constraints.Builder()
-                    .setRequiredNetworkType(NetworkType.CONNECTED)
-                    .build()
-            )
+            .setConstraints(connected)
             .build()
         WorkManager.getInstance(context.applicationContext)
             .enqueueUniqueWork(NOW_NAME, ExistingWorkPolicy.KEEP, request)
@@ -58,17 +56,14 @@ class WeatherWorker(context: Context, params: WorkerParameters) : CoroutineWorke
     override suspend fun doWork(): Result {
         val app = applicationContext
         val store = SettingsStore(app)
-        val manual = inputData.getBoolean(BackgroundUpdates.KEY_MANUAL, false)
-        val allowed = if (manual) {
-            NetworkPolicy.foregroundAllowed(app, store.settings.first())
-        } else {
-            NetworkPolicy.onWifi(app)
-        }
-        if (!allowed) return Result.success()
+        val settings = store.settings.first()
+        if (!NetworkPolicy.foregroundAllowed(app, settings)) return Result.success()
         val city = store.currentCity.first() ?: return Result.success()
         return try {
             val bundle = WeatherRepository().fetch(city)
             WidgetUpdater.publish(app, city, bundle)
+            runCatching { RainAlerts.onFresh(app, city, bundle) }
+            WeatherBus.emit(city, bundle)
             Result.success()
         } catch (e: CancellationException) {
             throw e
