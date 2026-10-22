@@ -123,6 +123,23 @@ object Moon {
         return Eclipse(kind, if (umbral > 0.0) umbral else penumbral, sx, sy, ru / sMoon, rp / sMoon)
     }
 
+    fun dayEclipse(date: LocalDate, offset: ZoneOffset): Pair<Long, Eclipse>? {
+        val start = date.atStartOfDay().toInstant(offset).toEpochMilli()
+        val step = 300_000L
+        var bestMs = 0L
+        var best: Eclipse? = null
+        for (i in 0..288) {
+            val t = start + i * step
+            val e = eclipse(t) ?: continue
+            val b = best
+            if (b == null || e.kind > b.kind || (e.kind == b.kind && e.magnitude > b.magnitude)) {
+                best = e
+                bestMs = t
+            }
+        }
+        return best?.let { bestMs to it }
+    }
+
     fun eclipseName(e: Eclipse): String = when (e.kind) {
         2 -> "Blood Moon · total lunar eclipse"
         1 -> "Partial lunar eclipse"
