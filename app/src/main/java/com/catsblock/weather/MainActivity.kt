@@ -28,18 +28,17 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.catsblock.weather.alerts.RainAlerts
 import com.catsblock.weather.i18n.I18n
+import com.catsblock.weather.ui.AppIconScreen
 import com.catsblock.weather.ui.BackgroundKitScreen
 import com.catsblock.weather.ui.CityPickerScreen
 import com.catsblock.weather.ui.IconKitScreen
+import com.catsblock.weather.ui.LiveMoonScreen
 import com.catsblock.weather.ui.MainScreen
-import com.catsblock.weather.ui.MapScreen
-import com.catsblock.weather.ui.RadarWebView
 import com.catsblock.weather.ui.Screen
 import com.catsblock.weather.ui.SettingsScreen
 import com.catsblock.weather.ui.WeatherTheme
 import com.catsblock.weather.ui.WeatherViewModel
 import com.catsblock.weather.ui.WelcomeScreen
-import kotlinx.coroutines.delay
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -59,7 +58,6 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun AppRoot(vm: WeatherViewModel) {
     val screen by vm.screen.collectAsStateWithLifecycle()
-    val city by vm.city.collectAsStateWithLifecycle()
     val settings by vm.settings.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val activity = context as ComponentActivity
@@ -68,7 +66,7 @@ private fun AppRoot(vm: WeatherViewModel) {
     val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
     LaunchedEffect(screen, dark) {
-        val style = if (screen == Screen.Main) {
+        val style = if (screen == Screen.Main || screen == Screen.LiveMoon) {
             SystemBarStyle.dark(AndroidColor.TRANSPARENT)
         } else {
             SystemBarStyle.auto(AndroidColor.TRANSPARENT, AndroidColor.TRANSPARENT)
@@ -85,14 +83,6 @@ private fun AppRoot(vm: WeatherViewModel) {
         }
     }
 
-    LaunchedEffect(city?.id, settings.mobileData, screen) {
-        val c = city
-        if (c != null && settings.mobileData && screen == Screen.Main) {
-            delay(4000)
-            RadarWebView.prewarm(context, c.lat, c.lon)
-        }
-    }
-
     BackHandler(enabled = screen != null && screen != Screen.Main && screen != Screen.Welcome) {
         vm.back()
     }
@@ -101,9 +91,10 @@ private fun AppRoot(vm: WeatherViewModel) {
         Screen.Welcome -> WelcomeScreen(vm)
         Screen.Picker -> CityPickerScreen(vm)
         Screen.Main -> MainScreen(vm)
-        Screen.Map -> MapScreen(vm)
         Screen.Settings -> SettingsScreen(vm)
         Screen.IconKit -> IconKitScreen(vm)
         Screen.BackgroundKit -> BackgroundKitScreen(vm)
+        Screen.AppIcon -> AppIconScreen(vm)
+        Screen.LiveMoon -> LiveMoonScreen(vm)
     }
 }
