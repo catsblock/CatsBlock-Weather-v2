@@ -47,6 +47,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.catsblock.weather.i18n.tr
 import java.util.Locale
 
 internal enum class RadarLayer(val label: String, val overlay: String) {
@@ -69,10 +70,6 @@ private fun layerUrl(layer: RadarLayer, lat: Double, lon: Double): String {
         "&marker=true&calendar=now&type=map&location=coordinates&detail=&metricWind=km%2Fh&metricTemp=%C2%B0C"
 }
 
-/**
- * Keeps one WebView alive so the radar can be preloaded in the background
- * and opens instantly when the user goes to the map.
- */
 @SuppressLint("SetJavaScriptEnabled")
 internal object RadarWebView {
     private var view: WebView? = null
@@ -149,7 +146,7 @@ fun MapScreen(vm: WeatherViewModel) {
             TopAppBar(
                 title = {
                     Column {
-                        Text("Radar map", style = MaterialTheme.typography.titleLarge)
+                        Text(tr("Radar map"), style = MaterialTheme.typography.titleLarge)
                         city?.let {
                             Text(
                                 it.name,
@@ -160,7 +157,7 @@ fun MapScreen(vm: WeatherViewModel) {
                     }
                 },
                 navigationIcon = {
-                    IconButton(onClick = vm::back) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back") }
+                    IconButton(onClick = vm::back) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, tr("Back")) }
                 }
             )
         }
@@ -174,7 +171,7 @@ fun MapScreen(vm: WeatherViewModel) {
                     FilterChip(
                         selected = item == layer,
                         onClick = { layer = item },
-                        label = { Text(item.label) }
+                        label = { Text(tr(item.label)) }
                     )
                 }
             }
@@ -208,7 +205,7 @@ fun MapScreen(vm: WeatherViewModel) {
                         ) {
                             CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 3.dp)
                             Spacer(Modifier.width(12.dp))
-                            Text("Loading radar…", style = MaterialTheme.typography.titleSmall)
+                            Text(tr("Loading radar…"), style = MaterialTheme.typography.titleSmall)
                         }
                     }
                 }
