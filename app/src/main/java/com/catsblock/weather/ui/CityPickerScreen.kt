@@ -39,6 +39,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.catsblock.weather.data.Cities
 import com.catsblock.weather.data.City
+import com.catsblock.weather.i18n.tr
 
 fun flagEmoji(code: String): String {
     if (code.length != 2) return "\uD83C\uDF10"
@@ -62,9 +63,9 @@ fun CityPickerScreen(vm: WeatherViewModel) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Choose a location") },
+                title = { Text(tr("Choose a location")) },
                 navigationIcon = {
-                    IconButton(onClick = vm::back) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back") }
+                    IconButton(onClick = vm::back) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, tr("Back")) }
                 }
             )
         }
@@ -76,11 +77,11 @@ fun CityPickerScreen(vm: WeatherViewModel) {
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                 singleLine = true,
                 shape = RoundedCornerShape(28.dp),
-                placeholder = { Text("Search for a city") },
+                placeholder = { Text(tr("Search for a city")) },
                 leadingIcon = { Icon(Icons.Rounded.Search, null) },
                 trailingIcon = {
                     if (text.isNotEmpty()) {
-                        IconButton(onClick = { vm.onQuery("") }) { Icon(Icons.Rounded.Close, "Clear") }
+                        IconButton(onClick = { vm.onQuery("") }) { Icon(Icons.Rounded.Close, tr("Clear text")) }
                     }
                 },
                 colors = TextFieldDefaults.colors(
@@ -98,7 +99,7 @@ fun CityPickerScreen(vm: WeatherViewModel) {
                 searching -> {
                     if (results.isEmpty()) {
                         Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.TopCenter) {
-                            Text(message ?: "Keep typing to search", color = scheme.onSurfaceVariant)
+                            Text(tr(message ?: "Keep typing to search"), color = scheme.onSurfaceVariant)
                         }
                     } else {
                         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
@@ -110,7 +111,7 @@ fun CityPickerScreen(vm: WeatherViewModel) {
                     Cities.continents.forEach { continent ->
                         item(key = continent.title) {
                             Text(
-                                continent.title,
+                                tr(continent.title),
                                 style = MaterialTheme.typography.labelLarge,
                                 color = scheme.primary,
                                 modifier = Modifier.padding(start = 20.dp, top = 20.dp, bottom = 4.dp)
