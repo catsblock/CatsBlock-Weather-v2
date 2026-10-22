@@ -38,6 +38,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.catsblock.weather.R
+import com.catsblock.weather.i18n.tr
 
 @Composable
 fun WelcomeScreen(vm: WeatherViewModel) {
@@ -86,7 +87,7 @@ fun WelcomeScreen(vm: WeatherViewModel) {
             )
             Spacer(Modifier.height(12.dp))
             Text(
-                "Set a location or allow location access to see your forecast.",
+                tr("Set a location or allow location access to see your forecast."),
                 style = MaterialTheme.typography.bodyLarge,
                 color = scheme.onSurfaceVariant,
                 textAlign = TextAlign.Center
@@ -94,7 +95,7 @@ fun WelcomeScreen(vm: WeatherViewModel) {
             if (denied) {
                 Spacer(Modifier.height(12.dp))
                 Text(
-                    "Location permission was denied. You can still define a location manually.",
+                    tr("Location permission was denied. You can still define a location manually."),
                     style = MaterialTheme.typography.bodyMedium,
                     color = scheme.error,
                     textAlign = TextAlign.Center
@@ -105,7 +106,7 @@ fun WelcomeScreen(vm: WeatherViewModel) {
                 onClick = vm::openPicker,
                 modifier = Modifier.fillMaxWidth().height(56.dp)
             ) {
-                Text("Define a location", style = MaterialTheme.typography.labelLarge)
+                Text(tr("Define a location"), style = MaterialTheme.typography.labelLarge)
             }
             Spacer(Modifier.height(12.dp))
             FilledTonalButton(
@@ -122,7 +123,7 @@ fun WelcomeScreen(vm: WeatherViewModel) {
                 },
                 modifier = Modifier.fillMaxWidth().height(56.dp)
             ) {
-                Text("Locate", style = MaterialTheme.typography.labelLarge)
+                Text(tr("Locate"), style = MaterialTheme.typography.labelLarge)
             }
         }
     }
