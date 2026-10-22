@@ -3,16 +3,16 @@ package com.catsblock.weather.ui
 import android.annotation.SuppressLint
 import android.app.Application
 import android.location.Geocoder
-import android.net.ConnectivityManager
-import android.net.NetworkCapabilities
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.catsblock.weather.data.AppSettings
 import com.catsblock.weather.data.City
 import com.catsblock.weather.data.CitySummary
+import com.catsblock.weather.data.NetworkPolicy
 import com.catsblock.weather.data.SettingsStore
 import com.catsblock.weather.data.WeatherBundle
 import com.catsblock.weather.data.WeatherRepository
+import com.catsblock.weather.widget.WidgetUpdater
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import kotlinx.coroutines.CancellationException
@@ -26,7 +26,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
@@ -74,6 +77,13 @@ class WeatherViewModel(private val app: Application) : AndroidViewModel(app) {
         }
         viewModelScope.launch {
             queryText.debounce(2500).collectLatest { runSearch(it.trim()) }
+        }
+        viewModelScope.launch {
+            settings
+                .map { it.fahrenheit to it.language }
+                .distinctUntilChanged()
+                .drop(1)
+                .collect { runCatching { WidgetUpdater.refresh(app) } }
         }
     }
 
@@ -208,14 +218,16 @@ class WeatherViewModel(private val app: Application) : AndroidViewModel(app) {
         val hasData = weather.value is WeatherState.Success
         if (!silent || !hasData) weather.value = WeatherState.Loading
         val current = store.settings.first()
-        if (!networkAllowed(current)) {
+        if (!NetworkPolicy.foregroundAllowed(app, current)) {
             if (!silent || !hasData) {
                 weather.value = WeatherState.Error("Mobile data updates are disabled. Connect to Wi-Fi or enable them in Settings.")
             }
             return
         }
         try {
-            weather.value = WeatherState.Success(repo.fetch(target))
+            val bundle = repo.fetch(target)
+            weather.value = WeatherState.Success(bundle)
+            runCatching { WidgetUpdater.publish(app, target, bundle) }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -225,18 +237,10 @@ class WeatherViewModel(private val app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private fun networkAllowed(current: AppSettings): Boolean {
-        if (current.mobileData) return true
-        val manager = app.getSystemService(ConnectivityManager::class.java)
-        val caps = manager.getNetworkCapabilities(manager.activeNetwork) ?: return false
-        return caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
-            caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)
-    }
-
     fun loadSummaries() {
         viewModelScope.launch {
             val current = store.settings.first()
-            if (!networkAllowed(current)) return@launch
+            if (!NetworkPolicy.foregroundAllowed(app, current)) return@launch
             val list = store.savedCities.first()
             val results = coroutineScope {
                 list.map { c -> async { c.id to runCatching { repo.summary(c) }.getOrNull() } }.awaitAll()
