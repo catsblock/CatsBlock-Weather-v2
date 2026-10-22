@@ -43,7 +43,7 @@ import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 import java.util.Locale
 
-enum class Screen { Welcome, Picker, Main, Settings, IconKit, BackgroundKit, AppIcon, LiveMoon }
+enum class Screen { Welcome, Picker, Main, Settings, IconKit, BackgroundKit, AppIcon, LiveMoon, NightSky }
 
 sealed interface WeatherState {
     data object Idle : WeatherState
@@ -165,10 +165,14 @@ class WeatherViewModel(private val app: Application) : AndroidViewModel(app) {
         screen.value = Screen.BackgroundKit
     }
 
+    fun openNightSky() {
+    screen.value = Screen.NightSky
+    }
+
     fun back() {
         screen.value = when (screen.value) {
             Screen.Picker -> if (city.value != null) Screen.Main else Screen.Welcome
-            Screen.Settings, Screen.LiveMoon -> Screen.Main
+            Screen.Settings, Screen.LiveMoon, Screen.NightSky -> Screen.Main
             Screen.IconKit, Screen.BackgroundKit, Screen.AppIcon -> Screen.Settings
             else -> screen.value
         }
