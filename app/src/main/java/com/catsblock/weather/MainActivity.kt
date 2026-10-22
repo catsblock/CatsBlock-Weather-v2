@@ -34,6 +34,7 @@ import com.catsblock.weather.ui.CityPickerScreen
 import com.catsblock.weather.ui.IconKitScreen
 import com.catsblock.weather.ui.LiveMoonScreen
 import com.catsblock.weather.ui.MainScreen
+import com.catsblock.weather.ui.NightSkyScreen
 import com.catsblock.weather.ui.Screen
 import com.catsblock.weather.ui.SettingsScreen
 import com.catsblock.weather.ui.WeatherTheme
