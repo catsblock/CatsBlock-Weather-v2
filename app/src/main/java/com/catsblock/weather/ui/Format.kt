@@ -1,13 +1,18 @@
 package com.catsblock.weather.ui
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import coil.compose.AsyncImage
 import com.catsblock.weather.data.Condition
 import com.catsblock.weather.i18n.AppLanguage
 import com.catsblock.weather.i18n.I18n
 import com.catsblock.weather.i18n.tr
+import com.catsblock.weather.kit.IconKit
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
@@ -84,8 +89,11 @@ fun dayLabel(date: LocalDate, today: LocalDate): String = when (date) {
 
 @Composable
 fun WeatherIcon(kind: Condition, isDay: Boolean, modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    val version by IconKit.version.collectAsState()
+    val custom = remember(kind, isDay, version) { IconKit.custom(context, kind, isDay) }
     AsyncImage(
-        model = iconUrl(kind, isDay),
+        model = custom ?: iconUrl(kind, isDay),
         contentDescription = kind.label(isDay),
         modifier = modifier,
         contentScale = ContentScale.Fit
