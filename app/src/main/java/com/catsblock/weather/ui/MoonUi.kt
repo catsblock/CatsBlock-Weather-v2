@@ -276,7 +276,7 @@ fun MoonCalendarSheet(
                             ) {
                                 Text(day.toString(), style = MaterialTheme.typography.labelMedium)
                                 Spacer(Modifier.height(4.dp))
-                                MoonDisc(Moon.phase(noon(date)).cycle, Modifier.size(28.dp))
+                                MoonDisc(Moon.phase(noon(date)).cycle, Modifier.size(28.dp), Moon.eclipse(noon(date)))
                             }
                         } else {
                             Spacer(Modifier.weight(1f))
