@@ -84,4 +84,8 @@ class SettingsStore(private val context: Context) {
     suspend fun setCurrent(city: City) {
         context.dataStore.edit { it[Keys.current] = city.toJson().toString() }
     }
+
+    suspend fun clearCurrent() {
+        context.dataStore.edit { it.remove(Keys.current) }
+    }
 }
