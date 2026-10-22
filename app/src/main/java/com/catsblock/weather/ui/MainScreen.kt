@@ -87,9 +87,10 @@ import com.catsblock.weather.data.compassLabel
 import com.catsblock.weather.data.humidityDescription
 import com.catsblock.weather.data.humidityLabel
 import com.catsblock.weather.data.lifeIndex
-import com.catsblock.weather.data.precipLabel
+import com.catsblock.weather.data.precipToday
 import com.catsblock.weather.data.uvAdvice
 import com.catsblock.weather.data.windDescription
+import com.catsblock.weather.i18n.tr
 import com.catsblock.weather.sound.WeatherSoundPlayer
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -125,30 +126,36 @@ fun beaufort(kmh: Double): Int = when {
     else -> 12
 }
 
-fun windShort(kmh: Double): String = when {
-    kmh < 1 -> "Calm air."
-    kmh < 12 -> "A light breeze, very comfortable."
-    kmh < 29 -> "A pleasant breeze."
-    kmh < 50 -> "Strong wind, hold on to your hat."
-    kmh < 75 -> "Very strong wind. Be careful outside."
-    else -> "Dangerous winds. Stay indoors."
-}
+fun windShort(kmh: Double): String = tr(
+    when {
+        kmh < 1 -> "Calm air."
+        kmh < 12 -> "A light breeze, very comfortable."
+        kmh < 29 -> "A pleasant breeze."
+        kmh < 50 -> "Strong wind, hold on to your hat."
+        kmh < 75 -> "Very strong wind. Be careful outside."
+        else -> "Dangerous winds. Stay indoors."
+    }
+)
 
-fun aqiShort(v: Double): String = when {
-    v <= 50.0 -> "Air quality is ideal."
-    v <= 100.0 -> "Air quality is acceptable."
-    v <= 150.0 -> "Unhealthy for sensitive groups."
-    v <= 200.0 -> "Unhealthy air quality."
-    else -> "Hazardous air quality."
-}
+fun aqiShort(v: Double): String = tr(
+    when {
+        v <= 50.0 -> "Air quality is ideal."
+        v <= 100.0 -> "Air quality is acceptable."
+        v <= 150.0 -> "Unhealthy for sensitive groups."
+        v <= 200.0 -> "Unhealthy air quality."
+        else -> "Hazardous air quality."
+    }
+)
 
-fun uvShort(v: Double): String = when {
-    v < 3.0 -> "UV is low right now."
-    v < 5.0 -> "Wear SPF 30 if outside long."
-    v < 7.0 -> "SPF 30 and sunglasses advised."
-    v < 10.0 -> "SPF 50+ and a hat advised."
-    else -> "Avoid direct midday sun."
-}
+fun uvShort(v: Double): String = tr(
+    when {
+        v < 3.0 -> "UV is low right now."
+        v < 5.0 -> "Wear SPF 30 if outside long."
+        v < 7.0 -> "SPF 30 and sunglasses advised."
+        v < 10.0 -> "SPF 50+ and a hat advised."
+        else -> "Avoid direct midday sun."
+    }
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -236,15 +243,15 @@ fun MainScreen(vm: WeatherViewModel) {
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Text(
-                        (state as WeatherState.Error).message,
+                        tr((state as WeatherState.Error).message),
                         style = MaterialTheme.typography.titleMedium.merge(textShadow),
                         color = Color.White,
                         textAlign = TextAlign.Center
                     )
                     Spacer(Modifier.height(20.dp))
-                    Button(onClick = { vm.refresh() }) { Text("Retry") }
+                    Button(onClick = { vm.refresh() }) { Text(tr("Retry")) }
                     Spacer(Modifier.height(8.dp))
-                    FilledTonalButton(onClick = vm::openPicker) { Text("Choose a location") }
+                    FilledTonalButton(onClick = vm::openPicker) { Text(tr("Choose a location")) }
                 }
                 else -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(Modifier.size(48.dp), color = Color.White)
@@ -307,9 +314,9 @@ private fun HeaderBar(
                 }
             }
         }
-        IconButton(onClick = onMap) { Icon(Icons.Rounded.Map, "Radar map", tint = Color.White) }
-        IconButton(onClick = onCities) { Icon(Icons.Rounded.Menu, "Saved cities", tint = Color.White) }
-        IconButton(onClick = onSettings) { Icon(Icons.Rounded.Settings, "Settings", tint = Color.White) }
+        IconButton(onClick = onMap) { Icon(Icons.Rounded.Map, tr("Radar map"), tint = Color.White) }
+        IconButton(onClick = onCities) { Icon(Icons.Rounded.Menu, tr("Saved cities"), tint = Color.White) }
+        IconButton(onClick = onSettings) { Icon(Icons.Rounded.Settings, tr("Settings"), tint = Color.White) }
     }
 }
 
@@ -323,7 +330,7 @@ private fun CitiesDrawer(
     onAdd: () -> Unit
 ) {
     Column(Modifier.verticalScroll(rememberScrollState()).padding(16.dp)) {
-        Text("Saved cities", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(8.dp))
+        Text(tr("Saved cities"), style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(8.dp))
         saved.forEach { c ->
             val summary = summaries[c.id]
             Surface(
@@ -349,12 +356,12 @@ private fun CitiesDrawer(
                     if (summary != null) {
                         Text(tempText(summary.temp, fahrenheit), style = MaterialTheme.typography.titleLarge)
                     }
-                    IconButton(onClick = { onRemove(c) }) { Icon(Icons.Rounded.Close, "Remove ${c.name}") }
+                    IconButton(onClick = { onRemove(c) }) { Icon(Icons.Rounded.Close, "${tr("Remove")} ${c.name}") }
                 }
             }
         }
         Spacer(Modifier.height(8.dp))
-        FilledTonalButton(onClick = onAdd, modifier = Modifier.fillMaxWidth()) { Text("Add a city") }
+        FilledTonalButton(onClick = onAdd, modifier = Modifier.fillMaxWidth()) { Text(tr("Add a city")) }
     }
 }
 
@@ -395,14 +402,14 @@ private fun WeatherDetails(
                 color = Color.White
             )
             Text(
-                cur.text,
+                cur.kind.label(cur.isDay),
                 style = MaterialTheme.typography.titleLarge.merge(textShadow),
                 fontWeight = FontWeight.Medium,
                 color = Color.White
             )
             Spacer(Modifier.height(6.dp))
             Text(
-                "Feels like ${tempText(cur.feels, fahrenheit)}    Wind ${compassLabel(cur.windDir)} ${beaufort(cur.windSpeed)}",
+                "${tr("Feels like")} ${tempText(cur.feels, fahrenheit)}    ${tr("Wind")} ${compassLabel(cur.windDir)} ${beaufort(cur.windSpeed)}",
                 style = MaterialTheme.typography.bodyMedium.merge(textShadow),
                 color = Color.White.copy(alpha = 0.85f)
             )
@@ -423,17 +430,16 @@ private fun WeatherDetails(
 
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 MetricCard(
-                    title = "Precipitation",
+                    title = tr("Precipitation"),
                     icon = Icons.Rounded.Umbrella,
                     value = f1(todayDay.precipSum),
                     unit = "mm",
-                    description = if (todayDay.precipSum <= 0.0) "No precipitation expected today."
-                    else "${precipLabel(todayDay.precipSum)} rain accumulated today.",
+                    description = precipToday(todayDay.precipSum),
                     modifier = Modifier.weight(1f),
                     onClick = { sheet = Sheet.Precip }
                 )
                 MetricCard(
-                    title = "Wind",
+                    title = tr("Wind"),
                     icon = Icons.Rounded.Air,
                     value = beaufort(cur.windSpeed).toString(),
                     unit = "${compassLabel(cur.windDir)} | ${cur.windSpeed.toInt()} km/h",
@@ -444,16 +450,16 @@ private fun WeatherDetails(
             }
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 MetricCard(
-                    title = "Air quality",
+                    title = tr("Air quality"),
                     icon = Icons.Rounded.Eco,
                     value = cur.aqi?.toInt()?.toString() ?: "--",
                     unit = cur.aqi?.let { com.catsblock.weather.data.aqiStatus(it) },
-                    description = cur.aqi?.let { aqiShort(it) } ?: "Air quality data is not available here.",
+                    description = cur.aqi?.let { aqiShort(it) } ?: tr("Air quality data is not available here."),
                     modifier = Modifier.weight(1f),
                     onClick = if (cur.aqi != null) ({ sheet = Sheet.Air }) else null
                 )
                 MetricCard(
-                    title = "UV index",
+                    title = tr("UV index"),
                     icon = Icons.Rounded.WbSunny,
                     value = cur.uv.toInt().toString(),
                     unit = com.catsblock.weather.data.uvLevel(cur.uv),
@@ -464,7 +470,7 @@ private fun WeatherDetails(
             }
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 MetricCard(
-                    title = "Humidity",
+                    title = tr("Humidity"),
                     icon = Icons.Rounded.WaterDrop,
                     value = "${cur.humidity}%",
                     unit = null,
@@ -505,7 +511,7 @@ private fun WeatherDetails(
                 when (current) {
                     is Sheet.DaySheet -> Unit
                     Sheet.Days -> {
-                        Text("Next 7 days", style = MaterialTheme.typography.titleLarge)
+                        Text(tr("Next 7 days"), style = MaterialTheme.typography.titleLarge)
                         Spacer(Modifier.height(12.dp))
                         upcoming.forEach { d ->
                             Row(
@@ -542,7 +548,7 @@ private fun WeatherDetails(
                         }
                     }
                     Sheet.Precip -> {
-                        Text("Precipitation, next 24 hours", style = MaterialTheme.typography.titleLarge)
+                        Text(tr("Precipitation, next 24 hours"), style = MaterialTheme.typography.titleLarge)
                         Spacer(Modifier.height(12.dp))
                         SimpleChart(
                             values = next24.map { it.precip },
@@ -552,10 +558,10 @@ private fun WeatherDetails(
                             minY = 0.0,
                             maxY = next24.maxOfOrNull { it.precip }?.coerceAtLeast(1.0) ?: 1.0
                         )
-                        Text("Millimeters per hour", style = MaterialTheme.typography.labelMedium)
+                        Text(tr("Millimeters per hour"), style = MaterialTheme.typography.labelMedium)
                     }
                     Sheet.Wind -> {
-                        Text("Wind, next 24 hours", style = MaterialTheme.typography.titleLarge)
+                        Text(tr("Wind, next 24 hours"), style = MaterialTheme.typography.titleLarge)
                         Text(
                             windDescription(cur.windSpeed),
                             style = MaterialTheme.typography.bodyMedium,
@@ -569,11 +575,11 @@ private fun WeatherDetails(
                             minY = 0.0,
                             maxY = next24.maxOfOrNull { it.windSpeed }?.coerceAtLeast(10.0) ?: 10.0
                         )
-                        Text("Speed in km/h with direction", style = MaterialTheme.typography.labelMedium)
+                        Text(tr("Speed in km/h with direction"), style = MaterialTheme.typography.labelMedium)
                     }
                     Sheet.Air -> {
                         val aqiHours = next24.filter { it.aqi != null }
-                        Text("Air quality, next 24 hours", style = MaterialTheme.typography.titleLarge)
+                        Text(tr("Air quality, next 24 hours"), style = MaterialTheme.typography.titleLarge)
                         cur.aqi?.let {
                             Text(
                                 aqiAdvice(it),
@@ -592,14 +598,14 @@ private fun WeatherDetails(
                             maxY = aqiHours.maxOfOrNull { it.aqi ?: 0.0 }?.coerceAtLeast(50.0) ?: 50.0,
                             stepWidth = 72.dp
                         )
-                        Text("US AQI", style = MaterialTheme.typography.labelMedium)
+                        Text(tr("US AQI"), style = MaterialTheme.typography.labelMedium)
                     }
                     Sheet.Uv -> {
                         val uvHours = bundle.hours.filter {
                             val d = it.time.toLocalDate()
                             d == today || d == today.plusDays(1)
                         }
-                        Text("UV index, today and tomorrow", style = MaterialTheme.typography.titleLarge)
+                        Text(tr("UV index, today and tomorrow"), style = MaterialTheme.typography.titleLarge)
                         Text(
                             uvAdvice(cur.uv),
                             style = MaterialTheme.typography.bodyMedium,
@@ -613,10 +619,10 @@ private fun WeatherDetails(
                             minY = 0.0,
                             maxY = uvHours.maxOfOrNull { it.uv }?.coerceAtLeast(3.0) ?: 3.0
                         )
-                        Text("Hourly UV variation", style = MaterialTheme.typography.labelMedium)
+                        Text(tr("Hourly UV variation"), style = MaterialTheme.typography.labelMedium)
                     }
                     Sheet.Humidity -> {
-                        Text("Humidity, next 24 hours", style = MaterialTheme.typography.titleLarge)
+                        Text(tr("Humidity, next 24 hours"), style = MaterialTheme.typography.titleLarge)
                         Text(
                             humidityDescription(cur.humidity),
                             style = MaterialTheme.typography.bodyMedium,
