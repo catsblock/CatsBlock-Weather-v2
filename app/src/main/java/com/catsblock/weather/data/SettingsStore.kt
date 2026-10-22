@@ -3,6 +3,7 @@ package com.catsblock.weather.data
 import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.catsblock.weather.i18n.AppLanguage
@@ -20,6 +21,8 @@ class SettingsStore(private val context: Context) {
         val mobileData = booleanPreferencesKey("mobile_data")
         val sounds = booleanPreferencesKey("sounds")
         val language = stringPreferencesKey("language")
+        val rainAlerts = booleanPreferencesKey("rain_alerts")
+        val rainLead = intPreferencesKey("rain_lead_minutes")
         val saved = stringPreferencesKey("saved_cities")
         val current = stringPreferencesKey("current_city")
     }
@@ -29,7 +32,9 @@ class SettingsStore(private val context: Context) {
             fahrenheit = it[Keys.fahrenheit] ?: false,
             mobileData = it[Keys.mobileData] ?: true,
             sounds = it[Keys.sounds] ?: true,
-            language = AppLanguage.from(it[Keys.language])
+            language = AppLanguage.from(it[Keys.language]),
+            rainAlerts = it[Keys.rainAlerts] ?: true,
+            rainLeadMinutes = it[Keys.rainLead]?.takeIf { value -> value in RainLeadOptions } ?: 60
         )
     }
 
@@ -60,6 +65,14 @@ class SettingsStore(private val context: Context) {
 
     suspend fun setLanguage(value: AppLanguage) {
         context.dataStore.edit { it[Keys.language] = value.code }
+    }
+
+    suspend fun setRainAlerts(value: Boolean) {
+        context.dataStore.edit { it[Keys.rainAlerts] = value }
+    }
+
+    suspend fun setRainLead(minutes: Int) {
+        context.dataStore.edit { it[Keys.rainLead] = minutes }
     }
 
     suspend fun saveCities(cities: List<City>) {
