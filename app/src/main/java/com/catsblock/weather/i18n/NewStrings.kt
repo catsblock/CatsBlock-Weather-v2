@@ -10,6 +10,7 @@ private fun n(en: String, br: String, pt: String, es: String, fr: String, ru: St
     en to arrayOf(br, pt, es, fr, ru, de)
 
 private val N: Map<String, Array<String>> = mapOf(
+    n("Your location", "Sua localização", "A sua localização", "Tu ubicación", "Votre position", "Ваше местоположение", "Dein Standort"),
     n("Rain radar", "Radar de chuva", "Radar de chuva", "Radar de lluvia", "Radar de pluie", "Радар осадков", "Regenradar"),
     n("Blowing to", "Soprando para", "A soprar para", "Soplando hacia", "Soufflant vers", "Дует на", "Weht nach"),
     n("Theme", "Tema", "Tema", "Tema", "Thème", "Тема", "Design"),
