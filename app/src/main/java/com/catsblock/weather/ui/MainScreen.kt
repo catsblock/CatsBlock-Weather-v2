@@ -96,6 +96,11 @@ import com.catsblock.weather.data.uvAdvice
 import com.catsblock.weather.data.windDescription
 import com.catsblock.weather.i18n.tr
 import com.catsblock.weather.sound.WeatherSoundPlayer
+import com.catsblock.weather.ui.glass.LocalHazeState
+import com.catsblock.weather.ui.glass.hazeBackdropSource
+import com.catsblock.weather.ui.particles.ParticleOverlay
+import com.catsblock.weather.ui.particles.ParticleWeather
+import dev.chrisbanes.haze.HazeState
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.temporal.ChronoUnit
@@ -197,12 +202,14 @@ fun MainScreen(vm: WeatherViewModel) {
     val scope = rememberCoroutineScope()
     val scroll = rememberScrollState()
     val scheme = MaterialTheme.colorScheme
+    val hazeState = remember { HazeState() }
+    var mode by remember { mutableStateOf(DashboardMode.Temperature) }
 
     val bundle = (state as? WeatherState.Success)?.bundle
     val kind = bundle?.current?.kind ?: Condition.Clear
     val isDay = bundle?.current?.isDay ?: true
     val progress = (scroll.value / 700f).coerceIn(0f, 1f)
-    val headerHeight = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 66.dp
+    val headerHeight = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 112.dp
 
     val sound = remember { WeatherSoundPlayer() }
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -249,12 +256,15 @@ fun MainScreen(vm: WeatherViewModel) {
             }
         }
     ) {
+        CompositionLocalProvider(LocalHazeState provides hazeState) {
         Box(Modifier.fillMaxSize()) {
-            WeatherBackground(
-                kind,
-                isDay,
-                Modifier.fillMaxSize().blur((progress * 30f).dp, BlurredEdgeTreatment.Unbounded)
-            )
+            Box(Modifier.fillMaxSize().hazeBackdropSource(hazeState)) {
+                WeatherBackground(
+                    kind,
+                    isDay,
+                    Modifier.fillMaxSize().blur((progress * 30f).dp, BlurredEdgeTreatment.Unbounded)
+                )
+            }
             Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = progress * 0.32f)))
             Box(Modifier.fillMaxSize().background(scheme.primary.copy(alpha = progress * 0.14f)))
 
@@ -265,6 +275,7 @@ fun MainScreen(vm: WeatherViewModel) {
                     fahrenheit = settings.fahrenheit,
                     scroll = scroll,
                     headerHeight = headerHeight,
+                    mode = mode,
                     onLiveMoon = vm::openLiveMoon
                 )
                 state is WeatherState.Error -> Column(
@@ -288,7 +299,20 @@ fun MainScreen(vm: WeatherViewModel) {
                 }
             }
 
+            ParticleOverlay(
+                when {
+                    bundle == null -> ParticleWeather.None
+                    kind == Condition.Storm -> ParticleWeather.Storm
+                    kind == Condition.Rain -> ParticleWeather.HeavyRain
+                    kind == Condition.Drizzle -> ParticleWeather.Rain
+                    kind in snowKinds -> ParticleWeather.Snow
+                    else -> ParticleWeather.None
+                }
+            )
+
             HeaderBar(
+                mode = mode,
+                onMode = { mode = it },
                 name = city?.name.orEmpty(),
                 temp = bundle?.let { tempText(it.current.temp, settings.fahrenheit) },
                 progress = progress,
@@ -301,11 +325,14 @@ fun MainScreen(vm: WeatherViewModel) {
                 onSettings = vm::openSettings
             )
         }
+        }
     }
 }
 
 @Composable
 private fun HeaderBar(
+    mode: DashboardMode,
+    onMode: (DashboardMode) -> Unit,
     name: String,
     temp: String?,
     progress: Float,
@@ -341,6 +368,8 @@ private fun HeaderBar(
                     )
                 }
             }
+            Spacer(Modifier.height(8.dp))
+            ModeSelector(mode, onMode)
         }
         IconButton(onClick = onCities) { Icon(Icons.Rounded.Menu, tr("Saved cities"), tint = Color.White) }
         IconButton(onClick = onSettings) { Icon(Icons.Rounded.Settings, tr("Settings"), tint = Color.White) }
@@ -400,6 +429,7 @@ private fun WeatherDetails(
     fahrenheit: Boolean,
     scroll: ScrollState,
     headerHeight: Dp,
+    mode: DashboardMode,
     onLiveMoon: () -> Unit
 ) {
     val cur = bundle.current
@@ -477,7 +507,7 @@ private fun WeatherDetails(
                         onDayClick = { sheet = Sheet.DaySheet(it) },
                         onMore = { sheet = Sheet.Days }
                     )
-                    CardsDashboard(bundle, city, todayDay) { key ->
+                    CardsDashboard(bundle, city, todayDay, mode) { key ->
                         sheet = when (key) {
                             "Precip" -> Sheet.Precip
                             "Wind" -> Sheet.Wind
