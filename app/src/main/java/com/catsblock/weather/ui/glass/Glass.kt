@@ -1,5 +1,6 @@
 package com.catsblock.weather.ui.glass
 
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -17,6 +18,7 @@ val LocalHazeState = compositionLocalOf { HazeState() }
 fun Modifier.hazeBackdropSource(state: HazeState): Modifier = hazeSource(state = state)
 
 @OptIn(ExperimentalHazeMaterialsApi::class)
+@Composable
 fun Modifier.frostedGlassCard(
     state: HazeState,
     shape: Shape,
