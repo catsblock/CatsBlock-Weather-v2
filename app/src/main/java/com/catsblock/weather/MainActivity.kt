@@ -12,6 +12,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
@@ -86,15 +88,17 @@ private fun AppRoot(vm: WeatherViewModel) {
     BackHandler(enabled = screen != null && screen != Screen.Main && screen != Screen.Welcome) {
         vm.back()
     }
-    when (screen) {
-        null -> Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background))
-        Screen.Welcome -> WelcomeScreen(vm)
-        Screen.Picker -> CityPickerScreen(vm)
-        Screen.Main -> MainScreen(vm)
-        Screen.Settings -> SettingsScreen(vm)
-        Screen.IconKit -> IconKitScreen(vm)
-        Screen.BackgroundKit -> BackgroundKitScreen(vm)
-        Screen.AppIcon -> AppIconScreen(vm)
-        Screen.LiveMoon -> LiveMoonScreen(vm)
+    Crossfade(targetState = screen, animationSpec = tween(320), label = "screen") { target ->
+        when (target) {
+            null -> Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background))
+            Screen.Welcome -> WelcomeScreen(vm)
+            Screen.Picker -> CityPickerScreen(vm)
+            Screen.Main -> MainScreen(vm)
+            Screen.Settings -> SettingsScreen(vm)
+            Screen.IconKit -> IconKitScreen(vm)
+            Screen.BackgroundKit -> BackgroundKitScreen(vm)
+            Screen.AppIcon -> AppIconScreen(vm)
+            Screen.LiveMoon -> LiveMoonScreen(vm)
+        }
     }
 }
