@@ -477,84 +477,17 @@ private fun WeatherDetails(
                         onDayClick = { sheet = Sheet.DaySheet(it) },
                         onMore = { sheet = Sheet.Days }
                     )
-                    if (rainingNow && city != null) {
-                        PrecipMapCard(city, snowingNow, next36.firstOrNull()?.precip ?: 0.0)
-                    }
-
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        MetricCard(
-                            title = tr("Precipitation"),
-                            icon = Icons.Rounded.Umbrella,
-                            value = f1(todayDay.precipSum),
-                            unit = "mm",
-                            description = precipToday(todayDay.precipSum),
-                            modifier = Modifier.weight(1f),
-                            onClick = { sheet = Sheet.Precip }
-                        )
-                        MetricCard(
-                            title = tr("Wind"),
-                            icon = Icons.Rounded.Air,
-                            value = beaufort(cur.windSpeed).toString(),
-                            unit = "${compassLabel(cur.windDir)} | ${cur.windSpeed.toInt()} km/h",
-                            description = windShort(cur.windSpeed),
-                            modifier = Modifier.weight(1f),
-                            onClick = { sheet = Sheet.Wind }
-                        )
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        MetricCard(
-                            title = tr("Air quality"),
-                            icon = Icons.Rounded.Eco,
-                            value = cur.aqi?.toInt()?.toString() ?: "--",
-                            unit = cur.aqi?.let { com.catsblock.weather.data.aqiStatus(it) },
-                            description = cur.aqi?.let { aqiShort(it) } ?: tr("Air quality data is not available here."),
-                            modifier = Modifier.weight(1f),
-                            onClick = if (cur.aqi != null) ({ sheet = Sheet.Air }) else null
-                        )
-                        MetricCard(
-                            title = tr("UV index"),
-                            icon = Icons.Rounded.WbSunny,
-                            value = cur.uv.toInt().toString(),
-                            unit = com.catsblock.weather.data.uvLevel(cur.uv),
-                            description = uvShort(cur.uv),
-                            modifier = Modifier.weight(1f),
-                            onClick = { sheet = Sheet.Uv }
-                        )
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        MetricCard(
-                            title = tr("Humidity"),
-                            icon = Icons.Rounded.WaterDrop,
-                            value = "${cur.humidity}%",
-                            unit = null,
-                            description = humidityLabel(cur.humidity),
-                            modifier = Modifier.weight(1f),
-                            onClick = { sheet = Sheet.Humidity }
-                        )
-                        SunCard(todayDay.sunrise, todayDay.sunset, cur.now, Modifier.weight(1f))
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        MetricCard(
-                            title = tr("Pressure"),
-                            icon = Icons.Rounded.Speed,
-                            value = cur.pressure.roundToInt().toString(),
-                            unit = "hPa",
-                            description = pressureShort(cur.pressure),
-                            modifier = Modifier.weight(1f),
-                            onClick = { sheet = Sheet.Pressure }
-                        )
-                        MetricCard(
-                            title = tr("Visibility"),
-                            icon = Icons.Rounded.Visibility,
-                            value = visibilityText(visibilityKm),
-                            unit = "km",
-                            description = visibilityShort(visibilityKm),
-                            modifier = Modifier.weight(1f),
-                            onClick = { sheet = Sheet.Visibility }
-                        )
-                    }
-                    city?.let {
-                        MoonCard(it, bundle.utcOffsetSeconds, cur.now) { sheet = Sheet.Moon }
+                    CardsDashboard(bundle, city, todayDay) { key ->
+                        sheet = when (key) {
+                            "Precip" -> Sheet.Precip
+                            "Wind" -> Sheet.Wind
+                            "Air" -> Sheet.Air
+                            "Uv" -> Sheet.Uv
+                            "Humidity" -> Sheet.Humidity
+                            "Pressure" -> Sheet.Pressure
+                            "Visibility" -> Sheet.Visibility
+                            else -> Sheet.Moon
+                        }
                     }
                     LifeIndexCard(
                         lifeIndex(
