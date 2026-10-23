@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -32,9 +33,9 @@ import com.catsblock.weather.ui.AppIconScreen
 import com.catsblock.weather.ui.BackgroundKitScreen
 import com.catsblock.weather.ui.CityPickerScreen
 import com.catsblock.weather.ui.IconKitScreen
+import com.catsblock.weather.ui.LocalAppTheme
 import com.catsblock.weather.ui.LiveMoonScreen
 import com.catsblock.weather.ui.MainScreen
-import com.catsblock.weather.ui.ProvideUiPrefs
 import com.catsblock.weather.ui.Screen
 import com.catsblock.weather.ui.SettingsScreen
 import com.catsblock.weather.ui.WeatherTheme
@@ -47,10 +48,10 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             WeatherTheme {
-                ProvideUiPrefs {
-                    val vm: WeatherViewModel = viewModel()
-                    val settings by vm.settings.collectAsStateWithLifecycle()
-                    I18n.lang = settings.language
+                val vm: WeatherViewModel = viewModel()
+                val settings by vm.settings.collectAsStateWithLifecycle()
+                I18n.lang = settings.language
+                CompositionLocalProvider(LocalAppTheme provides settings.theme) {
                     key(settings.language) { AppRoot(vm) }
                 }
             }
