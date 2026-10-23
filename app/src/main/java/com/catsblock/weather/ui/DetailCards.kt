@@ -66,7 +66,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.catsblock.weather.data.AppTheme
 import com.catsblock.weather.data.Day
 import com.catsblock.weather.data.Hour
 import com.catsblock.weather.data.LifeItem
@@ -84,8 +83,6 @@ private val HourStep = 68.dp
 private val DayStep = 70.dp
 
 val LocalGlass = compositionLocalOf { false }
-
-val LocalAppTheme = compositionLocalOf { AppTheme.Glassmorphism }
 
 @Composable
 fun GlassCard(
