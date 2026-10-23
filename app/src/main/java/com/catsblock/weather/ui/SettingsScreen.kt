@@ -40,6 +40,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.ColorLens
 import androidx.compose.material.icons.rounded.AppShortcut
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CheckCircle
@@ -96,6 +97,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.catsblock.weather.data.AppTheme
 import com.catsblock.weather.data.RainLeadOptions
 import com.catsblock.weather.data.SettingsStore
 import com.catsblock.weather.i18n.AppLanguage
@@ -131,6 +133,7 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
     val scope = rememberCoroutineScope()
     var langDialog by remember { mutableStateOf(false) }
     var leadDialog by remember { mutableStateOf(false) }
+    var themeDialog by remember { mutableStateOf(false) }
     var notificationsOn by remember { mutableStateOf(notificationsAllowed(ctx)) }
     var openSettingsOnDeny by remember { mutableStateOf(false) }
     val owner = LocalLifecycleOwner.current
@@ -192,6 +195,35 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
         )
     }
 
+    if (themeDialog) {
+        AlertDialog(
+            onDismissRequest = { themeDialog = false },
+            title = { Text(trx("Theme")) },
+            text = {
+                Column {
+                    AppTheme.entries.forEach { t ->
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    themeDialog = false
+                                    scope.launch { SettingsStore(ctx.applicationContext).setTheme(t) }
+                                }
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(selected = settings.theme == t, onClick = null)
+                            Spacer(Modifier.width(12.dp))
+                            Text(trx(t.label), style = MaterialTheme.typography.bodyLarge)
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = { TextButton(onClick = { themeDialog = false }) { Text("OK") } }
+        )
+    }
+
     if (leadDialog) {
         AlertDialog(
             onDismissRequest = { leadDialog = false },
@@ -242,7 +274,6 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
                 .padding(horizontal = 16.dp, vertical = 8.dp)
         ) {
             UpdateCard(up)
-            AppearanceSection()
 
             GroupLabel(tr("App language"))
             Group {
@@ -278,6 +309,12 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
 
             GroupLabel(trx("Customization"))
             Group {
+                NavRow(
+                    Icons.Rounded.ColorLens,
+                    trx("Theme"),
+                    trx(settings.theme.label)
+                ) { themeDialog = true }
+                GroupDivider()
                 NavRow(
                     Icons.Rounded.Palette,
                     trx("Weather Icon Kit"),
