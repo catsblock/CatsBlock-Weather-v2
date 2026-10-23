@@ -8,11 +8,8 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -52,16 +49,20 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
@@ -70,8 +71,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
-import com.catsblock.weather.data.CardId
-import com.catsblock.weather.data.CardShape
 import com.catsblock.weather.data.City
 import com.catsblock.weather.data.Day
 import com.catsblock.weather.data.WeatherBundle
@@ -80,6 +79,8 @@ import com.catsblock.weather.data.compassLabel
 import com.catsblock.weather.data.humidityLabel
 import com.catsblock.weather.data.precipToday
 import com.catsblock.weather.data.uvLevel
+import com.catsblock.weather.i18n.AppLanguage
+import com.catsblock.weather.i18n.I18n
 import com.catsblock.weather.i18n.tr
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -130,6 +131,17 @@ object RadarLoader {
     }
 }
 
+private val MapLift = ColorFilter.colorMatrix(
+    ColorMatrix(
+        floatArrayOf(
+            2.4f, 0f, 0f, 0f, 22f,
+            0f, 2.4f, 0f, 0f, 22f,
+            0f, 0f, 2.4f, 0f, 26f,
+            0f, 0f, 0f, 1f, 0f
+        )
+    )
+)
+
 @Composable
 fun RadarCard(city: City, offsetSeconds: Int, modifier: Modifier = Modifier) {
     val set by produceState<RadarSet?>(null) { value = RadarLoader.load() }
@@ -150,14 +162,14 @@ fun RadarCard(city: City, offsetSeconds: Int, modifier: Modifier = Modifier) {
         CardHeader(Icons.Rounded.Map, tr("Rain radar"))
         BoxWithConstraints(
             Modifier.fillMaxWidth().weight(1f).padding(top = 8.dp).clip(mapShape)
-                .background(Color(0xFF0E1013)).border(1.dp, Color.White.copy(alpha = 0.22f), mapShape)
+                .background(Color(0xFF30343B)).border(1.dp, Color.White.copy(alpha = 0.22f), mapShape)
         ) {
             val z = 6
             val n = 1 shl z
             val latR = Math.toRadians(city.lat)
             val tx = n * (city.lon + 180.0) / 360.0
             val ty = n * (1.0 - ln(tan(latR) + 1.0 / cos(latR)) / PI) / 2.0
-            val t = 220.dp
+            val t = 256.dp
             val bx = floor(tx).toInt()
             val by = floor(ty).toInt()
             for (dx in -1..1) {
@@ -173,7 +185,8 @@ fun RadarCard(city: City, offsetSeconds: Int, modifier: Modifier = Modifier) {
                             model = "https://basemaps.cartocdn.com/dark_nolabels/$z/$xx/$y.png",
                             contentDescription = null,
                             modifier = pos,
-                            contentScale = ContentScale.FillBounds
+                            contentScale = ContentScale.FillBounds,
+                            colorFilter = MapLift
                         )
                         val s = set
                         if (s != null && frame != null) {
@@ -191,19 +204,9 @@ fun RadarCard(city: City, offsetSeconds: Int, modifier: Modifier = Modifier) {
                 Modifier.align(Alignment.Center).size(11.dp).clip(CircleShape).background(Color.White)
                     .border(2.dp, Color(0xFF4FC3F7), CircleShape)
             )
-            if (frame != null) {
-                val clock = clockLabel(LocalDateTime.ofEpochSecond(frame.time, 0, ZoneOffset.ofTotalSeconds(offsetSeconds)))
-                Text(
-                    clock,
-                    Modifier.align(Alignment.TopEnd).padding(8.dp).clip(RoundedCornerShape(10.dp))
-                        .background(Color.Black.copy(alpha = 0.55f)).padding(horizontal = 8.dp, vertical = 3.dp),
-                    color = Color.White,
-                    style = MaterialTheme.typography.labelLarge
-                )
-            }
             Row(
                 Modifier.align(Alignment.BottomCenter).fillMaxWidth()
-                    .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.75f))))
+                    .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.6f))))
                     .padding(horizontal = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -225,14 +228,15 @@ fun RadarCard(city: City, offsetSeconds: Int, modifier: Modifier = Modifier) {
                         disabledInactiveTrackColor = Color.White.copy(alpha = 0.15f)
                     )
                 )
+                val clock = frame?.let {
+                    clockLabel(LocalDateTime.ofEpochSecond(it.time, 0, ZoneOffset.ofTotalSeconds(offsetSeconds)))
+                } ?: "--:--"
                 val mins = if (frame != null && last != null) ((last.time - frame.time) / 60L).toInt() else 0
-                Text(
-                    if (mins <= 0) tr("Now") else if (mins < 60) "-${mins}m" else "-${mins / 60}h ${mins % 60}m",
-                    Modifier.width(54.dp).padding(end = 6.dp),
-                    color = Color.White,
-                    style = MaterialTheme.typography.labelMedium,
-                    maxLines = 1
-                )
+                val rel = if (mins <= 0) tr("Now") else if (mins < 60) "-${mins}m" else "-${mins / 60}h ${mins % 60}m"
+                androidx.compose.foundation.layout.Column(Modifier.width(62.dp).padding(end = 6.dp)) {
+                    Text(clock, color = Color.White, style = MaterialTheme.typography.labelLarge, maxLines = 1)
+                    Text(rel, color = Color.White.copy(alpha = 0.75f), style = MaterialTheme.typography.labelSmall, maxLines = 1)
+                }
             }
         }
     }
@@ -246,6 +250,7 @@ fun SunCardV2(sunrise: LocalDateTime, sunset: LocalDateTime, now: LocalDateTime,
     val up = !now.isBefore(sunrise) && !now.isAfter(sunset)
     val progress by animateFloatAsState(target, tween(1100), label = "sun")
     val ink = MaterialTheme.colorScheme.onSurface
+    val sunColor = if (LocalGlass.current) Color.White else Color(0xFFFFA000)
     GlassCard(modifier, null, Modifier.fillMaxSize()) {
         CardHeader(Icons.Rounded.WbTwilight, tr("Sun"))
         Spacer(Modifier.weight(1f))
@@ -260,7 +265,7 @@ fun SunCardV2(sunrise: LocalDateTime, sunset: LocalDateTime, now: LocalDateTime,
                 style = Stroke(2.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f)))
             )
             drawArc(
-                Color.White.copy(alpha = 0.4f), 180f, 180f * progress, false, Offset(cx - r, cy - r), Size(2 * r, 2 * r),
+                sunColor.copy(alpha = 0.4f), 180f, 180f * progress, false, Offset(cx - r, cy - r), Size(2 * r, 2 * r),
                 style = Stroke(2.5f.dp.toPx(), cap = StrokeCap.Round)
             )
             val a = PI * (1.0 - progress)
@@ -271,7 +276,7 @@ fun SunCardV2(sunrise: LocalDateTime, sunset: LocalDateTime, now: LocalDateTime,
                     val a1 = a + dir * step * k
                     val a2 = a + dir * step * (k + 1)
                     if (a1 in 0.0..PI && a2 in 0.0..PI) {
-                        drawLine(Color.White.copy(alpha = fade), p(a1), p(a2), 3.4f.dp.toPx(), StrokeCap.Round)
+                        drawLine(sunColor.copy(alpha = fade), p(a1), p(a2), 3.4f.dp.toPx(), StrokeCap.Round)
                     }
                 }
             }
@@ -279,7 +284,7 @@ fun SunCardV2(sunrise: LocalDateTime, sunset: LocalDateTime, now: LocalDateTime,
             val glow = if (up) 1f else 0.45f
             drawCircle(
                 Brush.radialGradient(
-                    listOf(Color.White.copy(alpha = 0.85f * glow), Color.White.copy(alpha = 0.25f * glow), Color.Transparent),
+                    listOf(sunColor.copy(alpha = 0.85f * glow), sunColor.copy(alpha = 0.25f * glow), Color.Transparent),
                     center = s,
                     radius = 36.dp.toPx()
                 ),
@@ -290,13 +295,13 @@ fun SunCardV2(sunrise: LocalDateTime, sunset: LocalDateTime, now: LocalDateTime,
                 val inner = 11.dp.toPx()
                 val outer = if (i % 2 == 0) 22.dp.toPx() else 16.dp.toPx()
                 drawLine(
-                    Color.White.copy(alpha = 0.9f * glow),
+                    sunColor.copy(alpha = 0.9f * glow),
                     Offset(s.x + inner * cos(ang).toFloat(), s.y + inner * sin(ang).toFloat()),
                     Offset(s.x + outer * cos(ang).toFloat(), s.y + outer * sin(ang).toFloat()),
                     2.dp.toPx(), StrokeCap.Round
                 )
             }
-            drawCircle(Color.White.copy(alpha = glow), 8.dp.toPx(), s)
+            drawCircle(sunColor.copy(alpha = glow), 8.dp.toPx(), s)
         }
         Spacer(Modifier.height(4.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -309,7 +314,7 @@ fun SunCardV2(sunrise: LocalDateTime, sunset: LocalDateTime, now: LocalDateTime,
 @Composable
 private fun GradientBarCard(
     title: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    icon: ImageVector,
     value: String,
     status: String?,
     text: String,
@@ -325,26 +330,39 @@ private fun GradientBarCard(
         CardHeader(icon, title)
         Spacer(Modifier.height(6.dp))
         Row(verticalAlignment = Alignment.Bottom) {
-            Text(value, style = MaterialTheme.typography.displaySmall.copy(fontWeight = FontWeight.Light, fontSize = 40.sp, lineHeight = 46.sp), maxLines = 1)
+            Text(
+                value,
+                style = MaterialTheme.typography.displaySmall.copy(fontWeight = FontWeight.Light, fontSize = 40.sp, lineHeight = 46.sp),
+                maxLines = 1
+            )
             if (status != null) {
                 Spacer(Modifier.width(8.dp))
-                Text(status, Modifier.padding(bottom = 8.dp), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(
+                    status,
+                    Modifier.padding(bottom = 8.dp),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
         }
         Spacer(Modifier.height(4.dp))
-        Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 3, overflow = TextOverflow.Ellipsis)
+        Text(
+            text,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 3,
+            overflow = TextOverflow.Ellipsis
+        )
         Spacer(Modifier.weight(1f))
         Canvas(Modifier.fillMaxWidth().height(16.dp)) {
             val h = 7.dp.toPx()
             val top = (size.height - h) / 2f
-            drawRoundRect(
-                Brush.horizontalGradient(colors),
-                Offset(0f, top), Size(size.width, h),
-                androidx.compose.ui.geometry.CornerRadius(h / 2f)
-            )
+            drawRoundRect(Brush.horizontalGradient(colors), Offset(0f, top), Size(size.width, h), CornerRadius(h / 2f))
             val x = (size.width * f).coerceIn(2.dp.toPx(), size.width - 2.dp.toPx())
-            drawLine(Color.White, Offset(x, 0f), Offset(x, size.height), 3.dp.toPx(), StrokeCap.Round)
-            drawLine(Color.Black.copy(alpha = 0.35f), Offset(x, 1.dp.toPx()), Offset(x, size.height - 1.dp.toPx()), 1.dp.toPx(), StrokeCap.Round)
+            drawLine(Color.Black.copy(alpha = 0.35f), Offset(x, 0f), Offset(x, size.height), 4.5f.dp.toPx(), StrokeCap.Round)
+            drawLine(Color.White, Offset(x, 1.dp.toPx()), Offset(x, size.height - 1.dp.toPx()), 3.dp.toPx(), StrokeCap.Round)
         }
     }
 }
@@ -368,24 +386,35 @@ fun AirCardV2(aqi: Double?, description: String, modifier: Modifier = Modifier, 
     )
 }
 
+private fun compassLetters(): List<String> = when (I18n.lang) {
+    AppLanguage.PtBR, AppLanguage.PtPT -> listOf("N", "L", "S", "O")
+    AppLanguage.Spanish, AppLanguage.French -> listOf("N", "E", "S", "O")
+    AppLanguage.Russian -> listOf("С", "В", "Ю", "З")
+    AppLanguage.German -> listOf("N", "O", "S", "W")
+    else -> listOf("N", "E", "S", "W")
+}
+
 @Composable
-fun WindCardV2(speedKmh: Double, fromDeg: Double, description: String, modifier: Modifier = Modifier, onClick: (() -> Unit)? = null) {
+fun WindCardV2(speedKmh: Double, fromDeg: Double, modifier: Modifier = Modifier, onClick: (() -> Unit)? = null) {
     val going = ((fromDeg + 180.0) % 360.0).toFloat()
     val rot by animateFloatAsState(going, tween(900), label = "windRot")
     val ink = MaterialTheme.colorScheme.onSurface
+    val arrow = if (LocalGlass.current) Color.White else MaterialTheme.colorScheme.primary
     val measurer = rememberTextMeasurer()
     val labelStyle = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold)
-    val horizontal = LocalCardShape.current == CardShape.Horizontal
-    val compass: @Composable (Modifier) -> Unit = { m ->
-        Canvas(m) {
-            val r = min(size.width, size.height) / 2f - 4.dp.toPx()
+    val letters = compassLetters()
+    GlassCard(modifier, onClick, Modifier.fillMaxSize()) {
+        CardHeader(Icons.Rounded.Air, tr("Wind"))
+        Spacer(Modifier.height(4.dp))
+        Canvas(Modifier.weight(1f).fillMaxWidth()) {
+            val r = min(size.width, size.height) / 2f - 3.dp.toPx()
             val c = Offset(size.width / 2f, size.height / 2f)
             drawCircle(ink.copy(alpha = 0.1f), r, c)
             drawCircle(ink.copy(alpha = 0.55f), r, c, style = Stroke(1.5f.dp.toPx()))
             for (i in 0 until 36) {
                 val a = Math.toRadians(i * 10.0 - 90.0)
                 val major = i % 9 == 0
-                val len = if (major) 7.dp.toPx() else if (i % 3 == 0) 5.dp.toPx() else 3.dp.toPx()
+                val len = if (major) 6.dp.toPx() else if (i % 3 == 0) 4.dp.toPx() else 2.5f.dp.toPx()
                 drawLine(
                     ink.copy(alpha = if (major) 0.9f else 0.45f),
                     Offset(c.x + cos(a).toFloat() * (r - len), c.y + sin(a).toFloat() * (r - len)),
@@ -393,11 +422,10 @@ fun WindCardV2(speedKmh: Double, fromDeg: Double, description: String, modifier:
                     1.2f.dp.toPx()
                 )
             }
-            val names = listOf("N", "E", "S", "W")
             for (i in 0 until 4) {
                 val a = Math.toRadians(i * 90.0 - 90.0)
-                val rr = r - 17.dp.toPx()
-                val m = measurer.measure(names[i], labelStyle.copy(color = if (i == 0) Color(0xFFFF6B6B) else ink.copy(alpha = 0.9f)))
+                val rr = r - 14.dp.toPx()
+                val m = measurer.measure(letters[i], labelStyle.copy(color = if (i == 0) Color(0xFFFF6B6B) else ink.copy(alpha = 0.9f)))
                 drawText(
                     m,
                     topLeft = Offset(c.x + cos(a).toFloat() * rr - m.size.width / 2f, c.y + sin(a).toFloat() * rr - m.size.height / 2f)
@@ -405,45 +433,29 @@ fun WindCardV2(speedKmh: Double, fromDeg: Double, description: String, modifier:
             }
             rotate(rot, c) {
                 val path = Path().apply {
-                    moveTo(c.x, c.y - r * 0.66f)
-                    lineTo(c.x - r * 0.15f, c.y - r * 0.22f)
-                    lineTo(c.x + r * 0.15f, c.y - r * 0.22f)
+                    moveTo(c.x, c.y - r * 0.62f)
+                    lineTo(c.x - r * 0.15f, c.y - r * 0.2f)
+                    lineTo(c.x + r * 0.15f, c.y - r * 0.2f)
                     close()
                 }
-                drawPath(path, Color.White, style = Fill)
-                drawLine(Color.White, Offset(c.x, c.y - r * 0.22f), Offset(c.x, c.y + r * 0.4f), 3.dp.toPx(), StrokeCap.Round)
+                drawPath(path, arrow, style = Fill)
+                drawLine(arrow, Offset(c.x, c.y - r * 0.2f), Offset(c.x, c.y + r * 0.38f), 3.dp.toPx(), StrokeCap.Round)
             }
-            drawCircle(Color.White, 4.dp.toPx(), c)
         }
-    }
-    val info: @Composable ColumnScope.() -> Unit = {
-        Text("${speedKmh.toInt()} km/h", style = MaterialTheme.typography.titleLarge, maxLines = 1)
+        Spacer(Modifier.height(2.dp))
+        Text("${speedKmh.toInt()} km/h", style = MaterialTheme.typography.titleMedium, maxLines = 1)
         Text(
-            "${tr("Blowing to")} ${compassLabel(going.toDouble())}  ·  Bft ${beaufort(speedKmh)}",
-            style = MaterialTheme.typography.labelMedium,
+            "${tr("Blowing to")} ${compassLabel(going.toDouble())}",
+            style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 2
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
         )
-        if (horizontal) Text(description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 3)
-    }
-    GlassCard(modifier, onClick, Modifier.fillMaxSize()) {
-        CardHeader(Icons.Rounded.Air, tr("Wind"))
-        Spacer(Modifier.height(6.dp))
-        if (horizontal) {
-            Row(Modifier.weight(1f).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                compass(Modifier.weight(1f).fillMaxHeight())
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp), content = info)
-            }
-        } else {
-            compass(Modifier.weight(1f).fillMaxWidth())
-            Spacer(Modifier.height(4.dp))
-            info()
-        }
     }
 }
 
 @Composable
-fun PressureCardV2(hpa: Double, description: String, modifier: Modifier = Modifier, onClick: (() -> Unit)? = null) {
+fun PressureCardV2(hpa: Double, modifier: Modifier = Modifier, onClick: (() -> Unit)? = null) {
     val lo = 960.0
     val hi = 1060.0
     val target = ((hpa - lo) / (hi - lo)).toFloat().coerceIn(0f, 1f)
@@ -451,54 +463,55 @@ fun PressureCardV2(hpa: Double, description: String, modifier: Modifier = Modifi
     LaunchedEffect(Unit) { go = true }
     val f by animateFloatAsState(if (go) target else 0f, tween(1200), label = "gauge")
     val ink = MaterialTheme.colorScheme.onSurface
-    val measurer = rememberTextMeasurer()
-    val valueStyle = MaterialTheme.typography.titleLarge.copy(color = ink, fontWeight = FontWeight.SemiBold)
-    val unitStyle = MaterialTheme.typography.labelSmall.copy(color = ink.copy(alpha = 0.7f))
-    val tickStyle = MaterialTheme.typography.labelSmall.copy(color = ink.copy(alpha = 0.75f), fontSize = 8.sp)
+    val arcColor = when {
+        target < 0.33f -> Color(0xFF4FC3F7)
+        target < 0.66f -> Color(0xFF66BB6A)
+        else -> Color(0xFFFF7043)
+    }
     GlassCard(modifier, onClick, Modifier.fillMaxSize()) {
         CardHeader(Icons.Rounded.Speed, tr("Pressure"))
-        Canvas(Modifier.weight(1f).fillMaxWidth()) {
-            val r = min(size.width, size.height) / 2f - 6.dp.toPx()
-            val c = Offset(size.width / 2f, size.height / 2f + 4.dp.toPx())
+        Canvas(Modifier.weight(1f).fillMaxWidth().padding(top = 4.dp)) {
+            val r = min(size.width, size.height) / 2f - 4.dp.toPx()
+            val c = Offset(size.width / 2f, size.height / 2f)
             val tl = Offset(c.x - r, c.y - r)
             val sz = Size(2 * r, 2 * r)
-            drawArc(ink.copy(alpha = 0.18f), 135f, 270f, false, tl, sz, style = Stroke(7.dp.toPx(), cap = StrokeCap.Round))
-            drawArc(
-                Brush.sweepGradient(
-                    0f to Color(0xFF4FC3F7), 0.25f to Color(0xFF66BB6A), 0.5f to Color(0xFFFFEE58), 0.75f to Color(0xFFFF7043), 1f to Color(0xFF4FC3F7),
-                    center = c
-                ),
-                135f, 270f * f, false, tl, sz, style = Stroke(7.dp.toPx(), cap = StrokeCap.Round)
-            )
+            drawArc(ink.copy(alpha = 0.18f), 135f, 270f, false, tl, sz, style = Stroke(6.dp.toPx(), cap = StrokeCap.Round))
+            drawArc(arcColor, 135f, 270f * f, false, tl, sz, style = Stroke(6.dp.toPx(), cap = StrokeCap.Round))
             for (i in 0..50) {
                 val a = Math.toRadians(135.0 + 270.0 * i / 50.0)
                 val major = i % 5 == 0
-                val len = if (major) 8.dp.toPx() else 4.dp.toPx()
-                val outer = r - 11.dp.toPx()
+                val len = if (major) 6.dp.toPx() else 3.dp.toPx()
+                val outer = r - 9.dp.toPx()
                 drawLine(
-                    ink.copy(alpha = if (major) 0.9f else 0.4f),
+                    ink.copy(alpha = if (major) 0.85f else 0.35f),
                     Offset(c.x + cos(a).toFloat() * (outer - len), c.y + sin(a).toFloat() * (outer - len)),
                     Offset(c.x + cos(a).toFloat() * outer, c.y + sin(a).toFloat() * outer),
-                    if (major) 1.6f.dp.toPx() else 1f.dp.toPx()
+                    if (major) 1.5f.dp.toPx() else 1f.dp.toPx()
                 )
             }
-            for (i in intArrayOf(0, 25, 50)) {
-                val a = Math.toRadians(135.0 + 270.0 * i / 50.0)
-                val rr = r - 30.dp.toPx()
-                val m = measurer.measure((lo + (hi - lo) * i / 50.0).toInt().toString(), tickStyle)
-                drawText(m, topLeft = Offset(c.x + cos(a).toFloat() * rr - m.size.width / 2f, c.y + sin(a).toFloat() * rr - m.size.height / 2f))
-            }
             val na = Math.toRadians(135.0 + 270.0 * f)
-            val needle = Offset(c.x + cos(na).toFloat() * (r - 16.dp.toPx()), c.y + sin(na).toFloat() * (r - 16.dp.toPx()))
-            drawLine(Color(0xFFFF5252), c, needle, 3.dp.toPx(), StrokeCap.Round)
-            drawCircle(Color.White, 6.dp.toPx(), c)
-            drawCircle(Color(0xFFFF5252), 3.dp.toPx(), c)
-            val vm = measurer.measure(hpa.roundToInt().toString(), valueStyle)
-            drawText(vm, topLeft = Offset(c.x - vm.size.width / 2f, c.y + r * 0.34f))
-            val um = measurer.measure("hPa", unitStyle)
-            drawText(um, topLeft = Offset(c.x - um.size.width / 2f, c.y + r * 0.34f + vm.size.height))
+            val dx = cos(na).toFloat()
+            val dy = sin(na).toFloat()
+            val len = r - 16.dp.toPx()
+            val w = 3.dp.toPx()
+            val needle = Path().apply {
+                moveTo(c.x + dx * len, c.y + dy * len)
+                lineTo(c.x - dy * w, c.y + dx * w)
+                lineTo(c.x + dy * w, c.y - dx * w)
+                close()
+            }
+            drawPath(needle, Color(0xFFFF5252), style = Fill)
         }
-        Text(description, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.Bottom) {
+            Text(hpa.roundToInt().toString(), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, maxLines = 1)
+            Spacer(Modifier.width(4.dp))
+            Text(
+                "hPa",
+                Modifier.padding(bottom = 3.dp),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
 }
 
@@ -506,56 +519,52 @@ fun PressureCardV2(hpa: Double, description: String, modifier: Modifier = Modifi
 fun CardsDashboard(bundle: WeatherBundle, city: City?, day: Day, onOpen: (String) -> Unit) {
     val cur = bundle.current
     val km = cur.visibility / 1000.0
-    val cards = buildMap<CardId, @Composable () -> Unit> {
-        if (city != null) {
-            put(CardId.Radar) { RadarCard(city, bundle.utcOffsetSeconds, Modifier.fillMaxSize()) }
-            put(CardId.Moon) { MoonCard(city, bundle.utcOffsetSeconds, cur.now, Modifier.fillMaxSize()) { onOpen("Moon") } }
-        }
-        put(CardId.Precip) {
-            MetricCard(
-                title = tr("Precipitation"),
-                icon = Icons.Rounded.Umbrella,
-                value = f1(day.precipSum),
-                unit = "mm",
-                description = precipToday(day.precipSum),
-                modifier = Modifier.fillMaxSize(),
-                onClick = { onOpen("Precip") }
-            )
-        }
-        put(CardId.Wind) { WindCardV2(cur.windSpeed, cur.windDir, windShort(cur.windSpeed), Modifier.fillMaxSize()) { onOpen("Wind") } }
-        put(CardId.Air) {
-            AirCardV2(
-                cur.aqi,
-                cur.aqi?.let { aqiShort(it) } ?: tr("Air quality data is not available here."),
-                Modifier.fillMaxSize(),
-                if (cur.aqi != null) ({ onOpen("Air") }) else null
-            )
-        }
-        put(CardId.Uv) { UvCardV2(cur.uv, uvShort(cur.uv), Modifier.fillMaxSize()) { onOpen("Uv") } }
-        put(CardId.Humidity) {
-            MetricCard(
-                title = tr("Humidity"),
-                icon = Icons.Rounded.WaterDrop,
-                value = "${cur.humidity}%",
-                unit = null,
-                description = humidityLabel(cur.humidity),
-                modifier = Modifier.fillMaxSize(),
-                onClick = { onOpen("Humidity") }
-            )
-        }
-        put(CardId.Sun) { SunCardV2(day.sunrise, day.sunset, cur.now, Modifier.fillMaxSize()) }
-        put(CardId.Pressure) { PressureCardV2(cur.pressure, pressureShort(cur.pressure), Modifier.fillMaxSize()) { onOpen("Pressure") } }
-        put(CardId.Visibility) {
-            MetricCard(
-                title = tr("Visibility"),
-                icon = Icons.Rounded.Visibility,
-                value = if (km >= 10.0) km.roundToInt().toString() else f1(km),
-                unit = "km",
-                description = visibilityShort(km),
-                modifier = Modifier.fillMaxSize(),
-                onClick = { onOpen("Visibility") }
-            )
-        }
+    val tall = Modifier.height(176.dp)
+    if (city != null) RadarCard(city, bundle.utcOffsetSeconds, Modifier.fillMaxWidth().height(250.dp))
+    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        MetricCard(
+            title = tr("Precipitation"),
+            icon = Icons.Rounded.Umbrella,
+            value = f1(day.precipSum),
+            unit = "mm",
+            description = precipToday(day.precipSum),
+            modifier = Modifier.weight(1f),
+            onClick = { onOpen("Precip") }
+        )
+        WindCardV2(cur.windSpeed, cur.windDir, Modifier.weight(1f).then(tall)) { onOpen("Wind") }
     }
-    CardGrid(cards)
+    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        AirCardV2(
+            cur.aqi,
+            cur.aqi?.let { aqiShort(it) } ?: tr("Air quality data is not available here."),
+            Modifier.weight(1f).then(tall),
+            if (cur.aqi != null) ({ onOpen("Air") }) else null
+        )
+        UvCardV2(cur.uv, uvShort(cur.uv), Modifier.weight(1f).then(tall)) { onOpen("Uv") }
+    }
+    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        MetricCard(
+            title = tr("Humidity"),
+            icon = Icons.Rounded.WaterDrop,
+            value = "${cur.humidity}%",
+            unit = null,
+            description = humidityLabel(cur.humidity),
+            modifier = Modifier.weight(1f),
+            onClick = { onOpen("Humidity") }
+        )
+        SunCardV2(day.sunrise, day.sunset, cur.now, Modifier.weight(1f).then(tall))
+    }
+    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        PressureCardV2(cur.pressure, Modifier.weight(1f).then(tall)) { onOpen("Pressure") }
+        MetricCard(
+            title = tr("Visibility"),
+            icon = Icons.Rounded.Visibility,
+            value = if (km >= 10.0) km.roundToInt().toString() else f1(km),
+            unit = "km",
+            description = visibilityShort(km),
+            modifier = Modifier.weight(1f),
+            onClick = { onOpen("Visibility") }
+        )
+    }
+    if (city != null) MoonCard(city, bundle.utcOffsetSeconds, cur.now) { onOpen("Moon") }
 }
