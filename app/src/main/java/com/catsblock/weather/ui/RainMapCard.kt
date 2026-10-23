@@ -1,5 +1,10 @@
 package com.catsblock.weather.ui
 
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -45,9 +50,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -103,7 +111,7 @@ object RadarLoader {
     }
 }
 
-private val RainMapBase = Color(0xFFE8E4DC)
+private val RainMapBase = Color(0xFFF2EFE9)
 
 private fun osmTileUrl(z: Int, x: Int, y: Int): String = "https://tile.openstreetmap.org/$z/$x/$y.png"
 
@@ -126,36 +134,41 @@ private fun RainTileImage(url: String, modifier: Modifier, alpha: Float = 1f) {
 @Composable
 private fun RainTiles(city: City, zoom: Int, set: RadarSet?, frame: RadarFrame?, modifier: Modifier = Modifier) {
     BoxWithConstraints(modifier.clipToBounds().background(RainMapBase)) {
+        val density = LocalDensity.current
+        val wPx = constraints.maxWidth.toFloat()
+        val hPx = constraints.maxHeight.toFloat()
+        val tilePx = with(density) { 256.dp.toPx() }.roundToInt().coerceAtLeast(1)
+        val tileDp = with(density) { tilePx.toDp() }
         val n = 1 shl zoom
-        val latR = Math.toRadians(city.lat)
+        val latR = Math.toRadians(city.lat.coerceIn(-85.0, 85.0))
         val tx = n * (city.lon + 180.0) / 360.0
         val ty = n * (1.0 - ln(tan(latR) + 1.0 / cos(latR)) / PI) / 2.0
-        val t = 256.dp
         val bx = floor(tx).toInt()
         val by = floor(ty).toInt()
-        val rx = ceil(maxWidth.value / 512f).toInt()
-        val ry = ceil(maxHeight.value / 512f).toInt()
+        val rx = ceil(wPx / 2f / tilePx).toInt() + 1
+        val ry = ceil(hPx / 2f / tilePx).toInt() + 1
         val cells = ArrayList<Triple<Int, Int, Int>>()
         for (dy in -ry..ry) {
             val y = by + dy
             if (y !in 0 until n) continue
             for (dx in -rx..rx) cells.add(Triple(bx + dx, y, Math.floorMod(bx + dx, n)))
         }
+        val radarZoom = minOf(zoom, 7)
         cells.forEach { (x, y, xx) ->
+            val left = (wPx / 2f + tilePx * (x - tx)).roundToInt()
+            val top = (hPx / 2f + tilePx * (y - ty)).roundToInt()
             RainTileImage(
                 osmTileUrl(zoom, xx, y),
-                Modifier
-                    .offset(maxWidth / 2 + t * (x - tx).toFloat(), maxHeight / 2 + t * (y - ty).toFloat())
-                    .size(t)
+                Modifier.offset { IntOffset(left, top) }.size(tileDp)
             )
         }
-        if (set != null && frame != null) {
+        if (set != null && frame != null && zoom <= 7) {
             cells.forEach { (x, y, xx) ->
+                val left = (wPx / 2f + tilePx * (x - tx)).roundToInt()
+                val top = (hPx / 2f + tilePx * (y - ty)).roundToInt()
                 RainTileImage(
-                    "${set.host}${frame.path}/256/$zoom/$xx/$y/2/1_1.png",
-                    Modifier
-                        .offset(maxWidth / 2 + t * (x - tx).toFloat(), maxHeight / 2 + t * (y - ty).toFloat())
-                        .size(t),
+                    "${set.host}${frame.path}/256/$radarZoom/$xx/$y/2/1_1.png",
+                    Modifier.offset { IntOffset(left, top) }.size(tileDp),
                     0.8f
                 )
             }
@@ -195,23 +208,38 @@ private fun RainPanel(
     val frame = frames.getOrNull(index)
     val last = frames.lastOrNull()
     var zoom by remember { mutableIntStateOf(6) }
-    val shape = RoundedCornerShape(if (fullscreen) 0.dp else 20.dp)
+    val pulse by rememberInfiniteTransition(label = "pulse").animateFloat(
+        0f,
+        1f,
+        infiniteRepeatable(tween(1800, easing = LinearEasing)),
+        label = "pulseValue"
+    )
+    val shape = RoundedCornerShape(if (fullscreen) 0.dp else 18.dp)
     val open = if (fullscreen) Modifier else Modifier.clickable(onClick = onFullscreen)
     Box(modifier.clip(shape).then(open)) {
         RainTiles(city, zoom, set, frame, Modifier.fillMaxSize())
+        Box(
+            Modifier
+                .align(Alignment.Center)
+                .size(12.dp)
+                .graphicsLayer {
+                    val sc = 1f + pulse * 2.4f
+                    scaleX = sc
+                    scaleY = sc
+                    alpha = 0.55f * (1f - pulse)
+                }
+                .clip(CircleShape)
+                .background(Color(0xFF1E88E5))
+        )
         Box(
             Modifier.align(Alignment.Center).size(12.dp).clip(CircleShape).background(Color.White)
                 .border(2.dp, Color(0xFF1E88E5), CircleShape)
         )
         Text(
             "© OpenStreetMap · RainViewer",
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .padding(8.dp)
-                .background(Color(0x80000000), RoundedCornerShape(8.dp))
-                .padding(horizontal = 6.dp, vertical = 2.dp),
-            color = Color.White,
-            fontSize = 9.sp
+            modifier = Modifier.align(Alignment.BottomEnd).padding(end = 8.dp, bottom = 52.dp),
+            color = Color.Black.copy(alpha = 0.55f),
+            fontSize = 8.sp
         )
         RainMapButton(
             if (fullscreen) Icons.Rounded.FullscreenExit else Icons.Rounded.Fullscreen,
@@ -224,8 +252,8 @@ private fun RainPanel(
                 Modifier.align(Alignment.CenterEnd).padding(12.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                RainMapButton(Icons.Rounded.Add, zoom < 8, { zoom += 1 })
-                RainMapButton(Icons.Rounded.Remove, zoom > 4, { zoom -= 1 })
+                RainMapButton(Icons.Rounded.Add, zoom < 7, { zoom += 1 })
+                RainMapButton(Icons.Rounded.Remove, zoom > 5, { zoom -= 1 })
             }
         }
         Row(
