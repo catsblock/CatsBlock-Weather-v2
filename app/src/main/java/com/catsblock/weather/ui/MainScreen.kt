@@ -79,7 +79,6 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.catsblock.weather.data.AppTheme
 import com.catsblock.weather.data.City
 import com.catsblock.weather.data.CitySummary
 import com.catsblock.weather.data.Condition
@@ -463,9 +462,8 @@ private fun WeatherDetails(
             )
         }
 
-        val glassTheme = LocalAppTheme.current == AppTheme.Glassmorphism
-        CompositionLocalProvider(LocalGlass provides glassTheme) {
-            MaterialTheme(colorScheme = if (glassTheme) glassScheme else baseScheme, typography = MaterialTheme.typography, shapes = MaterialTheme.shapes) {
+        CompositionLocalProvider(LocalGlass provides true) {
+            MaterialTheme(colorScheme = glassScheme, typography = MaterialTheme.typography, shapes = MaterialTheme.shapes) {
                 Column(
                     Modifier.padding(horizontal = 16.dp).navigationBarsPadding().padding(bottom = 24.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
