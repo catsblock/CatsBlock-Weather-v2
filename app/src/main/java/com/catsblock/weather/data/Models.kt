@@ -113,7 +113,9 @@ data class WeatherBundle(
 data class CitySummary(
     val kind: Condition,
     val isDay: Boolean,
-    val temp: Double
+    val temp: Double,
+    val min: Double = 0.0,
+    val max: Double = 0.0
 )
 
 data class AppSettings(
