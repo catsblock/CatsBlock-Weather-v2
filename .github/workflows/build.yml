@@ -23,9 +23,6 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
         with:
-          # The default value ("tools platform-tools") fails because the
-          # "tools" package no longer exists. The runner already ships the
-          # SDK, and the Android Gradle Plugin downloads what it needs.
           packages: ''
 
       - name: Set up Gradle
@@ -51,14 +48,20 @@ jobs:
           echo "KS_PATH=$RUNNER_TEMP/cats.p12" >> "$GITHUB_ENV"
 
       - name: Prepare launcher icon
+        timeout-minutes: 4
+        continue-on-error: true
+        env:
+          DEBIAN_FRONTEND: noninteractive
+          NEEDRESTART_MODE: a
         run: |
-          set -e
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq librsvg2-bin imagemagick
+          if ! command -v rsvg-convert >/dev/null 2>&1 || ! command -v convert >/dev/null 2>&1; then
+            sudo -E timeout 60 apt-get update -qq || true
+            sudo -E timeout 150 apt-get install -y -qq --no-install-recommends librsvg2-bin imagemagick || true
+          fi
           mkdir -p app/src/main/res/drawable-nodpi
-          if curl -fsSL "https://raw.githubusercontent.com/mrdarrengriffin/google-weather-icons/refs/heads/main/sets/set-5/light/mostly_sunny.svg" -o "$RUNNER_TEMP/icon.svg" \
-            && rsvg-convert -w 280 --keep-aspect-ratio "$RUNNER_TEMP/icon.svg" -o "$RUNNER_TEMP/fg.png" \
-            && convert -size 432x432 xc:none "$RUNNER_TEMP/fg.png" -gravity center -composite app/src/main/res/drawable-nodpi/ic_launcher_foreground.png; then
+          if timeout 30 curl -fsSL --connect-timeout 10 --max-time 25 "https://raw.githubusercontent.com/mrdarrengriffin/google-weather-icons/refs/heads/main/sets/set-5/light/mostly_sunny.svg" -o "$RUNNER_TEMP/icon.svg" \
+            && timeout 30 rsvg-convert -w 280 --keep-aspect-ratio "$RUNNER_TEMP/icon.svg" -o "$RUNNER_TEMP/fg.png" \
+            && timeout 30 convert -size 432x432 xc:none "$RUNNER_TEMP/fg.png" -gravity center -composite app/src/main/res/drawable-nodpi/ic_launcher_foreground.png; then
             rm -f app/src/main/res/drawable/ic_launcher_foreground.xml app/src/main/res/drawable/ic_launcher_monochrome.xml
           else
             echo "::warning::Could not generate the launcher icon; keeping the bundled vector icon."
