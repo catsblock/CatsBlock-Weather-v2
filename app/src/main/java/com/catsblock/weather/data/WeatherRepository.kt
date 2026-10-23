@@ -93,7 +93,8 @@ class WeatherRepository {
                     "timezone" to "auto",
                     "past_days" to "1",
                     "forecast_days" to "7",
-                    "wind_speed_unit" to "kmh"
+                    "wind_speed_unit" to "kmh",
+                    *ApiSources.extra()
                 )
             )
         }
