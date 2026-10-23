@@ -5,9 +5,11 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -16,15 +18,20 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Air
 import androidx.compose.material.icons.rounded.Eco
+import androidx.compose.material.icons.rounded.Fullscreen
+import androidx.compose.material.icons.rounded.FullscreenExit
 import androidx.compose.material.icons.rounded.Map
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Remove
 import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.Umbrella
 import androidx.compose.material.icons.rounded.Visibility
@@ -47,15 +54,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ColorFilter
-import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
@@ -64,13 +69,17 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import com.catsblock.weather.data.City
 import com.catsblock.weather.data.Day
 import com.catsblock.weather.data.WeatherBundle
@@ -82,17 +91,12 @@ import com.catsblock.weather.data.uvLevel
 import com.catsblock.weather.i18n.AppLanguage
 import com.catsblock.weather.i18n.I18n
 import com.catsblock.weather.i18n.tr
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.withContext
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import org.json.JSONObject
 import java.time.Duration
 import java.time.LocalDateTime
 import java.time.ZoneOffset
 import java.util.concurrent.TimeUnit
 import kotlin.math.PI
+import kotlin.math.ceil
 import kotlin.math.cos
 import kotlin.math.floor
 import kotlin.math.ln
@@ -101,6 +105,12 @@ import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlin.math.sin
 import kotlin.math.tan
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import org.json.JSONObject
 
 data class RadarFrame(val time: Long, val path: String)
 
@@ -131,16 +141,167 @@ object RadarLoader {
     }
 }
 
-private val MapLift = ColorFilter.colorMatrix(
-    ColorMatrix(
-        floatArrayOf(
-            2.4f, 0f, 0f, 0f, 22f,
-            0f, 2.4f, 0f, 0f, 22f,
-            0f, 0f, 2.4f, 0f, 26f,
-            0f, 0f, 0f, 1f, 0f
-        )
+private val RadarBase = Color(0xFF1B1D21)
+
+private fun baseTileUrl(z: Int, x: Int, y: Int): String =
+    "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/$z/$y/$x"
+
+@Composable
+private fun TileImage(url: String, modifier: Modifier, alpha: Float = 1f) {
+    val context = LocalContext.current
+    AsyncImage(
+        model = ImageRequest.Builder(context)
+            .data(url)
+            .addHeader("User-Agent", "CatsBlockWeather/2.0")
+            .crossfade(true)
+            .build(),
+        contentDescription = null,
+        modifier = modifier,
+        contentScale = ContentScale.FillBounds,
+        alpha = alpha
     )
-)
+}
+
+@Composable
+private fun RadarTiles(city: City, zoom: Int, set: RadarSet?, frame: RadarFrame?, modifier: Modifier = Modifier) {
+    BoxWithConstraints(modifier.clipToBounds().background(RadarBase)) {
+        val n = 1 shl zoom
+        val latR = Math.toRadians(city.lat)
+        val tx = n * (city.lon + 180.0) / 360.0
+        val ty = n * (1.0 - ln(tan(latR) + 1.0 / cos(latR)) / PI) / 2.0
+        val t = 256.dp
+        val bx = floor(tx).toInt()
+        val by = floor(ty).toInt()
+        val rx = ceil(maxWidth.value / 512f).toInt()
+        val ry = ceil(maxHeight.value / 512f).toInt()
+        val cells = ArrayList<Triple<Int, Int, Int>>()
+        for (dy in -ry..ry) {
+            val y = by + dy
+            if (y !in 0 until n) continue
+            for (dx in -rx..rx) cells.add(Triple(bx + dx, y, Math.floorMod(bx + dx, n)))
+        }
+        cells.forEach { (x, y, xx) ->
+            TileImage(
+                baseTileUrl(zoom, xx, y),
+                Modifier
+                    .offset(maxWidth / 2 + t * (x - tx).toFloat(), maxHeight / 2 + t * (y - ty).toFloat())
+                    .size(t)
+            )
+        }
+        if (set != null && frame != null) {
+            cells.forEach { (x, y, xx) ->
+                TileImage(
+                    "${set.host}${frame.path}/256/$zoom/$xx/$y/2/1_1.png",
+                    Modifier
+                        .offset(maxWidth / 2 + t * (x - tx).toFloat(), maxHeight / 2 + t * (y - ty).toFloat())
+                        .size(t),
+                    0.85f
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun MapButton(icon: ImageVector, enabled: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Box(
+        modifier
+            .size(38.dp)
+            .clip(CircleShape)
+            .background(Color(0x99000000))
+            .clickable(enabled = enabled, onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(icon, null, Modifier.size(22.dp), tint = Color.White.copy(alpha = if (enabled) 1f else 0.35f))
+    }
+}
+
+@Composable
+private fun RadarPanel(
+    city: City,
+    offsetSeconds: Int,
+    set: RadarSet?,
+    index: Int,
+    onIndex: (Int) -> Unit,
+    playing: Boolean,
+    onPlaying: () -> Unit,
+    fullscreen: Boolean,
+    onFullscreen: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val frames = set?.frames.orEmpty()
+    val frame = frames.getOrNull(index)
+    val last = frames.lastOrNull()
+    var zoom by remember { mutableIntStateOf(6) }
+    val shape = RoundedCornerShape(if (fullscreen) 0.dp else 18.dp)
+    val open = if (fullscreen) Modifier else Modifier.clickable(onClick = onFullscreen)
+    Box(modifier.clip(shape).border(1.dp, Color.White.copy(alpha = 0.22f), shape).then(open)) {
+        RadarTiles(city, zoom, set, frame, Modifier.fillMaxSize())
+        Box(
+            Modifier.align(Alignment.Center).size(11.dp).clip(CircleShape).background(Color.White)
+                .border(2.dp, Color(0xFF4FC3F7), CircleShape)
+        )
+        Text(
+            "© Esri · RainViewer",
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .padding(8.dp)
+                .background(Color(0x66000000), RoundedCornerShape(8.dp))
+                .padding(horizontal = 6.dp, vertical = 2.dp),
+            color = Color.White,
+            fontSize = 9.sp
+        )
+        MapButton(
+            if (fullscreen) Icons.Rounded.FullscreenExit else Icons.Rounded.Fullscreen,
+            true,
+            onFullscreen,
+            Modifier.align(Alignment.TopEnd).padding(8.dp)
+        )
+        if (fullscreen) {
+            Column(
+                Modifier.align(Alignment.CenterEnd).padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                MapButton(Icons.Rounded.Add, zoom < 7, { zoom += 1 })
+                MapButton(Icons.Rounded.Remove, zoom > 4, { zoom -= 1 })
+            }
+        }
+        Row(
+            Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+                .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.6f))))
+                .padding(horizontal = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = onPlaying, enabled = frames.size > 1) {
+                Icon(if (playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, null, tint = Color.White)
+            }
+            Slider(
+                value = index.toFloat(),
+                onValueChange = { onIndex(it.roundToInt()) },
+                valueRange = 0f..max(1, frames.size - 1).toFloat(),
+                enabled = frames.size > 1,
+                modifier = Modifier.weight(1f),
+                colors = SliderDefaults.colors(
+                    thumbColor = Color.White,
+                    activeTrackColor = Color.White,
+                    inactiveTrackColor = Color.White.copy(alpha = 0.3f),
+                    disabledThumbColor = Color.White.copy(alpha = 0.4f),
+                    disabledActiveTrackColor = Color.White.copy(alpha = 0.3f),
+                    disabledInactiveTrackColor = Color.White.copy(alpha = 0.15f)
+                )
+            )
+            val clock = frame?.let {
+                clockLabel(LocalDateTime.ofEpochSecond(it.time, 0, ZoneOffset.ofTotalSeconds(offsetSeconds)))
+            } ?: "--:--"
+            val mins = if (frame != null && last != null) ((last.time - frame.time) / 60L).toInt() else 0
+            val rel = if (mins <= 0) tr("Now") else if (mins < 60) "-${mins}m" else "-${mins / 60}h ${mins % 60}m"
+            Column(Modifier.width(62.dp).padding(end = 6.dp)) {
+                Text(clock, color = Color.White, style = MaterialTheme.typography.labelLarge, maxLines = 1)
+                Text(rel, color = Color.White.copy(alpha = 0.75f), style = MaterialTheme.typography.labelSmall, maxLines = 1)
+            }
+        }
+    }
+}
 
 @Composable
 fun RadarCard(city: City, offsetSeconds: Int, modifier: Modifier = Modifier) {
@@ -148,6 +309,7 @@ fun RadarCard(city: City, offsetSeconds: Int, modifier: Modifier = Modifier) {
     val frames = set?.frames.orEmpty()
     var index by remember(set) { mutableIntStateOf((frames.size - 1).coerceAtLeast(0)) }
     var playing by remember { mutableStateOf(false) }
+    var full by remember { mutableStateOf(false) }
     LaunchedEffect(playing, set) {
         val n = frames.size
         while (playing && n > 1) {
@@ -155,88 +317,39 @@ fun RadarCard(city: City, offsetSeconds: Int, modifier: Modifier = Modifier) {
             index = if (index >= n - 1) 0 else index + 1
         }
     }
-    val frame = frames.getOrNull(index)
-    val last = frames.lastOrNull()
-    val mapShape = RoundedCornerShape(18.dp)
     GlassCard(modifier, null, Modifier.fillMaxSize()) {
         CardHeader(Icons.Rounded.Map, tr("Rain radar"))
-        BoxWithConstraints(
-            Modifier.fillMaxWidth().weight(1f).padding(top = 8.dp).clip(mapShape)
-                .background(Color(0xFF30343B)).border(1.dp, Color.White.copy(alpha = 0.22f), mapShape)
+        RadarPanel(
+            city = city,
+            offsetSeconds = offsetSeconds,
+            set = set,
+            index = index,
+            onIndex = { index = it },
+            playing = playing,
+            onPlaying = { playing = !playing },
+            fullscreen = false,
+            onFullscreen = { full = true },
+            modifier = Modifier.fillMaxWidth().weight(1f).padding(top = 8.dp)
+        )
+    }
+    if (full) {
+        Dialog(
+            onDismissRequest = { full = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
         ) {
-            val z = 6
-            val n = 1 shl z
-            val latR = Math.toRadians(city.lat)
-            val tx = n * (city.lon + 180.0) / 360.0
-            val ty = n * (1.0 - ln(tan(latR) + 1.0 / cos(latR)) / PI) / 2.0
-            val t = 256.dp
-            val bx = floor(tx).toInt()
-            val by = floor(ty).toInt()
-            for (dx in -1..1) {
-                for (dy in -1..1) {
-                    val x = bx + dx
-                    val y = by + dy
-                    if (y in 0 until n) {
-                        val xx = ((x % n) + n) % n
-                        val pos = Modifier
-                            .offset(maxWidth / 2 + t * (x - tx).toFloat(), maxHeight / 2 + t * (y - ty).toFloat())
-                            .size(t)
-                        AsyncImage(
-                            model = "https://basemaps.cartocdn.com/dark_nolabels/$z/$xx/$y.png",
-                            contentDescription = null,
-                            modifier = pos,
-                            contentScale = ContentScale.FillBounds,
-                            colorFilter = MapLift
-                        )
-                        val s = set
-                        if (s != null && frame != null) {
-                            AsyncImage(
-                                model = "${s.host}${frame.path}/256/$z/$xx/$y/2/1_1.png",
-                                contentDescription = null,
-                                modifier = pos.alpha(0.85f),
-                                contentScale = ContentScale.FillBounds
-                            )
-                        }
-                    }
-                }
-            }
-            Box(
-                Modifier.align(Alignment.Center).size(11.dp).clip(CircleShape).background(Color.White)
-                    .border(2.dp, Color(0xFF4FC3F7), CircleShape)
-            )
-            Row(
-                Modifier.align(Alignment.BottomCenter).fillMaxWidth()
-                    .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.6f))))
-                    .padding(horizontal = 4.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                IconButton(onClick = { playing = !playing }, enabled = frames.size > 1) {
-                    Icon(if (playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, null, tint = Color.White)
-                }
-                Slider(
-                    value = index.toFloat(),
-                    onValueChange = { index = it.roundToInt() },
-                    valueRange = 0f..max(1, frames.size - 1).toFloat(),
-                    enabled = frames.size > 1,
-                    modifier = Modifier.weight(1f),
-                    colors = SliderDefaults.colors(
-                        thumbColor = Color.White,
-                        activeTrackColor = Color.White,
-                        inactiveTrackColor = Color.White.copy(alpha = 0.3f),
-                        disabledThumbColor = Color.White.copy(alpha = 0.4f),
-                        disabledActiveTrackColor = Color.White.copy(alpha = 0.3f),
-                        disabledInactiveTrackColor = Color.White.copy(alpha = 0.15f)
-                    )
+            Box(Modifier.fillMaxSize().background(Color.Black).systemBarsPadding()) {
+                RadarPanel(
+                    city = city,
+                    offsetSeconds = offsetSeconds,
+                    set = set,
+                    index = index,
+                    onIndex = { index = it },
+                    playing = playing,
+                    onPlaying = { playing = !playing },
+                    fullscreen = true,
+                    onFullscreen = { full = false },
+                    modifier = Modifier.fillMaxSize()
                 )
-                val clock = frame?.let {
-                    clockLabel(LocalDateTime.ofEpochSecond(it.time, 0, ZoneOffset.ofTotalSeconds(offsetSeconds)))
-                } ?: "--:--"
-                val mins = if (frame != null && last != null) ((last.time - frame.time) / 60L).toInt() else 0
-                val rel = if (mins <= 0) tr("Now") else if (mins < 60) "-${mins}m" else "-${mins / 60}h ${mins % 60}m"
-                androidx.compose.foundation.layout.Column(Modifier.width(62.dp).padding(end = 6.dp)) {
-                    Text(clock, color = Color.White, style = MaterialTheme.typography.labelLarge, maxLines = 1)
-                    Text(rel, color = Color.White.copy(alpha = 0.75f), style = MaterialTheme.typography.labelSmall, maxLines = 1)
-                }
             }
         }
     }
