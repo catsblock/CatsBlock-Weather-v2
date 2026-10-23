@@ -1,5 +1,8 @@
 package com.catsblock.weather.ui
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -67,6 +70,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -96,6 +100,8 @@ import com.catsblock.weather.data.uvAdvice
 import com.catsblock.weather.data.windDescription
 import com.catsblock.weather.i18n.tr
 import com.catsblock.weather.sound.WeatherSoundPlayer
+import com.catsblock.weather.ui.glass.EntranceCounter
+import com.catsblock.weather.ui.glass.LocalEntrance
 import com.catsblock.weather.ui.glass.LocalHazeState
 import com.catsblock.weather.ui.glass.hazeBackdropSource
 import com.catsblock.weather.ui.particles.ParticleOverlay
@@ -198,8 +204,7 @@ fun MainScreen(vm: WeatherViewModel) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val saved by vm.savedCities.collectAsStateWithLifecycle()
     val summaries by vm.summaries.collectAsStateWithLifecycle()
-    val drawerState = rememberDrawerState(DrawerValue.Closed)
-    val scope = rememberCoroutineScope()
+    var citiesOpen by remember { mutableStateOf(false) }
     val scroll = rememberScrollState()
     val scheme = MaterialTheme.colorScheme
     val hazeState = remember { HazeState() }
@@ -208,6 +213,13 @@ fun MainScreen(vm: WeatherViewModel) {
     val bundle = (state as? WeatherState.Success)?.bundle
     val kind = bundle?.current?.kind ?: Condition.Clear
     val isDay = bundle?.current?.isDay ?: true
+    val currentSummary = remember(bundle) {
+        bundle?.let { b ->
+            val today = b.current.now.toLocalDate()
+            val d = b.days.firstOrNull { it.date == today } ?: b.days.first()
+            CitySummary(b.current.kind, b.current.isDay, b.current.temp, d.min, d.max)
+        }
+    }
     val progress = (scroll.value / 700f).coerceIn(0f, 1f)
     val headerHeight = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 112.dp
 
@@ -235,27 +247,7 @@ fun MainScreen(vm: WeatherViewModel) {
         }
     }
 
-    ModalNavigationDrawer(
-        drawerState = drawerState,
-        drawerContent = {
-            ModalDrawerSheet {
-                CitiesDrawer(
-                    saved = saved,
-                    summaries = summaries,
-                    fahrenheit = settings.fahrenheit,
-                    onSelect = {
-                        scope.launch { drawerState.close() }
-                        vm.selectCity(it)
-                    },
-                    onRemove = vm::removeCity,
-                    onAdd = {
-                        scope.launch { drawerState.close() }
-                        vm.openPicker()
-                    }
-                )
-            }
-        }
-    ) {
+    run {
         CompositionLocalProvider(LocalHazeState provides hazeState) {
         Box(Modifier.fillMaxSize()) {
             Box(Modifier.fillMaxSize().hazeBackdropSource(hazeState)) {
@@ -320,9 +312,28 @@ fun MainScreen(vm: WeatherViewModel) {
                 current = saved.indexOfFirst { it.id == city?.id }.coerceAtLeast(0),
                 onCities = {
                     vm.loadSummaries()
-                    scope.launch { drawerState.open() }
+                    citiesOpen = true
                 },
                 onSettings = vm::openSettings
+            )
+
+            CitiesOverlay(
+                visible = citiesOpen,
+                saved = saved,
+                selectedId = city?.id,
+                current = currentSummary,
+                summaries = summaries,
+                fahrenheit = settings.fahrenheit,
+                onSelect = {
+                    citiesOpen = false
+                    vm.selectCity(it)
+                },
+                onRemove = vm::removeCity,
+                onAdd = {
+                    citiesOpen = false
+                    vm.openPicker()
+                },
+                onClose = { citiesOpen = false }
             )
         }
         }
@@ -376,51 +387,6 @@ private fun HeaderBar(
     }
 }
 
-@Composable
-private fun CitiesDrawer(
-    saved: List<City>,
-    summaries: Map<String, CitySummary>,
-    fahrenheit: Boolean,
-    onSelect: (City) -> Unit,
-    onRemove: (City) -> Unit,
-    onAdd: () -> Unit
-) {
-    Column(Modifier.verticalScroll(rememberScrollState()).padding(16.dp)) {
-        Text(tr("Saved cities"), style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(8.dp))
-        saved.forEach { c ->
-            val summary = summaries[c.id]
-            Surface(
-                shape = MaterialTheme.shapes.large,
-                color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).clickable { onSelect(c) }
-            ) {
-                Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    if (summary != null) {
-                        WeatherIcon(summary.kind, summary.isDay, Modifier.size(44.dp))
-                    } else {
-                        Spacer(Modifier.size(44.dp))
-                    }
-                    Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                        Text(c.name, style = MaterialTheme.typography.titleMedium, maxLines = 1)
-                        Text(
-                            listOf(c.region, c.country).filter { it.isNotBlank() }.joinToString(", "),
-                            style = MaterialTheme.typography.bodySmall,
-                            maxLines = 1,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    if (summary != null) {
-                        Text(tempText(summary.temp, fahrenheit), style = MaterialTheme.typography.titleLarge)
-                    }
-                    IconButton(onClick = { onRemove(c) }) { Icon(Icons.Rounded.Close, "${tr("Remove")} ${c.name}") }
-                }
-            }
-        }
-        Spacer(Modifier.height(8.dp))
-        FilledTonalButton(onClick = onAdd, modifier = Modifier.fillMaxWidth()) { Text(tr("Add a city")) }
-    }
-}
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun WeatherDetails(
@@ -462,11 +428,24 @@ private fun WeatherDetails(
     val pressureHigh = next24.maxOfOrNull { it.pressure } ?: cur.pressure
     val visibilityKm = cur.visibility / 1000.0
     val rainingNow = cur.kind.isWet
+    val entrance = remember(city?.id) { EntranceCounter() }
+    val heroIn = remember { Animatable(0f) }
+    LaunchedEffect(city?.id) {
+        heroIn.snapTo(0f)
+        heroIn.animateTo(1f, tween(800, easing = FastOutSlowInEasing))
+    }
     val snowingNow = cur.kind in snowKinds
 
     Column(Modifier.fillMaxSize().padding(top = headerHeight).verticalScroll(scroll)) {
         Column(
-            Modifier.fillMaxWidth().height(heroHeight).padding(horizontal = 24.dp, vertical = 24.dp),
+            Modifier
+                .fillMaxWidth()
+                .height(heroHeight)
+                .graphicsLayer {
+                    alpha = heroIn.value
+                    translationY = (1f - heroIn.value) * 28.dp.toPx()
+                }
+                .padding(horizontal = 24.dp, vertical = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Bottom
         ) {
@@ -492,7 +471,7 @@ private fun WeatherDetails(
             )
         }
 
-        CompositionLocalProvider(LocalGlass provides true) {
+        CompositionLocalProvider(LocalGlass provides true, LocalEntrance provides entrance) {
             MaterialTheme(colorScheme = glassScheme, typography = MaterialTheme.typography, shapes = MaterialTheme.shapes) {
                 Column(
                     Modifier.padding(horizontal = 16.dp).navigationBarsPadding().padding(bottom = 24.dp),
