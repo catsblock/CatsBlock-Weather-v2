@@ -66,6 +66,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.catsblock.weather.data.AppTheme
 import com.catsblock.weather.data.Day
 import com.catsblock.weather.data.Hour
 import com.catsblock.weather.data.LifeItem
@@ -84,6 +85,8 @@ private val DayStep = 70.dp
 
 val LocalGlass = compositionLocalOf { false }
 
+val LocalAppTheme = compositionLocalOf { AppTheme.Glassmorphism }
+
 @Composable
 fun GlassCard(
     modifier: Modifier = Modifier,
@@ -91,7 +94,44 @@ fun GlassCard(
     contentModifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    ThemedCard(modifier, onClick, contentModifier, LocalCardId.current, content)
+    val glass = LocalGlass.current
+    val dark = isSystemInDarkTheme()
+    val scheme = MaterialTheme.colorScheme
+    val shape = MaterialTheme.shapes.extraLarge
+    val colors = CardDefaults.cardColors(
+        containerColor = if (glass) Color.Transparent else scheme.surfaceContainer.copy(alpha = if (dark) 0.58f else 0.74f),
+        contentColor = if (glass) Color.White else scheme.onSurface
+    )
+    val border = if (glass) {
+        BorderStroke(
+            1.dp,
+            Brush.linearGradient(
+                listOf(Color.White.copy(alpha = 0.6f), Color.White.copy(alpha = 0.08f), Color.White.copy(alpha = 0.3f))
+            )
+        )
+    } else {
+        BorderStroke(0.5.dp, scheme.onSurface.copy(alpha = 0.08f))
+    }
+    val surface = if (glass) {
+        modifier
+            .background(Color(0x26000000), shape)
+            .background(
+                Brush.linearGradient(listOf(Color.White.copy(alpha = 0.28f), Color.White.copy(alpha = 0.08f))),
+                shape
+            )
+    } else {
+        modifier
+    }
+    val elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+    if (onClick != null) {
+        Card(onClick = onClick, modifier = surface, shape = shape, colors = colors, elevation = elevation, border = border) {
+            Column(contentModifier.padding(18.dp), content = content)
+        }
+    } else {
+        Card(modifier = surface, shape = shape, colors = colors, elevation = elevation, border = border) {
+            Column(contentModifier.padding(18.dp), content = content)
+        }
+    }
 }
 
 @Composable
