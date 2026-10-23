@@ -1,6 +1,5 @@
 package com.catsblock.weather.ui
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
@@ -71,6 +70,9 @@ import com.catsblock.weather.data.Hour
 import com.catsblock.weather.data.LifeItem
 import com.catsblock.weather.data.LifeKind
 import com.catsblock.weather.i18n.tr
+import com.catsblock.weather.ui.glass.LocalHazeState
+import com.catsblock.weather.ui.glass.frostedGlassCard
+import com.catsblock.weather.ui.particles.collideWithParticles
 import kotlinx.coroutines.launch
 import java.time.Duration
 import java.time.LocalDate
@@ -95,37 +97,23 @@ fun GlassCard(
     val dark = isSystemInDarkTheme()
     val scheme = MaterialTheme.colorScheme
     val shape = MaterialTheme.shapes.extraLarge
+    val hazeState = LocalHazeState.current
     val colors = CardDefaults.cardColors(
         containerColor = if (glass) Color.Transparent else scheme.surfaceContainer.copy(alpha = if (dark) 0.58f else 0.74f),
         contentColor = if (glass) Color.White else scheme.onSurface
     )
-    val border = if (glass) {
-        BorderStroke(
-            1.dp,
-            Brush.linearGradient(
-                listOf(Color.White.copy(alpha = 0.6f), Color.White.copy(alpha = 0.08f), Color.White.copy(alpha = 0.3f))
-            )
-        )
-    } else {
-        BorderStroke(0.5.dp, scheme.onSurface.copy(alpha = 0.08f))
-    }
     val surface = if (glass) {
-        modifier
-            .background(Color(0x26000000), shape)
-            .background(
-                Brush.linearGradient(listOf(Color.White.copy(alpha = 0.28f), Color.White.copy(alpha = 0.08f))),
-                shape
-            )
+        modifier.frostedGlassCard(hazeState, shape).collideWithParticles()
     } else {
         modifier
     }
     val elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     if (onClick != null) {
-        Card(onClick = onClick, modifier = surface, shape = shape, colors = colors, elevation = elevation, border = border) {
+        Card(onClick = onClick, modifier = surface, shape = shape, colors = colors, elevation = elevation, border = null) {
             Column(contentModifier.padding(18.dp), content = content)
         }
     } else {
-        Card(modifier = surface, shape = shape, colors = colors, elevation = elevation, border = border) {
+        Card(modifier = surface, shape = shape, colors = colors, elevation = elevation, border = null) {
             Column(contentModifier.padding(18.dp), content = content)
         }
     }
