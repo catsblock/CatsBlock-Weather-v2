@@ -14,12 +14,21 @@ import androidx.camera.core.CameraSelector
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -48,14 +57,18 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
@@ -79,6 +92,27 @@ import kotlin.math.roundToInt
 import kotlin.math.sin
 
 private fun normalize(deg: Double): Double = (deg % 360.0 + 360.0) % 360.0
+
+private val LiveGlass = Color(0x66101826)
+private val LiveSoft = Color(0xCCFFFFFF)
+
+private fun Modifier.liveGlass(shape: Shape): Modifier = this
+    .clip(shape)
+    .background(LiveGlass)
+    .border(1.dp, Color.White.copy(alpha = 0.18f), shape)
+
+@Composable
+private fun LiveStat(label: String, value: String, modifier: Modifier = Modifier) {
+    Column(
+        modifier
+            .clip(RoundedCornerShape(16.dp))
+            .background(Color.White.copy(alpha = 0.08f))
+            .padding(horizontal = 12.dp, vertical = 10.dp)
+    ) {
+        Text(label, style = MaterialTheme.typography.labelSmall, color = LiveSoft, maxLines = 1)
+        Text(value, style = MaterialTheme.typography.titleSmall, color = Color.White, maxLines = 1)
+    }
+}
 
 @Composable
 fun LiveMoonScreen(vm: WeatherViewModel) {
@@ -111,6 +145,13 @@ fun LiveMoonScreen(vm: WeatherViewModel) {
         if (sensor != null) sm.registerListener(listener, sensor, SensorManager.SENSOR_DELAY_GAME) else hasSensor = false
         onDispose { sm.unregisterListener(listener) }
     }
+
+    val pulse by rememberInfiniteTransition(label = "reticle").animateFloat(
+        0f,
+        1f,
+        infiniteRepeatable(tween(1800, easing = LinearEasing)),
+        label = "reticlePulse"
+    )
 
     val nowMs by produceState(System.currentTimeMillis()) {
         while (true) {
@@ -167,6 +208,19 @@ fun LiveMoonScreen(vm: WeatherViewModel) {
             )
         }
 
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        0f to Color.Black.copy(alpha = 0.45f),
+                        0.28f to Color.Transparent,
+                        0.62f to Color.Transparent,
+                        1f to Color.Black.copy(alpha = 0.6f)
+                    )
+                )
+        )
+
         BoxWithConstraints(Modifier.fillMaxSize()) {
             val w = constraints.maxWidth.toFloat()
             val h = constraints.maxHeight.toFloat()
@@ -185,6 +239,8 @@ fun LiveMoonScreen(vm: WeatherViewModel) {
                     val dx = sin(Math.toRadians(arrowAngle.toDouble())).toFloat()
                     val dy = -cos(Math.toRadians(arrowAngle.toDouble())).toFloat()
                     val center = Offset(size.width / 2f + dx * reach, size.height / 2f + dy * reach)
+                    drawCircle(Color(0x33101826), 46.dp.toPx(), center)
+                    drawCircle(Color.White.copy(alpha = 0.22f), 46.dp.toPx(), center, style = Stroke(1.dp.toPx()))
                     rotate(arrowAngle, center) {
                         val path = Path().apply {
                             moveTo(center.x, center.y - 34.dp.toPx())
@@ -199,19 +255,78 @@ fun LiveMoonScreen(vm: WeatherViewModel) {
             }
 
             if (visible) {
-                MoonImage(
-                    nowMs,
-                    phase.cycle,
+                Box(
                     Modifier
                         .offset { IntOffset((sx - half).roundToInt(), (sy - half).roundToInt()) }
-                        .size(80.dp)
-                        .border(2.dp, Color.White.copy(alpha = 0.85f), CircleShape)
-                )
+                        .size(80.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Box(
+                        Modifier
+                            .fillMaxSize()
+                            .graphicsLayer {
+                                val sc = 1f + pulse * 0.55f
+                                scaleX = sc
+                                scaleY = sc
+                                alpha = 0.7f * (1f - pulse)
+                            }
+                            .border(1.5.dp, Color.White, CircleShape)
+                    )
+                    MoonImage(
+                        nowMs,
+                        phase.cycle,
+                        Modifier
+                            .fillMaxSize()
+                            .border(1.5.dp, Color.White.copy(alpha = 0.85f), CircleShape)
+                    )
+                }
             }
         }
 
-        IconButton(onClick = vm::back, modifier = Modifier.statusBarsPadding().padding(4.dp)) {
-            Icon(Icons.AutoMirrored.Rounded.ArrowBack, tr("Back"), tint = Color.White)
+        Row(
+            Modifier.align(Alignment.TopStart).statusBarsPadding().padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                Modifier
+                    .size(44.dp)
+                    .liveGlass(CircleShape)
+                    .clickable(onClick = vm::back),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(Icons.AutoMirrored.Rounded.ArrowBack, tr("Back"), tint = Color.White)
+            }
+            Spacer(Modifier.width(10.dp))
+            Row(
+                Modifier
+                    .height(36.dp)
+                    .liveGlass(RoundedCornerShape(18.dp))
+                    .padding(horizontal = 14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(Modifier.size(8.dp), contentAlignment = Alignment.Center) {
+                    Box(
+                        Modifier
+                            .size(8.dp)
+                            .graphicsLayer {
+                                val sc = 1f + pulse * 1.4f
+                                scaleX = sc
+                                scaleY = sc
+                                alpha = 0.6f * (1f - pulse)
+                            }
+                            .clip(CircleShape)
+                            .background(Color(0xFFFF5A5F))
+                    )
+                    Box(Modifier.size(8.dp).clip(CircleShape).background(Color(0xFFFF5A5F)))
+                }
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    tr("LIVE moon"),
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Medium,
+                    color = Color.White
+                )
+            }
         }
 
         SkyMap(
@@ -231,29 +346,34 @@ fun LiveMoonScreen(vm: WeatherViewModel) {
                 .navigationBarsPadding()
                 .padding(16.dp)
                 .fillMaxWidth()
-                .background(Color(0x99000000), RoundedCornerShape(24.dp))
-                .padding(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+                .liveGlass(RoundedCornerShape(28.dp))
+                .padding(horizontal = 20.dp, vertical = 18.dp)
         ) {
-            Text(
-                "${tr(Moon.phaseName(phase.cycle))} · ${(phase.illumination * 100).roundToInt()}%",
-                style = MaterialTheme.typography.titleMedium,
-                color = Color.White
-            )
-            Spacer(Modifier.height(4.dp))
-            Text(
-                "${tr("Altitude")} ${altDeg.roundToInt()}° · ${tr("Azimuth")} ${azDeg.roundToInt()}° ${compassLabel(azDeg)}",
-                style = MaterialTheme.typography.bodyMedium,
-                color = Color.White.copy(alpha = 0.85f)
-            )
-            lookAz?.let {
-                Text(
-                    "${tr("Camera")} ${it.roundToInt()}° ${compassLabel(it)}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Color.White.copy(alpha = 0.7f)
-                )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        tr(Moon.phaseName(phase.cycle)),
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Medium,
+                        color = Color.White
+                    )
+                    Text(
+                        "${(phase.illumination * 100).roundToInt()}% ${tr("illuminated")}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = LiveSoft
+                    )
+                }
+                MoonOrb(phase.cycle, Modifier.size(60.dp))
             }
-            Spacer(Modifier.height(4.dp))
+            Spacer(Modifier.height(14.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                LiveStat(tr("Altitude"), "${altDeg.roundToInt()}°", Modifier.weight(1f))
+                LiveStat(tr("Azimuth"), "${azDeg.roundToInt()}° ${compassLabel(azDeg)}", Modifier.weight(1f))
+                lookAz?.let {
+                    LiveStat(tr("Camera"), "${it.roundToInt()}° ${compassLabel(it)}", Modifier.weight(1f))
+                }
+            }
+            Spacer(Modifier.height(12.dp))
             Text(
                 when {
                     !hasSensor -> tr("Rotation sensor not available.")
@@ -261,13 +381,16 @@ fun LiveMoonScreen(vm: WeatherViewModel) {
                     m == null -> tr("Move your phone to calibrate.")
                     else -> tr("Point your phone at the sky and follow the arrow.")
                 },
+                modifier = Modifier.fillMaxWidth(),
                 style = MaterialTheme.typography.bodySmall,
-                color = Color.White.copy(alpha = 0.85f),
+                color = LiveSoft,
                 textAlign = TextAlign.Center
             )
             if (!granted) {
-                Spacer(Modifier.height(8.dp))
-                Button(onClick = { launcher.launch(Manifest.permission.CAMERA) }) { Text(tr("Allow camera")) }
+                Spacer(Modifier.height(10.dp))
+                Button(onClick = { launcher.launch(Manifest.permission.CAMERA) }, modifier = Modifier.fillMaxWidth()) {
+                    Text(tr("Allow camera"))
+                }
             }
         }
     }
@@ -276,7 +399,7 @@ fun LiveMoonScreen(vm: WeatherViewModel) {
 @Composable
 private fun SkyMap(moonAz: Double, moonAlt: Double, lookAz: Double?, modifier: Modifier = Modifier) {
     val measurer = rememberTextMeasurer()
-    Canvas(modifier.background(Color(0x99000000), CircleShape)) {
+    Canvas(modifier.liveGlass(CircleShape)) {
         val r = min(size.width, size.height) / 2f - 14.dp.toPx()
         val c = Offset(size.width / 2f, size.height / 2f)
         val line = Color.White.copy(alpha = 0.35f)
