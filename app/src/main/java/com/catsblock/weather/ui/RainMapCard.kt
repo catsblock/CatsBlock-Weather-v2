@@ -1,10 +1,16 @@
 package com.catsblock.weather.ui
 
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Canvas as AndroidCanvas
+import android.graphics.Paint
+import android.util.LruCache
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -50,6 +56,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
@@ -76,6 +84,9 @@ import kotlin.math.max
 import kotlin.math.roundToInt
 import kotlin.math.tan
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -115,64 +126,82 @@ private val RainMapBase = Color(0xFFF2EFE9)
 
 private fun osmTileUrl(z: Int, x: Int, y: Int): String = "https://tile.openstreetmap.org/$z/$x/$y.png"
 
-@Composable
-private fun RainTileImage(url: String, modifier: Modifier, alpha: Float = 1f) {
-    val context = LocalContext.current
-    AsyncImage(
-        model = ImageRequest.Builder(context)
-            .data(url)
-            .addHeader("User-Agent", "CatsBlockWeather/2.0 (Android)")
-            .crossfade(true)
-            .build(),
-        contentDescription = null,
-        modifier = modifier,
-        contentScale = ContentScale.FillBounds,
-        alpha = alpha
-    )
-}
+private object RadarMapRenderer {
+    private val client = OkHttpClient.Builder()
+        .connectTimeout(10, TimeUnit.SECONDS)
+        .readTimeout(10, TimeUnit.SECONDS)
+        .build()
+    private val cache = LruCache<String, Bitmap>(96)
 
-@Composable
-private fun RainTiles(city: City, zoom: Int, set: RadarSet?, frame: RadarFrame?, modifier: Modifier = Modifier) {
-    BoxWithConstraints(modifier.clipToBounds().background(RainMapBase)) {
-        val density = LocalDensity.current
-        val wPx = constraints.maxWidth.toFloat()
-        val hPx = constraints.maxHeight.toFloat()
-        val tilePx = with(density) { 256.dp.toPx() }.roundToInt().coerceAtLeast(1)
-        val tileDp = with(density) { tilePx.toDp() }
+    private suspend fun tile(url: String): Bitmap? {
+        cache.get(url)?.let { return it }
+        val bmp = withContext(Dispatchers.IO) {
+            runCatching {
+                client.newCall(Request.Builder().url(url).header("User-Agent", "CatsBlockWeather/2.0 (Android)").build())
+                    .execute()
+                    .use { r ->
+                        if (!r.isSuccessful) null
+                        else r.body?.bytes()?.let { BitmapFactory.decodeByteArray(it, 0, it.size) }
+                    }
+            }.getOrNull()
+        }
+        if (bmp != null) cache.put(url, bmp)
+        return bmp
+    }
+
+    suspend fun render(city: City, zoom: Int, w: Int, h: Int, set: RadarSet?, frame: RadarFrame?): Bitmap = coroutineScope {
+        val size = 256
         val n = 1 shl zoom
         val latR = Math.toRadians(city.lat.coerceIn(-85.0, 85.0))
         val tx = n * (city.lon + 180.0) / 360.0
         val ty = n * (1.0 - ln(tan(latR) + 1.0 / cos(latR)) / PI) / 2.0
         val bx = floor(tx).toInt()
         val by = floor(ty).toInt()
-        val rx = ceil(wPx / 2f / tilePx).toInt() + 1
-        val ry = ceil(hPx / 2f / tilePx).toInt() + 1
+        val rx = ceil(w / 2f / size).toInt() + 1
+        val ry = ceil(h / 2f / size).toInt() + 1
         val cells = ArrayList<Triple<Int, Int, Int>>()
         for (dy in -ry..ry) {
             val y = by + dy
             if (y !in 0 until n) continue
             for (dx in -rx..rx) cells.add(Triple(bx + dx, y, Math.floorMod(bx + dx, n)))
         }
-        val radarZoom = minOf(zoom, 7)
-        cells.forEach { (x, y, xx) ->
-            val left = (wPx / 2f + tilePx * (x - tx)).roundToInt()
-            val top = (hPx / 2f + tilePx * (y - ty)).roundToInt()
-            RainTileImage(
-                osmTileUrl(zoom, xx, y),
-                Modifier.offset { IntOffset(left, top) }.size(tileDp)
-            )
+        val base = cells.map { c -> async { c to tile(osmTileUrl(zoom, c.third, c.second)) } }
+        val radar = if (set != null && frame != null && zoom <= 7) {
+            cells.map { c -> async { c to tile("${set.host}${frame.path}/256/$zoom/${c.third}/${c.second}/2/1_1.png") } }
+        } else {
+            emptyList()
         }
-        if (set != null && frame != null && zoom <= 7) {
-            cells.forEach { (x, y, xx) ->
-                val left = (wPx / 2f + tilePx * (x - tx)).roundToInt()
-                val top = (hPx / 2f + tilePx * (y - ty)).roundToInt()
-                RainTileImage(
-                    "${set.host}${frame.path}/256/$radarZoom/$xx/$y/2/1_1.png",
-                    Modifier.offset { IntOffset(left, top) }.size(tileDp),
-                    0.8f
-                )
+        val baseTiles = base.awaitAll()
+        val radarTiles = radar.awaitAll()
+        val out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        val canvas = AndroidCanvas(out)
+        canvas.drawColor(0xFFF2EFE9.toInt())
+        val radarPaint = Paint(Paint.FILTER_BITMAP_FLAG).apply { alpha = 204 }
+        fun draw(list: List<Pair<Triple<Int, Int, Int>, Bitmap?>>, paint: Paint?) {
+            list.forEach { (c, bmp) ->
+                if (bmp != null) {
+                    val left = (w / 2f + size * (c.first - tx)).roundToInt()
+                    val top = (h / 2f + size * (c.second - ty)).roundToInt()
+                    canvas.drawBitmap(bmp, left.toFloat(), top.toFloat(), paint)
+                }
             }
         }
+        draw(baseTiles, null)
+        draw(radarTiles, radarPaint)
+        out
+    }
+}
+
+@Composable
+private fun RainTiles(city: City, zoom: Int, set: RadarSet?, frame: RadarFrame?, modifier: Modifier = Modifier) {
+    BoxWithConstraints(modifier.clipToBounds().background(RainMapBase)) {
+        val w = constraints.maxWidth
+        val h = constraints.maxHeight
+        var image by remember { mutableStateOf<ImageBitmap?>(null) }
+        LaunchedEffect(city, zoom, set, frame, w, h) {
+            if (w > 0 && h > 0) image = RadarMapRenderer.render(city, zoom, w, h, set, frame).asImageBitmap()
+        }
+        image?.let { Image(it, null, Modifier.fillMaxSize(), contentScale = ContentScale.FillBounds) }
     }
 }
 
@@ -207,7 +236,7 @@ private fun RainPanel(
     val frames = set?.frames.orEmpty()
     val frame = frames.getOrNull(index)
     val last = frames.lastOrNull()
-    var zoom by remember { mutableIntStateOf(6) }
+    var zoom by remember { mutableIntStateOf(7) }
     val pulse by rememberInfiniteTransition(label = "pulse").animateFloat(
         0f,
         1f,
