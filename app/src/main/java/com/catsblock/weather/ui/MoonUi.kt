@@ -1,482 +1,704 @@
 package com.catsblock.weather.ui
 
-import androidx.compose.foundation.Canvas
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.CameraAlt
-import androidx.compose.material.icons.rounded.ChevronLeft
-import androidx.compose.material.icons.rounded.ChevronRight
-import androidx.compose.material.icons.rounded.NightsStay
+import androidx.compose.material.icons.rounded.Air
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Eco
+import androidx.compose.material.icons.rounded.Menu
+import androidx.compose.material.icons.rounded.NearMe
+import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Speed
+import androidx.compose.material.icons.rounded.Umbrella
+import androidx.compose.material.icons.rounded.Visibility
+import androidx.compose.material.icons.rounded.WaterDrop
+import androidx.compose.material.icons.rounded.WbSunny
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.ModalNavigationDrawer
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberDrawerState
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.BlurredEdgeTreatment
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.CompositingStrategy
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.PathOperation
-import androidx.compose.ui.graphics.drawscope.DrawScope
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.catsblock.weather.data.City
-import com.catsblock.weather.data.Eclipse
-import com.catsblock.weather.data.Moon
-import com.catsblock.weather.data.MoonPhase
-import com.catsblock.weather.i18n.I18n
+import com.catsblock.weather.data.CitySummary
+import com.catsblock.weather.data.Condition
+import com.catsblock.weather.data.Day
+import com.catsblock.weather.data.WeatherBundle
+import com.catsblock.weather.data.aqiAdvice
+import com.catsblock.weather.data.buildAlert
+import com.catsblock.weather.data.compassLabel
+import com.catsblock.weather.data.humidityDescription
+import com.catsblock.weather.data.humidityLabel
+import com.catsblock.weather.data.isWet
+import com.catsblock.weather.data.lifeIndex
+import com.catsblock.weather.data.precipToday
+import com.catsblock.weather.data.uvAdvice
+import com.catsblock.weather.data.windDescription
 import com.catsblock.weather.i18n.tr
-import java.time.Instant
-import java.time.LocalDate
-import java.time.LocalDateTime
-import java.time.LocalTime
-import java.time.YearMonth
-import java.time.ZoneOffset
-import java.time.format.TextStyle
-import java.time.temporal.WeekFields
-import kotlin.math.PI
-import kotlin.math.abs
-import kotlin.math.cos
-import kotlin.math.max
-import kotlin.math.min
+import com.catsblock.weather.sound.WeatherSoundPlayer
+import com.catsblock.weather.ui.glass.EntranceCounter
+import com.catsblock.weather.ui.glass.LocalEntrance
+import com.catsblock.weather.ui.glass.LocalHazeState
+import com.catsblock.weather.ui.glass.hazeBackdropSource
+import com.catsblock.weather.ui.particles.ParticleOverlay
+import com.catsblock.weather.ui.particles.ParticleWeather
+import dev.chrisbanes.haze.HazeState
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import java.time.temporal.ChronoUnit
 import kotlin.math.roundToInt
-import kotlin.random.Random
 
-private val EclipseAccent = Color(0xFFFF8A65)
-private val SoftWhite = Color(0xB3FFFFFF)
-
-fun DrawScope.drawEclipse(eclipse: Eclipse, c: Offset, r: Float) {
-    val shadow = Offset(c.x + (eclipse.dx * r).toFloat(), c.y + (eclipse.dy * r).toFloat())
-    val umbraRadius = (eclipse.umbra * r).toFloat().coerceAtLeast(1f)
-    val penumbraRadius = (eclipse.penumbra * r).toFloat().coerceAtLeast(umbraRadius + 1f)
-    val inner = (umbraRadius / penumbraRadius).coerceIn(0.05f, 0.95f)
-    val moon = Path().apply { addOval(Rect(c, r)) }
-    clipPath(moon) {
-        drawCircle(
-            Brush.radialGradient(
-                colorStops = arrayOf(
-                    0f to Color(0x66140A0A),
-                    inner to Color(0x4D140A0A),
-                    1f to Color.Transparent
-                ),
-                center = shadow,
-                radius = penumbraRadius
-            ),
-            penumbraRadius,
-            shadow
-        )
-        if (eclipse.kind >= 1) {
-            val strength = if (eclipse.kind == 2) 1f else 0.9f
-            drawCircle(
-                Brush.radialGradient(
-                    colorStops = arrayOf(
-                        0f to Color(0xFF4A0E08).copy(alpha = 0.96f * strength),
-                        0.55f to Color(0xFF8E2012).copy(alpha = 0.94f * strength),
-                        0.85f to Color(0xFFC4421E).copy(alpha = 0.90f * strength),
-                        1f to Color(0xFFE2743A).copy(alpha = 0.55f * strength)
-                    ),
-                    center = shadow,
-                    radius = umbraRadius
-                ),
-                umbraRadius,
-                shadow
-            )
-        }
-    }
+private sealed interface Sheet {
+    data class DaySheet(val day: Day) : Sheet
+    data object Days : Sheet
+    data object Precip : Sheet
+    data object Wind : Sheet
+    data object Air : Sheet
+    data object Uv : Sheet
+    data object Humidity : Sheet
+    data object Pressure : Sheet
+    data object Visibility : Sheet
+    data object Moon : Sheet
 }
 
-private class MoonSpot(val x: Float, val y: Float, val w: Float, val h: Float)
-
-private val MoonMaria = listOf(
-    MoonSpot(-0.32f, -0.28f, 0.34f, 0.24f),
-    MoonSpot(0.12f, -0.40f, 0.26f, 0.20f),
-    MoonSpot(0.02f, 0.02f, 0.30f, 0.22f),
-    MoonSpot(-0.38f, 0.14f, 0.22f, 0.17f),
-    MoonSpot(0.34f, 0.16f, 0.20f, 0.15f),
-    MoonSpot(-0.06f, 0.46f, 0.26f, 0.12f)
+private val textShadow = TextStyle(
+    shadow = Shadow(Color(0x66000000), offset = Offset(0f, 2f), blurRadius = 10f)
 )
 
-private val MoonCraters = listOf(
-    MoonSpot(0.42f, -0.12f, 0.075f, 0.075f),
-    MoonSpot(-0.52f, -0.06f, 0.055f, 0.055f),
-    MoonSpot(0.26f, 0.56f, 0.065f, 0.065f),
-    MoonSpot(-0.22f, -0.62f, 0.05f, 0.05f),
-    MoonSpot(0.58f, 0.36f, 0.045f, 0.045f),
-    MoonSpot(-0.46f, 0.52f, 0.055f, 0.055f),
-    MoonSpot(0.10f, -0.10f, 0.05f, 0.05f),
-    MoonSpot(-0.12f, 0.28f, 0.04f, 0.04f)
+private val snowKinds = setOf(Condition.Snow, Condition.HeavySnow, Condition.Blizzard, Condition.Sleet)
+
+fun beaufort(kmh: Double): Int = when {
+    kmh < 1 -> 0
+    kmh < 6 -> 1
+    kmh < 12 -> 2
+    kmh < 20 -> 3
+    kmh < 29 -> 4
+    kmh < 39 -> 5
+    kmh < 50 -> 6
+    kmh < 75 -> 7
+    kmh < 89 -> 8
+    kmh < 103 -> 9
+    kmh < 118 -> 10
+    else -> 11
+}
+
+fun windShort(kmh: Double): String = tr(
+    when {
+        kmh < 1 -> "Calm air."
+        kmh < 12 -> "A light breeze, very comfortable."
+        kmh < 29 -> "A pleasant breeze."
+        kmh < 50 -> "Strong wind, hold on to your hat."
+        kmh < 75 -> "Very strong wind. Be careful outside."
+        else -> "Dangerous winds. Stay indoors."
+    }
 )
 
-@Composable
-fun MoonOrb(cycle: Double, modifier: Modifier = Modifier, eclipse: Eclipse? = null) {
-    Canvas(modifier.graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)) {
-        val r = min(size.width, size.height) / 2f * 0.88f
-        val c = Offset(size.width / 2f, size.height / 2f)
-        drawCircle(
-            Brush.radialGradient(
-                listOf(Color(0x55FFF3CF), Color(0x1AFFF3CF), Color.Transparent),
-                center = c,
-                radius = r * 1.5f
-            ),
-            r * 1.5f,
-            c
-        )
-        val circle = Path().apply { addOval(Rect(c, r)) }
-        clipPath(circle) {
-            drawCircle(
-                Brush.radialGradient(
-                    listOf(Color(0xFFF8F4E4), Color(0xFFDAD4BD), Color(0xFFB4AE98)),
-                    center = Offset(c.x - r * 0.25f, c.y - r * 0.25f),
-                    radius = r * 1.6f
-                ),
-                r,
-                c
-            )
-            MoonMaria.forEach {
-                drawOval(
-                    Color(0xFF77746A).copy(alpha = 0.40f),
-                    Offset(c.x + (it.x - it.w) * r, c.y + (it.y - it.h) * r),
-                    Size(it.w * 2f * r, it.h * 2f * r)
-                )
-            }
-            MoonCraters.forEach {
-                val p = Offset(c.x + it.x * r, c.y + it.y * r)
-                val cr = it.w * r
-                drawCircle(Color(0xFF6A675C).copy(alpha = 0.24f), cr, p)
-                drawCircle(Color.White.copy(alpha = 0.32f), cr, p, style = Stroke(max(0.6f, cr * 0.22f)))
-            }
-            val half = Path().apply {
-                addRect(
-                    if (cycle < 0.5) Rect(c.x, c.y - r, c.x + r, c.y + r) else Rect(c.x - r, c.y - r, c.x, c.y + r)
-                )
-            }
-            val k = cos(2.0 * PI * cycle).toFloat()
-            val ellipse = Path().apply {
-                addOval(Rect(c.x - r * abs(k), c.y - r, c.x + r * abs(k), c.y + r))
-            }
-            val lit = Path.combine(PathOperation.Intersect, circle, half)
-            val shape = Path.combine(if (k > 0f) PathOperation.Difference else PathOperation.Union, lit, ellipse)
-            val dark = Path.combine(PathOperation.Difference, circle, shape)
-            drawPath(dark, Color(0xFF05070F).copy(alpha = 0.90f))
-            drawCircle(
-                Brush.radialGradient(
-                    colorStops = arrayOf(0.7f to Color.Transparent, 1f to Color(0x66000000)),
-                    center = c,
-                    radius = r
-                ),
-                r,
-                c
-            )
-            if (eclipse != null) drawEclipse(eclipse, c, r)
-        }
-        drawCircle(Color.White.copy(alpha = 0.28f), r, c, style = Stroke(1.dp.toPx()))
+fun aqiShort(v: Double): String = tr(
+    when {
+        v <= 50.0 -> "Air quality is ideal."
+        v <= 100.0 -> "Air quality is acceptable."
+        v <= 150.0 -> "Unhealthy for sensitive groups."
+        v <= 200.0 -> "Unhealthy air quality."
+        else -> "Hazardous air quality."
     }
-}
+)
 
-@Composable
-private fun MoonStars(modifier: Modifier = Modifier) {
-    val stars = remember {
-        val rnd = Random(7)
-        List(32) { Triple(rnd.nextFloat(), rnd.nextFloat(), 0.4f + rnd.nextFloat() * 1.2f) }
+fun uvShort(v: Double): String = tr(
+    when {
+        v < 3.0 -> "UV is low right now."
+        v < 5.0 -> "Wear SPF 30 if outside long."
+        v < 7.0 -> "SPF 30 and sunglasses advised."
+        v < 10.0 -> "SPF 50+ and a hat advised."
+        else -> "Avoid direct midday sun."
     }
-    Canvas(modifier) {
-        stars.forEach { (x, y, s) ->
-            drawCircle(
-                Color.White.copy(alpha = 0.25f + s * 0.3f),
-                s.dp.toPx(),
-                Offset(size.width * x, size.height * y)
-            )
-        }
+)
+
+fun pressureShort(hpa: Double): String = tr(
+    when {
+        hpa < 1000.0 -> "Low pressure. Unsettled weather is possible."
+        hpa < 1020.0 -> "Normal pressure."
+        else -> "High pressure. Stable weather is likely."
     }
-}
+)
 
-private fun moonCap(text: String): String = text.replaceFirstChar { it.titlecase(I18n.lang.locale) }
-
-private fun moonTimeLabel(date: LocalDate, time: LocalTime?): String =
-    if (time == null) "—" else clockLabel(date.atTime(time))
-
-@Composable
-private fun MoonChip(label: String, value: String, modifier: Modifier = Modifier) {
-    val shape = RoundedCornerShape(18.dp)
-    Column(
-        modifier
-            .clip(shape)
-            .background(Color.White.copy(alpha = 0.09f))
-            .border(1.dp, Color.White.copy(alpha = 0.20f), shape)
-            .padding(horizontal = 14.dp, vertical = 10.dp)
-    ) {
-        Text(label, style = MaterialTheme.typography.labelMedium, color = SoftWhite)
-        Text(value, style = MaterialTheme.typography.titleMedium, color = Color.White)
+fun visibilityShort(km: Double): String = tr(
+    when {
+        km < 1.0 -> "Very poor visibility. Drive carefully."
+        km < 4.0 -> "Poor visibility."
+        km < 10.0 -> "Moderate visibility."
+        else -> "Excellent visibility."
     }
-}
+)
 
-@Composable
-fun MoonCard(city: City, offsetSeconds: Int, now: LocalDateTime, onClick: () -> Unit) {
-    val offset = remember(offsetSeconds) { ZoneOffset.ofTotalSeconds(offsetSeconds) }
-    val ms = remember(now, offset) { now.toInstant(offset).toEpochMilli() }
-    val phase = remember(ms / 60_000L) { Moon.phase(ms) }
-    val eclipse = remember(ms / 60_000L) { Moon.eclipse(ms) }
-    val date = now.toLocalDate()
-    val times = remember(date, city.lat, city.lon, offset) { Moon.riseSet(date, city.lat, city.lon, offset) }
-    GlassCard(Modifier.fillMaxWidth(), onClick) {
-        CardHeader(Icons.Rounded.NightsStay, tr("Moon"))
-        Spacer(Modifier.height(12.dp))
-        val panel = RoundedCornerShape(24.dp)
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .clip(panel)
-                .background(Brush.verticalGradient(listOf(Color(0xFF080E2B), Color(0xFF17123F), Color(0xFF2B1B50))))
-                .border(1.dp, Color.White.copy(alpha = 0.18f), panel)
-                .padding(18.dp)
-        ) {
-            MoonStars(Modifier.matchParentSize())
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        tr(Moon.phaseName(phase.cycle)),
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Medium,
-                        color = Color.White
-                    )
-                    Spacer(Modifier.height(2.dp))
-                    Text(
-                        "${(phase.illumination * 100).roundToInt()}% ${tr("illuminated")}",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = SoftWhite
-                    )
-                    if (eclipse != null) {
-                        Spacer(Modifier.height(6.dp))
-                        Text(
-                            tr(Moon.eclipseName(eclipse)),
-                            style = MaterialTheme.typography.labelLarge,
-                            color = EclipseAccent
-                        )
-                    }
-                }
-                MoonOrb(phase.cycle, Modifier.size(132.dp), eclipse)
-            }
-        }
-        Spacer(Modifier.height(12.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            MoonChip(tr("Moonrise"), moonTimeLabel(date, times.first), Modifier.weight(1f))
-            MoonChip(tr("Moonset"), moonTimeLabel(date, times.second), Modifier.weight(1f))
-        }
-    }
-}
-
-private class MoonDayInfo(val date: LocalDate, val phase: MoonPhase, val eclipse: Eclipse?)
+private fun visibilityText(km: Double): String = if (km >= 10.0) km.roundToInt().toString() else f1(km)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MoonCalendarSheet(
-    city: City,
-    offsetSeconds: Int,
-    now: LocalDateTime,
-    onLiveMoon: () -> Unit,
-    onDismiss: () -> Unit
-) {
-    val offset = remember(offsetSeconds) { ZoneOffset.ofTotalSeconds(offsetSeconds) }
-    val locale = I18n.lang.locale
-    val today = now.toLocalDate()
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    var month by remember { mutableStateOf(YearMonth.from(today)) }
-    var selected by remember { mutableStateOf(today) }
-    val days = remember(month, offset) {
-        (1..month.lengthOfMonth()).map { d ->
-            val date = month.atDay(d)
-            val noon = date.atTime(12, 0).toInstant(offset).toEpochMilli()
-            MoonDayInfo(date, Moon.phase(noon), Moon.dayEclipse(date, offset)?.second)
-        }
-    }
-    val shown = days.firstOrNull { it.date == selected } ?: days.first()
-    val shownTimes = remember(shown.date, city.lat, city.lon, offset) {
-        Moon.riseSet(shown.date, city.lat, city.lon, offset)
-    }
-    val shownEclipseTime = remember(shown.date, offset) {
-        Moon.dayEclipse(shown.date, offset)?.first?.let {
-            clockLabel(Instant.ofEpochMilli(it).atOffset(offset).toLocalDateTime())
-        }
-    }
-    val firstDay = remember(locale) { WeekFields.of(locale).firstDayOfWeek }
-    val blanks = (month.atDay(1).dayOfWeek.value - firstDay.value + 7) % 7
-    val weekdays = remember(firstDay, locale) {
-        (0 until 7).map { moonCap(firstDay.plus(it.toLong()).getDisplayName(TextStyle.SHORT, locale)) }
-    }
-    val cells: List<MoonDayInfo?> = List(blanks) { null } + days
-    val rows = cells.chunked(7)
-    val tile = RoundedCornerShape(16.dp)
+fun MainScreen(vm: WeatherViewModel) {
+    val state by vm.weather.collectAsStateWithLifecycle()
+    val city by vm.city.collectAsStateWithLifecycle()
+    val settings by vm.settings.collectAsStateWithLifecycle()
+    val saved by vm.savedCities.collectAsStateWithLifecycle()
+    val summaries by vm.summaries.collectAsStateWithLifecycle()
+    var citiesOpen by remember { mutableStateOf(false) }
+    val scroll = rememberScrollState()
+    val scheme = MaterialTheme.colorScheme
+    val hazeState = remember { HazeState() }
+    var mode by remember { mutableStateOf(DashboardMode.Temperature) }
 
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        containerColor = Color(0xFF0C1226),
-        contentColor = Color.White
-    ) {
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .navigationBarsPadding()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = { month = month.minusMonths(1) }) {
-                    Icon(Icons.Rounded.ChevronLeft, contentDescription = null, tint = Color.White)
-                }
-                Text(
-                    moonCap(month.month.getDisplayName(TextStyle.FULL, locale)) + " " + month.year,
-                    modifier = Modifier.weight(1f),
-                    style = MaterialTheme.typography.titleLarge,
-                    color = Color.White,
-                    textAlign = TextAlign.Center
+    val bundle = (state as? WeatherState.Success)?.bundle
+    val kind = bundle?.current?.kind ?: Condition.Clear
+    val isDay = bundle?.current?.isDay ?: true
+    val currentSummary = remember(bundle) {
+        bundle?.let { b ->
+            val today = b.current.now.toLocalDate()
+            val d = b.days.firstOrNull { it.date == today } ?: b.days.first()
+            CitySummary(b.current.kind, b.current.isDay, b.current.temp, d.min, d.max)
+        }
+    }
+    val progress = (scroll.value / 700f).coerceIn(0f, 1f)
+    val headerHeight = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 112.dp
+
+    val sound = remember { WeatherSoundPlayer() }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var started by remember { mutableStateOf(true) }
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_START) started = true
+            if (event == Lifecycle.Event.ON_STOP) started = false
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            sound.stop()
+        }
+    }
+    LaunchedEffect(bundle != null, kind, settings.sounds, started) {
+        if (bundle != null && settings.sounds && started) sound.play(kind) else sound.stop()
+    }
+    LaunchedEffect(city) {
+        while (true) {
+            delay(900_000)
+            vm.refresh(true)
+        }
+    }
+
+    run {
+        CompositionLocalProvider(LocalHazeState provides hazeState) {
+        Box(Modifier.fillMaxSize()) {
+            Box(Modifier.fillMaxSize().hazeBackdropSource(hazeState)) {
+                WeatherBackground(
+                    kind,
+                    isDay,
+                    Modifier.fillMaxSize().blur((progress * 30f).dp, BlurredEdgeTreatment.Unbounded)
                 )
-                IconButton(onClick = { month = month.plusMonths(1) }) {
-                    Icon(Icons.Rounded.ChevronRight, contentDescription = null, tint = Color.White)
+            }
+            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = progress * 0.32f)))
+            Box(Modifier.fillMaxSize().background(scheme.primary.copy(alpha = progress * 0.14f)))
+
+            when {
+                bundle != null -> WeatherDetails(
+                    bundle = bundle,
+                    city = city,
+                    fahrenheit = settings.fahrenheit,
+                    scroll = scroll,
+                    headerHeight = headerHeight,
+                    mode = mode,
+                    onLiveMoon = vm::openLiveMoon
+                )
+                state is WeatherState.Error -> Column(
+                    Modifier.fillMaxSize().padding(32.dp),
+                    verticalArrangement = Arrangement.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        tr((state as WeatherState.Error).message),
+                        style = MaterialTheme.typography.titleMedium.merge(textShadow),
+                        color = Color.White,
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(Modifier.height(20.dp))
+                    Button(onClick = { vm.refresh() }) { Text(tr("Retry")) }
+                    Spacer(Modifier.height(8.dp))
+                    FilledTonalButton(onClick = vm::openPicker) { Text(tr("Choose a location")) }
+                }
+                else -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(Modifier.size(48.dp), color = Color.White)
                 }
             }
-            Row(Modifier.fillMaxWidth()) {
-                weekdays.forEach {
-                    Text(
-                        it,
-                        modifier = Modifier.weight(1f),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = SoftWhite,
-                        textAlign = TextAlign.Center
+
+            ParticleOverlay(
+                when {
+                    bundle == null -> ParticleWeather.None
+                    kind == Condition.Storm -> ParticleWeather.Storm
+                    kind == Condition.Rain -> ParticleWeather.HeavyRain
+                    kind == Condition.Drizzle -> ParticleWeather.Rain
+                    kind in snowKinds -> ParticleWeather.Snow
+                    else -> ParticleWeather.None
+                }
+            )
+
+            HeaderBar(
+                mode = mode,
+                onMode = { mode = it },
+                name = city?.name.orEmpty(),
+                temp = bundle?.let { tempText(it.current.temp, settings.fahrenheit) },
+                progress = progress,
+                dots = saved.size.coerceIn(1, 6),
+                current = saved.indexOfFirst { it.id == city?.id }.coerceAtLeast(0),
+                onCities = {
+                    vm.loadSummaries()
+                    citiesOpen = true
+                },
+                onSettings = vm::openSettings
+            )
+
+            CitiesOverlay(
+                visible = citiesOpen,
+                saved = saved,
+                selectedId = city?.id,
+                current = currentSummary,
+                summaries = summaries,
+                fahrenheit = settings.fahrenheit,
+                onSelect = {
+                    citiesOpen = false
+                    vm.selectCity(it)
+                },
+                onRemove = vm::removeCity,
+                onAdd = {
+                    citiesOpen = false
+                    vm.openPicker()
+                },
+                onClose = { citiesOpen = false }
+            )
+        }
+        }
+    }
+}
+
+@Composable
+private fun HeaderBar(
+    mode: DashboardMode,
+    onMode: (DashboardMode) -> Unit,
+    name: String,
+    temp: String?,
+    progress: Float,
+    dots: Int,
+    current: Int,
+    onCities: () -> Unit,
+    onSettings: () -> Unit
+) {
+    Row(
+        Modifier.fillMaxWidth().statusBarsPadding().padding(start = 24.dp, end = 4.dp, top = 6.dp),
+        verticalAlignment = Alignment.Top
+    ) {
+        Column(Modifier.weight(1f).padding(top = 6.dp)) {
+            Text(
+                if (temp != null && progress > 0.55f) "$name $temp" else name,
+                style = MaterialTheme.typography.headlineSmall.merge(textShadow),
+                fontWeight = FontWeight.Medium,
+                color = Color.White,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Spacer(Modifier.height(6.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Rounded.NearMe, null, Modifier.size(14.dp), tint = Color.White)
+                Spacer(Modifier.width(6.dp))
+                repeat(dots) { i ->
+                    Box(
+                        Modifier
+                            .padding(end = 5.dp)
+                            .size(6.dp)
+                            .clip(CircleShape)
+                            .background(Color.White.copy(alpha = if (i == current) 0.95f else 0.4f))
                     )
                 }
             }
-            rows.forEach { week ->
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                    for (i in 0 until 7) {
-                        val info = week.getOrNull(i)
-                        if (info == null) {
-                            Spacer(Modifier.weight(1f))
-                        } else {
-                            val isSelected = info.date == shown.date
-                            val isToday = info.date == today
-                            val ring = when {
-                                isSelected -> Color(0xFFCDE6FF)
-                                isToday -> Color.White.copy(alpha = 0.45f)
-                                else -> Color.White.copy(alpha = 0.10f)
-                            }
-                            Column(
+            Spacer(Modifier.height(8.dp))
+            ModeSelector(mode, onMode)
+        }
+        IconButton(onClick = onCities) { Icon(Icons.Rounded.Menu, tr("Saved cities"), tint = Color.White) }
+        IconButton(onClick = onSettings) { Icon(Icons.Rounded.Settings, tr("Settings"), tint = Color.White) }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun WeatherDetails(
+    bundle: WeatherBundle,
+    city: City?,
+    fahrenheit: Boolean,
+    scroll: ScrollState,
+    headerHeight: Dp,
+    mode: DashboardMode,
+    onLiveMoon: () -> Unit
+) {
+    val cur = bundle.current
+    val nowHour = cur.now.truncatedTo(ChronoUnit.HOURS)
+    val startIdx = bundle.hours.indexOfFirst { !it.time.isBefore(nowHour) }.coerceAtLeast(0)
+    val next36 = bundle.hours.drop(startIdx).take(36)
+    val next24 = bundle.hours.drop(startIdx).take(24)
+    val today = cur.now.toLocalDate()
+    val upcoming = bundle.days.filter { !it.date.isBefore(today) }.take(7)
+    val todayDay = upcoming.firstOrNull() ?: bundle.days.first()
+    val chipDays = upcoming.filter { d -> next36.any { it.time.toLocalDate() == d.date } }
+    val chartScroll = rememberScrollState()
+    var sheet by remember { mutableStateOf<Sheet?>(null) }
+    val screenHeight = LocalConfiguration.current.screenHeightDp
+    val heroHeight = ((screenHeight * 0.66f).dp - headerHeight).coerceAtLeast(320.dp)
+    val alert = remember(bundle, fahrenheit) { buildAlert(bundle, fahrenheit) }
+    val baseScheme = MaterialTheme.colorScheme
+    val glassScheme = remember(baseScheme) {
+        baseScheme.copy(
+            primary = Color(0xFFCDE6FF),
+            onPrimary = Color(0xFF0B1B2E),
+            secondary = Color(0xFF9FD8FF),
+            onSurface = Color.White,
+            onSurfaceVariant = Color(0xCCFFFFFF),
+            outline = Color(0x99FFFFFF),
+            outlineVariant = Color(0x44FFFFFF)
+        )
+    }
+    val pressureLow = next24.minOfOrNull { it.pressure } ?: cur.pressure
+    val pressureHigh = next24.maxOfOrNull { it.pressure } ?: cur.pressure
+    val visibilityKm = cur.visibility / 1000.0
+    val rainingNow = cur.kind.isWet
+    val entrance = remember(city?.id) { EntranceCounter() }
+    val heroIn = remember { Animatable(0f) }
+    LaunchedEffect(city?.id) {
+        heroIn.snapTo(0f)
+        heroIn.animateTo(1f, tween(800, easing = FastOutSlowInEasing))
+    }
+    val snowingNow = cur.kind in snowKinds
+
+    Column(Modifier.fillMaxSize().padding(top = headerHeight).verticalScroll(scroll)) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .height(heroHeight)
+                .graphicsLayer {
+                    alpha = heroIn.value
+                    translationY = (1f - heroIn.value) * 28.dp.toPx()
+                }
+                .padding(horizontal = 24.dp, vertical = 24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Bottom
+        ) {
+            Text(
+                tempText(cur.temp, fahrenheit),
+                style = MaterialTheme.typography.displayLarge.merge(textShadow),
+                fontSize = 150.sp,
+                lineHeight = 160.sp,
+                fontWeight = FontWeight.W200,
+                color = Color.White
+            )
+            Text(
+                cur.kind.label(cur.isDay),
+                style = MaterialTheme.typography.titleLarge.merge(textShadow),
+                fontWeight = FontWeight.Medium,
+                color = Color.White
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "${tr("Feels like")} ${tempText(cur.feels, fahrenheit)}    ${tr("Wind")} ${compassLabel(cur.windDir)} ${beaufort(cur.windSpeed)}",
+                style = MaterialTheme.typography.bodyMedium.merge(textShadow),
+                color = Color.White.copy(alpha = 0.85f)
+            )
+        }
+
+        CompositionLocalProvider(LocalGlass provides true, LocalEntrance provides entrance) {
+            MaterialTheme(colorScheme = glassScheme, typography = MaterialTheme.typography, shapes = MaterialTheme.shapes) {
+                Column(
+                    Modifier.padding(horizontal = 16.dp).navigationBarsPadding().padding(bottom = 24.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    alert?.let { AlertCard(it) }
+                    HoursCard(next36, chipDays, today, fahrenheit, chartScroll)
+                    DaysCard(
+                        days = upcoming,
+                        today = today,
+                        fahrenheit = fahrenheit,
+                        onDayClick = { sheet = Sheet.DaySheet(it) },
+                        onMore = { sheet = Sheet.Days }
+                    )
+                    CardsDashboard(bundle, city, todayDay, mode) { key ->
+                        sheet = when (key) {
+                            "Precip" -> Sheet.Precip
+                            "Wind" -> Sheet.Wind
+                            "Air" -> Sheet.Air
+                            "Uv" -> Sheet.Uv
+                            "Humidity" -> Sheet.Humidity
+                            "Pressure" -> Sheet.Pressure
+                            "Visibility" -> Sheet.Visibility
+                            else -> Sheet.Moon
+                        }
+                    }
+                    LifeIndexCard(
+                        lifeIndex(
+                            temp = cur.temp,
+                            feels = cur.feels,
+                            humidity = cur.humidity,
+                            uv = cur.uv,
+                            aqi = cur.aqi,
+                            wind = cur.windSpeed,
+                            precip = todayDay.precipSum,
+                            kind = cur.kind,
+                            dayMax = todayDay.max,
+                            dayMin = todayDay.min
+                        )
+                    )
+                }
+            }
+        }
+    }
+
+    (sheet as? Sheet.DaySheet)?.let { current ->
+        DayDetailSheet(current.day, bundle.hours, fahrenheit, today, cur.now) { sheet = null }
+    }
+
+    if (sheet is Sheet.Moon && city != null) {
+        MoonCalendarSheet(city, bundle.utcOffsetSeconds, cur.now, onLiveMoon) { sheet = null }
+    }
+
+    sheet?.takeIf { it !is Sheet.DaySheet && it !is Sheet.Moon }?.let { current ->
+        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        ModalBottomSheet(onDismissRequest = { sheet = null }, sheetState = sheetState) {
+            Column(
+                Modifier.verticalScroll(rememberScrollState()).navigationBarsPadding()
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+            ) {
+                when (current) {
+                    is Sheet.DaySheet -> Unit
+                    Sheet.Moon -> Unit
+                    Sheet.Days -> {
+                        Text(tr("Next 7 days"), style = MaterialTheme.typography.titleLarge)
+                        Spacer(Modifier.height(12.dp))
+                        upcoming.forEach { d ->
+                            Row(
                                 Modifier
-                                    .weight(1f)
-                                    .aspectRatio(0.78f)
-                                    .clip(tile)
-                                    .background(Color.White.copy(alpha = if (isSelected) 0.14f else 0.06f))
-                                    .border(if (isSelected) 2.dp else 1.dp, ring, tile)
-                                    .clickable { selected = info.date }
-                                    .padding(vertical = 5.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.SpaceBetween
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .clickable { sheet = Sheet.DaySheet(d) }
+                                    .padding(vertical = 10.dp, horizontal = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                MoonOrb(info.phase.cycle, Modifier.size(32.dp), info.eclipse)
+                                Column(Modifier.weight(1f)) {
+                                    Text(dayLabel(d.date, today), style = MaterialTheme.typography.titleSmall)
+                                    Text(
+                                        dateLabel(d.date),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                WeatherIcon(d.kind, true, Modifier.size(36.dp))
                                 Text(
-                                    info.date.dayOfMonth.toString(),
-                                    style = MaterialTheme.typography.labelLarge,
-                                    color = Color.White,
-                                    fontWeight = if (isToday) FontWeight.Bold else FontWeight.Normal
+                                    if (d.rainChance >= 30) "${d.rainChance}%" else "",
+                                    modifier = Modifier.width(52.dp),
+                                    textAlign = TextAlign.Center,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.secondary
+                                )
+                                Text(
+                                    "${tempText(d.max, fahrenheit)} / ${tempText(d.min, fahrenheit)}",
+                                    modifier = Modifier.width(88.dp),
+                                    textAlign = TextAlign.End,
+                                    style = MaterialTheme.typography.titleSmall
                                 )
                             }
                         }
                     }
-                }
-            }
-            Spacer(Modifier.height(4.dp))
-            val panel = RoundedCornerShape(24.dp)
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .clip(panel)
-                    .background(Brush.verticalGradient(listOf(Color(0xFF080E2B), Color(0xFF17123F), Color(0xFF2B1B50))))
-                    .border(1.dp, Color.White.copy(alpha = 0.18f), panel)
-                    .padding(18.dp)
-            ) {
-                MoonStars(Modifier.matchParentSize())
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text(longDateLabel(shown.date), style = MaterialTheme.typography.labelLarge, color = SoftWhite)
-                        Text(
-                            tr(Moon.phaseName(shown.phase.cycle)),
-                            style = MaterialTheme.typography.titleLarge,
-                            color = Color.White
+                    Sheet.Precip -> {
+                        Text(tr("Precipitation, next 24 hours"), style = MaterialTheme.typography.titleLarge)
+                        Spacer(Modifier.height(12.dp))
+                        SimpleChart(
+                            values = next24.map { it.precip },
+                            labels = next24.map { hourLabel(it.time) },
+                            valueLabel = { f1(it) },
+                            bar = true,
+                            minY = 0.0,
+                            maxY = next24.maxOfOrNull { it.precip }?.coerceAtLeast(1.0) ?: 1.0
                         )
+                        Text(tr("Millimeters per hour"), style = MaterialTheme.typography.labelMedium)
+                    }
+                    Sheet.Wind -> {
+                        Text(tr("Wind, next 24 hours"), style = MaterialTheme.typography.titleLarge)
                         Text(
-                            "${(shown.phase.illumination * 100).roundToInt()}% ${tr("illuminated")}",
+                            windDescription(cur.windSpeed),
                             style = MaterialTheme.typography.bodyMedium,
-                            color = SoftWhite
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        if (shown.eclipse != null) {
-                            Spacer(Modifier.height(6.dp))
+                        Spacer(Modifier.height(12.dp))
+                        SimpleChart(
+                            values = next24.map { it.windSpeed },
+                            labels = next24.map { "${hourLabel(it.time)}\n${compassLabel(it.windDir)}" },
+                            valueLabel = { it.toInt().toString() },
+                            minY = 0.0,
+                            maxY = next24.maxOfOrNull { it.windSpeed }?.coerceAtLeast(10.0) ?: 10.0
+                        )
+                        Text(tr("Speed in km/h with direction"), style = MaterialTheme.typography.labelMedium)
+                    }
+                    Sheet.Air -> {
+                        val aqiHours = next24.filter { it.aqi != null }
+                        Text(tr("Air quality, next 24 hours"), style = MaterialTheme.typography.titleLarge)
+                        cur.aqi?.let {
                             Text(
-                                tr(Moon.eclipseName(shown.eclipse)) + (shownEclipseTime?.let { " · $it" } ?: ""),
-                                style = MaterialTheme.typography.labelLarge,
-                                color = EclipseAccent
+                                aqiAdvice(it),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
+                        Spacer(Modifier.height(12.dp))
+                        SimpleChart(
+                            values = aqiHours.map { it.aqi ?: 0.0 },
+                            labels = aqiHours.map {
+                                "${hourLabel(it.time)}\n${com.catsblock.weather.data.aqiStatus(it.aqi ?: 0.0)}"
+                            },
+                            valueLabel = { it.toInt().toString() },
+                            minY = 0.0,
+                            maxY = aqiHours.maxOfOrNull { it.aqi ?: 0.0 }?.coerceAtLeast(50.0) ?: 50.0,
+                            stepWidth = 72.dp
+                        )
+                        Text(tr("US AQI"), style = MaterialTheme.typography.labelMedium)
                     }
-                    MoonOrb(shown.phase.cycle, Modifier.size(112.dp), shown.eclipse)
+                    Sheet.Uv -> {
+                        val uvHours = bundle.hours.filter {
+                            val d = it.time.toLocalDate()
+                            d == today || d == today.plusDays(1)
+                        }
+                        Text(tr("UV index, today and tomorrow"), style = MaterialTheme.typography.titleLarge)
+                        Text(
+                            uvAdvice(cur.uv),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(Modifier.height(12.dp))
+                        SimpleChart(
+                            values = uvHours.map { it.uv },
+                            labels = uvHours.map { "${hourLabel(it.time)}\n${weekdayLabel(it.time)}" },
+                            valueLabel = { f1(it) },
+                            minY = 0.0,
+                            maxY = uvHours.maxOfOrNull { it.uv }?.coerceAtLeast(3.0) ?: 3.0
+                        )
+                        Text(tr("Hourly UV variation"), style = MaterialTheme.typography.labelMedium)
+                    }
+                    Sheet.Humidity -> {
+                        Text(tr("Humidity, next 24 hours"), style = MaterialTheme.typography.titleLarge)
+                        Text(
+                            humidityDescription(cur.humidity),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(Modifier.height(12.dp))
+                        SimpleChart(
+                            values = next24.map { it.humidity.toDouble() },
+                            labels = next24.map { hourLabel(it.time) },
+                            valueLabel = { "${it.toInt()}%" },
+                            minY = 0.0,
+                            maxY = 100.0
+                        )
+                    }
+                    Sheet.Pressure -> {
+                        Text(tr("Pressure, next 24 hours"), style = MaterialTheme.typography.titleLarge)
+                        Text(
+                            pressureShort(cur.pressure),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(Modifier.height(12.dp))
+                        SimpleChart(
+                            values = next24.map { it.pressure },
+                            labels = next24.map { hourLabel(it.time) },
+                            valueLabel = { it.roundToInt().toString() },
+                            minY = pressureLow - 2.0,
+                            maxY = pressureHigh + 2.0
+                        )
+                        Text(tr("Hectopascals (hPa)"), style = MaterialTheme.typography.labelMedium)
+                    }
+                    Sheet.Visibility -> {
+                        Text(tr("Visibility, next 24 hours"), style = MaterialTheme.typography.titleLarge)
+                        Text(
+                            visibilityShort(visibilityKm),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(Modifier.height(12.dp))
+                        SimpleChart(
+                            values = next24.map { it.visibility / 1000.0 },
+                            labels = next24.map { hourLabel(it.time) },
+                            valueLabel = { visibilityText(it) },
+                            minY = 0.0,
+                            maxY = (next24.maxOfOrNull { it.visibility / 1000.0 } ?: 10.0).coerceAtLeast(1.0)
+                        )
+                        Text(tr("Kilometers"), style = MaterialTheme.typography.labelMedium)
+                    }
                 }
+                Spacer(Modifier.height(16.dp))
             }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                MoonChip(tr("Moonrise"), moonTimeLabel(shown.date, shownTimes.first), Modifier.weight(1f))
-                MoonChip(tr("Moonset"), moonTimeLabel(shown.date, shownTimes.second), Modifier.weight(1f))
-            }
-            Button(
-                onClick = {
-                    onLiveMoon()
-                    onDismiss()
-                },
-                modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFFCDE6FF),
-                    contentColor = Color(0xFF0B1B2E)
-                )
-            ) {
-                Icon(Icons.Rounded.CameraAlt, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text(tr("LIVE moon"))
-            }
-            Spacer(Modifier.height(12.dp))
         }
     }
 }
