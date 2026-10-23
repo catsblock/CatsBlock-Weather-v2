@@ -34,6 +34,7 @@ import com.catsblock.weather.ui.CityPickerScreen
 import com.catsblock.weather.ui.IconKitScreen
 import com.catsblock.weather.ui.LiveMoonScreen
 import com.catsblock.weather.ui.MainScreen
+import com.catsblock.weather.ui.ProvideUiPrefs
 import com.catsblock.weather.ui.Screen
 import com.catsblock.weather.ui.SettingsScreen
 import com.catsblock.weather.ui.WeatherTheme
@@ -46,10 +47,12 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             WeatherTheme {
-                val vm: WeatherViewModel = viewModel()
-                val settings by vm.settings.collectAsStateWithLifecycle()
-                I18n.lang = settings.language
-                key(settings.language) { AppRoot(vm) }
+                ProvideUiPrefs {
+                    val vm: WeatherViewModel = viewModel()
+                    val settings by vm.settings.collectAsStateWithLifecycle()
+                    I18n.lang = settings.language
+                    key(settings.language) { AppRoot(vm) }
+                }
             }
         }
     }
