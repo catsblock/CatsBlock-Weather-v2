@@ -65,14 +65,21 @@ class WeatherRepository {
                 "latitude" to city.lat.toString(),
                 "longitude" to city.lon.toString(),
                 "current" to "temperature_2m,weather_code,is_day",
+                "daily" to "temperature_2m_max,temperature_2m_min",
+                "forecast_days" to "1",
                 "timezone" to "auto"
             )
         )
-        val cur = JSONObject(raw).getJSONObject("current")
+        val root = JSONObject(raw)
+        val cur = root.getJSONObject("current")
+        val now = cur.getDouble("temperature_2m")
+        val daily = root.optJSONObject("daily")
         return CitySummary(
             kind = wmoCondition(cur.getInt("weather_code")),
             isDay = cur.getInt("is_day") == 1,
-            temp = cur.getDouble("temperature_2m")
+            temp = now,
+            min = daily?.optJSONArray("temperature_2m_min")?.optDouble(0, now) ?: now,
+            max = daily?.optJSONArray("temperature_2m_max")?.optDouble(0, now) ?: now
         )
     }
 
