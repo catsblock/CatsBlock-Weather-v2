@@ -116,23 +116,13 @@ data class CitySummary(
     val temp: Double
 )
 
-enum class AppTheme(val code: String, val label: String) {
-    Glassmorphism("glass", "Glassmorphism"),
-    MaterialYou("material", "Material You");
-
-    companion object {
-        fun from(code: String?) = entries.firstOrNull { it.code == code } ?: Glassmorphism
-    }
-}
-
 data class AppSettings(
     val fahrenheit: Boolean = false,
     val mobileData: Boolean = true,
     val sounds: Boolean = true,
     val language: AppLanguage = AppLanguage.English,
     val rainAlerts: Boolean = true,
-    val rainLeadMinutes: Int = 60,
-    val theme: AppTheme = AppTheme.Glassmorphism
+    val rainLeadMinutes: Int = 60
 )
 
 data class Continent(val title: String, val cities: List<City>)
