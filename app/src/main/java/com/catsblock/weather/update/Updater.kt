@@ -58,7 +58,23 @@ class UpdateViewModel(private val app: Application) : AndroidViewModel(app) {
         }
     }
 
+    private fun updatesDir(): File = File(app.cacheDir, "updates").apply { mkdirs() }
+
+    private fun apkFile(build: Int): File = File(updatesDir(), "update-$build.apk")
+
+    private fun cleanup() {
+        val installed = installedBuild()
+        updatesDir().listFiles()?.forEach {
+            val build = Regex("update-(\\d+)\\.apk").matchEntire(it.name)?.groupValues?.get(1)?.toLongOrNull()
+            if (build == null || build <= installed) it.delete()
+        }
+    }
+
+    private fun cached(info: UpdateInfo): File? =
+        apkFile(info.build).takeIf { it.exists() && it.length() == info.sizeBytes }
+
     private fun fetchLatest(): UpdateState {
+        cleanup()
         val req = Request.Builder()
             .url("https://api.github.com/repos/$REPO/releases/latest")
             .header("Accept", "application/vnd.github+json")
@@ -96,7 +112,7 @@ class UpdateViewModel(private val app: Application) : AndroidViewModel(app) {
         job = viewModelScope.launch {
             state.value = UpdateState.Downloading(info, 0f)
             try {
-                val file = withContext(Dispatchers.IO) { download(info) }
+                val file = withContext(Dispatchers.IO) { cached(info) ?: download(info) }
                 install(file)
                 state.value = UpdateState.Available(info)
             } catch (e: CancellationException) {
@@ -108,9 +124,9 @@ class UpdateViewModel(private val app: Application) : AndroidViewModel(app) {
     }
 
     private suspend fun download(info: UpdateInfo): File {
-        val dir = File(app.cacheDir, "updates").apply { mkdirs() }
+        val dir = updatesDir()
         dir.listFiles()?.forEach { it.delete() }
-        val file = File(dir, "update.apk")
+        val file = File(dir, "update-${info.build}.apk.part")
         client.newCall(Request.Builder().url(info.url).build()).execute().use { r ->
             if (!r.isSuccessful) error("http ${r.code}")
             val body = r.body!!
@@ -134,8 +150,10 @@ class UpdateViewModel(private val app: Application) : AndroidViewModel(app) {
                 }
             }
         }
+        val done = apkFile(info.build)
+        if (!file.renameTo(done)) error("rename")
         state.value = UpdateState.Downloading(info, 1f)
-        return file
+        return done
     }
 
     private fun install(file: File) {
