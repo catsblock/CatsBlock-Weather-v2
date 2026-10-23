@@ -92,61 +92,6 @@ internal fun DrawScope.drawEclipse(e: Eclipse, c: Offset, r: Float) {
     }
 }
 
-@Composable
-fun MoonDisc(cycle: Double, modifier: Modifier = Modifier, eclipse: Eclipse? = null) {
-    Canvas(modifier.graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)) {
-        val r = min(size.width, size.height) / 2f
-        val c = Offset(size.width / 2f, size.height / 2f)
-        drawCircle(Color(0xFF2A2F3C), r, c)
-        val circle = Path().apply { addOval(Rect(c, r)) }
-        val half = Path().apply {
-            addRect(
-                if (cycle < 0.5) Rect(c.x, c.y - r, c.x + r, c.y + r) else Rect(c.x - r, c.y - r, c.x, c.y + r)
-            )
-        }
-        val k = cos(2.0 * PI * cycle).toFloat()
-        val ellipse = Path().apply {
-            addOval(Rect(c.x - r * abs(k), c.y - r, c.x + r * abs(k), c.y + r))
-        }
-        val lit = Path.combine(PathOperation.Intersect, circle, half)
-        val shape = Path.combine(if (k > 0f) PathOperation.Difference else PathOperation.Union, lit, ellipse)
-        drawPath(shape, Color(0xFFF4EFD8))
-        if (eclipse != null) drawEclipse(eclipse, c, r)
-    }
-}
-
-@Composable
-fun MoonImage(ms: Long, cycle: Double, modifier: Modifier = Modifier) {
-    val url by produceState<String?>(null, ms / 3_600_000L) { value = Moon.imageUrl(ms) }
-    val eclipse = remember(ms / 60_000L) { Moon.eclipse(ms) }
-    Box(
-        modifier
-            .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)
-            .clip(CircleShape)
-            .background(Color.Black),
-        contentAlignment = Alignment.Center
-    ) {
-        val u = url
-        if (u == null) {
-            MoonDisc(cycle, Modifier.fillMaxSize())
-        } else {
-            SubcomposeAsyncImage(
-                model = u,
-                contentDescription = null,
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop,
-                loading = { MoonDisc(cycle, Modifier.fillMaxSize()) },
-                error = { MoonDisc(cycle, Modifier.fillMaxSize()) }
-            )
-        }
-        if (eclipse != null) {
-            Canvas(Modifier.fillMaxSize()) {
-                drawEclipse(eclipse, Offset(size.width / 2f, size.height / 2f), min(size.width, size.height) / 2f)
-            }
-        }
-    }
-}
-
 private fun timeText(date: LocalDate, time: java.time.LocalTime?): String =
     time?.let { clockLabel(date.atTime(it)) } ?: "--"
 
