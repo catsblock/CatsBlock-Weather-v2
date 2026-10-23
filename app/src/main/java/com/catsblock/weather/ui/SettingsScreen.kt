@@ -242,6 +242,7 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
                 .padding(horizontal = 16.dp, vertical = 8.dp)
         ) {
             UpdateCard(up)
+            AppearanceSection()
 
             GroupLabel(tr("App language"))
             Group {
