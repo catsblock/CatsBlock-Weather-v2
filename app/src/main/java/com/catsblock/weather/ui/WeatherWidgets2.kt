@@ -33,6 +33,7 @@ import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Remove
 import androidx.compose.material.icons.rounded.Speed
+import androidx.compose.material.icons.rounded.Thermostat
 import androidx.compose.material.icons.rounded.Umbrella
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.WaterDrop
@@ -58,11 +59,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.PathOperation
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -91,6 +95,7 @@ import com.catsblock.weather.data.uvLevel
 import com.catsblock.weather.i18n.AppLanguage
 import com.catsblock.weather.i18n.I18n
 import com.catsblock.weather.i18n.tr
+import com.catsblock.weather.data.isWet
 import java.time.Duration
 import java.time.LocalDateTime
 import java.time.ZoneOffset
@@ -235,7 +240,7 @@ private fun RadarPanel(
     var zoom by remember { mutableIntStateOf(6) }
     val shape = RoundedCornerShape(if (fullscreen) 0.dp else 18.dp)
     val open = if (fullscreen) Modifier else Modifier.clickable(onClick = onFullscreen)
-    Box(modifier.clip(shape).border(1.dp, Color.White.copy(alpha = 0.22f), shape).then(open)) {
+    Box(modifier.clip(shape).then(open)) {
         RadarTiles(city, zoom, set, frame, Modifier.fillMaxSize())
         Box(
             Modifier.align(Alignment.Center).size(11.dp).clip(CircleShape).background(Color.White)
@@ -257,7 +262,7 @@ private fun RadarPanel(
             onFullscreen,
             Modifier.align(Alignment.TopEnd).padding(8.dp)
         )
-        if (fullscreen) {
+        if (!fullscreen) {
             Column(
                 Modifier.align(Alignment.CenterEnd).padding(12.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -363,7 +368,6 @@ fun SunCardV2(sunrise: LocalDateTime, sunset: LocalDateTime, now: LocalDateTime,
     val up = !now.isBefore(sunrise) && !now.isAfter(sunset)
     val progress by animateFloatAsState(target, tween(1100), label = "sun")
     val ink = MaterialTheme.colorScheme.onSurface
-    val sunColor = if (LocalGlass.current) Color.White else Color(0xFFFFA000)
     GlassCard(modifier, null, Modifier.fillMaxSize()) {
         CardHeader(Icons.Rounded.WbTwilight, tr("Sun"))
         Spacer(Modifier.weight(1f))
@@ -378,43 +382,38 @@ fun SunCardV2(sunrise: LocalDateTime, sunset: LocalDateTime, now: LocalDateTime,
                 style = Stroke(2.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f)))
             )
             drawArc(
-                sunColor.copy(alpha = 0.4f), 180f, 180f * progress, false, Offset(cx - r, cy - r), Size(2 * r, 2 * r),
+                Color.White.copy(alpha = 0.45f), 180f, 180f * progress, false, Offset(cx - r, cy - r), Size(2 * r, 2 * r),
                 style = Stroke(2.5f.dp.toPx(), cap = StrokeCap.Round)
             )
             val a = PI * (1.0 - progress)
-            val step = Math.toRadians(2.4)
-            for (k in 0 until 16) {
-                val fade = (1f - k / 16f) * 0.95f
-                for (dir in intArrayOf(-1, 1)) {
-                    val a1 = a + dir * step * k
-                    val a2 = a + dir * step * (k + 1)
-                    if (a1 in 0.0..PI && a2 in 0.0..PI) {
-                        drawLine(sunColor.copy(alpha = fade), p(a1), p(a2), 3.4f.dp.toPx(), StrokeCap.Round)
-                    }
-                }
-            }
             val s = p(a)
-            val glow = if (up) 1f else 0.45f
+            val sunRadius = 16.dp.toPx()
+            val glow = if (up) 1f else 0.4f
             drawCircle(
                 Brush.radialGradient(
-                    listOf(sunColor.copy(alpha = 0.85f * glow), sunColor.copy(alpha = 0.25f * glow), Color.Transparent),
+                    listOf(Color.White.copy(alpha = 0.55f * glow), Color.Transparent),
                     center = s,
-                    radius = 36.dp.toPx()
+                    radius = sunRadius * 2.4f
                 ),
-                36.dp.toPx(), s
+                sunRadius * 2.4f, s
             )
-            for (i in 0 until 16) {
-                val ang = Math.toRadians(i * 22.5)
-                val inner = 11.dp.toPx()
-                val outer = if (i % 2 == 0) 22.dp.toPx() else 16.dp.toPx()
-                drawLine(
-                    sunColor.copy(alpha = 0.9f * glow),
-                    Offset(s.x + inner * cos(ang).toFloat(), s.y + inner * sin(ang).toFloat()),
-                    Offset(s.x + outer * cos(ang).toFloat(), s.y + outer * sin(ang).toFloat()),
-                    2.dp.toPx(), StrokeCap.Round
-                )
+            drawCircle(Color.White, sunRadius, s)
+            val circle = Path().apply { addOval(Rect(s.x - sunRadius, s.y - sunRadius, s.x + sunRadius, s.y + sunRadius)) }
+            val belowHorizon = Path().apply { addRect(Rect(0f, cy, size.width, size.height)) }
+            val masked = Path.combine(PathOperation.Intersect, circle, belowHorizon)
+            clipPath(masked) {
+                val lineSpacing = 3.2f.dp.toPx()
+                var ly = s.y - sunRadius
+                while (ly <= s.y + sunRadius) {
+                    drawLine(
+                        Color.Black,
+                        Offset(s.x - sunRadius, ly),
+                        Offset(s.x + sunRadius, ly),
+                        1.4f.dp.toPx()
+                    )
+                    ly += lineSpacing
+                }
             }
-            drawCircle(sunColor.copy(alpha = glow), 8.dp.toPx(), s)
         }
         Spacer(Modifier.height(4.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -629,11 +628,28 @@ fun PressureCardV2(hpa: Double, modifier: Modifier = Modifier, onClick: (() -> U
 }
 
 @Composable
-fun CardsDashboard(bundle: WeatherBundle, city: City?, day: Day, onOpen: (String) -> Unit) {
+fun CardsDashboard(
+    bundle: WeatherBundle,
+    city: City?,
+    day: Day,
+    mode: DashboardMode = DashboardMode.Temperature,
+    onOpen: (String) -> Unit
+) {
     val cur = bundle.current
     val km = cur.visibility / 1000.0
     val tall = Modifier.height(176.dp)
-    if (city != null) RadarCard(city, bundle.utcOffsetSeconds, Modifier.fillMaxWidth().height(250.dp))
+    val mapMod = Modifier.fillMaxWidth().height(250.dp)
+    if (mode == DashboardMode.AirQuality) {
+        AirCardV2(
+            cur.aqi,
+            cur.aqi?.let { aqiShort(it) } ?: tr("Air quality data is not available here."),
+            Modifier.fillMaxWidth().height(200.dp),
+            if (cur.aqi != null) ({ onOpen("Air") }) else null
+        )
+    } else if (city != null) {
+        val showRadar = mode == DashboardMode.Rain || cur.kind.isWet || cur.temp < 22.0
+        if (showRadar) RadarCard(city, bundle.utcOffsetSeconds, mapMod) else ThermalMapCard(city, mapMod)
+    }
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         MetricCard(
             title = tr("Precipitation"),
@@ -680,4 +696,126 @@ fun CardsDashboard(bundle: WeatherBundle, city: City?, day: Day, onOpen: (String
         )
     }
     if (city != null) MoonCard(city, bundle.utcOffsetSeconds, cur.now) { onOpen("Moon") }
+}
+
+private class ThermalPoint(val lat: Double, val lon: Double, val temp: Double)
+
+private object ThermalLoader {
+    private val client = OkHttpClient.Builder()
+        .connectTimeout(10, TimeUnit.SECONDS)
+        .readTimeout(10, TimeUnit.SECONDS)
+        .build()
+
+    suspend fun load(lat: Double, lon: Double): List<ThermalPoint> = withContext(Dispatchers.IO) {
+        runCatching {
+            val lats = ArrayList<Double>()
+            val lons = ArrayList<Double>()
+            for (i in -2..2) for (j in -2..2) {
+                lats.add((lat + i * 1.4).coerceIn(-85.0, 85.0))
+                lons.add(lon + j * 1.4)
+            }
+            val url = "https://api.open-meteo.com/v1/forecast?latitude=" +
+                lats.joinToString(",") { String.format(java.util.Locale.US, "%.3f", it) } +
+                "&longitude=" + lons.joinToString(",") { String.format(java.util.Locale.US, "%.3f", it) } +
+                "&current=temperature_2m"
+            client.newCall(Request.Builder().url(url).build()).execute().use { r ->
+                if (!r.isSuccessful) return@use emptyList<ThermalPoint>()
+                val arr = org.json.JSONArray(r.body?.string() ?: return@use emptyList<ThermalPoint>())
+                (0 until arr.length()).map {
+                    val o = arr.getJSONObject(it)
+                    ThermalPoint(
+                        o.getDouble("latitude"),
+                        o.getDouble("longitude"),
+                        o.getJSONObject("current").getDouble("temperature_2m")
+                    )
+                }
+            }
+        }.getOrDefault(emptyList())
+    }
+}
+
+private fun thermalColor(t: Double): Color = when {
+    t < 0 -> Color(0xFF3949AB)
+    t < 10 -> Color(0xFF29B6F6)
+    t < 18 -> Color(0xFF26A69A)
+    t < 24 -> Color(0xFFD4E157)
+    t < 30 -> Color(0xFFFFB300)
+    t < 36 -> Color(0xFFF4511E)
+    else -> Color(0xFFB71C1C)
+}
+
+private fun mercatorY(lat: Double): Double = ln(tan(Math.PI / 4.0 + Math.toRadians(lat) / 2.0))
+
+@Composable
+private fun ThermalPanel(
+    city: City,
+    points: List<ThermalPoint>,
+    fullscreen: Boolean,
+    onFullscreen: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val shape = RoundedCornerShape(if (fullscreen) 0.dp else 18.dp)
+    val open = if (fullscreen) Modifier else Modifier.clickable(onClick = onFullscreen)
+    Box(modifier.clip(shape).then(open)) {
+        RadarTiles(city, 6, null, null, Modifier.fillMaxSize())
+        Canvas(Modifier.fillMaxSize()) {
+            val tileSpan = 256.dp.toPx() * 64f
+            val cx = size.width / 2f
+            val cy = size.height / 2f
+            val my0 = mercatorY(city.lat)
+            points.forEach { p ->
+                val x = cx + ((p.lon - city.lon) / 360.0 * tileSpan).toFloat()
+                val y = cy - ((mercatorY(p.lat) - my0) / (2 * Math.PI) * tileSpan).toFloat()
+                val rad = 120.dp.toPx()
+                drawCircle(
+                    Brush.radialGradient(
+                        listOf(thermalColor(p.temp).copy(alpha = 0.55f), Color.Transparent),
+                        center = Offset(x, y),
+                        radius = rad
+                    ),
+                    rad, Offset(x, y)
+                )
+            }
+        }
+        Box(
+            Modifier.align(Alignment.Center).size(11.dp).clip(CircleShape).background(Color.White)
+                .border(2.dp, Color(0xFFFF7043), CircleShape)
+        )
+        MapButton(
+            if (fullscreen) Icons.Rounded.FullscreenExit else Icons.Rounded.Fullscreen,
+            true,
+            onFullscreen,
+            Modifier.align(Alignment.TopEnd).padding(8.dp)
+        )
+        Row(
+            Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+                .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.6f))))
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            listOf(-5.0, 5.0, 15.0, 22.0, 28.0, 33.0, 40.0).forEach {
+                Box(Modifier.weight(1f).height(6.dp).clip(RoundedCornerShape(3.dp)).background(thermalColor(it)))
+            }
+        }
+    }
+}
+
+@Composable
+fun ThermalMapCard(city: City, modifier: Modifier = Modifier) {
+    val points by produceState(emptyList<ThermalPoint>(), city.id) { value = ThermalLoader.load(city.lat, city.lon) }
+    var full by remember { mutableStateOf(false) }
+    GlassCard(modifier, null, Modifier.fillMaxSize()) {
+        CardHeader(Icons.Rounded.Thermostat, tr("Temperature map"))
+        ThermalPanel(city, points, false, { full = true }, Modifier.fillMaxWidth().weight(1f).padding(top = 8.dp))
+    }
+    if (full) {
+        Dialog(
+            onDismissRequest = { full = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+        ) {
+            Box(Modifier.fillMaxSize().background(Color.Black).systemBarsPadding()) {
+                ThermalPanel(city, points, true, { full = false }, Modifier.fillMaxSize())
+            }
+        }
+    }
 }
