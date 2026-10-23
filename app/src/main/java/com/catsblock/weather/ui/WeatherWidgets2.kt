@@ -4,6 +4,8 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -38,6 +40,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.PathOperation
 import androidx.compose.ui.graphics.drawscope.clipPath
@@ -53,6 +56,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.catsblock.weather.data.City
+import com.catsblock.weather.data.Condition
 import com.catsblock.weather.data.Day
 import com.catsblock.weather.data.WeatherBundle
 import com.catsblock.weather.data.aqiStatus
@@ -83,49 +87,40 @@ fun SunCardV2(sunrise: LocalDateTime, sunset: LocalDateTime, now: LocalDateTime,
     GlassCard(modifier, null, Modifier.fillMaxSize()) {
         CardHeader(Icons.Rounded.WbTwilight, tr("Sun"))
         Spacer(Modifier.weight(1f))
-        Canvas(Modifier.fillMaxWidth().height(78.dp)) {
-            val r = min(size.width / 2f - 18.dp.toPx(), size.height - 20.dp.toPx())
-            val cx = size.width / 2f
-            val cy = size.height - 8.dp.toPx()
-            fun p(a: Double) = Offset(cx + r * cos(a).toFloat(), cy - r * sin(a).toFloat())
-            drawLine(ink.copy(alpha = 0.3f), Offset(cx - r - 14.dp.toPx(), cy), Offset(cx + r + 14.dp.toPx(), cy), 1.5f.dp.toPx())
-            drawArc(
-                ink.copy(alpha = 0.3f), 180f, 180f, false, Offset(cx - r, cy - r), Size(2 * r, 2 * r),
-                style = Stroke(2.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f)))
-            )
-            drawArc(
-                Color.White.copy(alpha = 0.45f), 180f, 180f * progress, false, Offset(cx - r, cy - r), Size(2 * r, 2 * r),
-                style = Stroke(2.5f.dp.toPx(), cap = StrokeCap.Round)
-            )
+        BoxWithConstraints(Modifier.fillMaxWidth().height(78.dp)) {
+            val r = min(maxWidth.value / 2f - 18f, maxHeight.value - 20f)
+            val cx = maxWidth.value / 2f
+            val cy = maxHeight.value - 8f
             val a = PI * (1.0 - progress)
-            val s = p(a)
-            val sunRadius = 16.dp.toPx()
-            val glow = if (up) 1f else 0.4f
-            drawCircle(
-                Brush.radialGradient(
-                    listOf(Color.White.copy(alpha = 0.55f * glow), Color.Transparent),
-                    center = s,
-                    radius = sunRadius * 2.4f
-                ),
-                sunRadius * 2.4f, s
-            )
-            drawCircle(Color.White, sunRadius, s)
-            val circle = Path().apply { addOval(Rect(s.x - sunRadius, s.y - sunRadius, s.x + sunRadius, s.y + sunRadius)) }
-            val belowHorizon = Path().apply { addRect(Rect(0f, cy, size.width, size.height)) }
-            val masked = Path.combine(PathOperation.Intersect, circle, belowHorizon)
-            clipPath(masked) {
-                val lineSpacing = 3.2f.dp.toPx()
-                var ly = s.y - sunRadius
-                while (ly <= s.y + sunRadius) {
-                    drawLine(
-                        Color.Black,
-                        Offset(s.x - sunRadius, ly),
-                        Offset(s.x + sunRadius, ly),
-                        1.4f.dp.toPx()
-                    )
-                    ly += lineSpacing
-                }
+            val sx = cx + r * cos(a).toFloat()
+            val sy = cy - r * sin(a).toFloat()
+            Canvas(Modifier.fillMaxSize()) {
+                val rp = r.dp.toPx()
+                val cxp = cx.dp.toPx()
+                val cyp = cy.dp.toPx()
+                drawLine(
+                    ink.copy(alpha = 0.3f),
+                    Offset(cxp - rp - 14.dp.toPx(), cyp),
+                    Offset(cxp + rp + 14.dp.toPx(), cyp),
+                    1.5f.dp.toPx()
+                )
+                drawArc(
+                    ink.copy(alpha = 0.3f), 180f, 180f, false, Offset(cxp - rp, cyp - rp), Size(2 * rp, 2 * rp),
+                    style = Stroke(2.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f)))
+                )
+                drawArc(
+                    Color.White.copy(alpha = 0.45f), 180f, 180f * progress, false, Offset(cxp - rp, cyp - rp), Size(2 * rp, 2 * rp),
+                    style = Stroke(2.5f.dp.toPx(), cap = StrokeCap.Round)
+                )
             }
+            WeatherIcon(
+                Condition.Clear,
+                true,
+                Modifier
+                    .offset((sx - 12f).dp, (sy - 12f).dp)
+                    .size(24.dp)
+                    .graphicsLayer { alpha = if (up) 1f else 0.45f }
+            )
         }
         Spacer(Modifier.height(4.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
