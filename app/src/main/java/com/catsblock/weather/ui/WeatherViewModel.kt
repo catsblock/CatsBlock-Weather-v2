@@ -6,7 +6,9 @@ import android.location.Geocoder
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.catsblock.weather.alerts.EclipseAlerts
 import com.catsblock.weather.alerts.RainAlerts
+import com.catsblock.weather.alerts.SnowAlerts
 import com.catsblock.weather.data.AppSettings
 import com.catsblock.weather.data.City
 import com.catsblock.weather.data.CitySummary
@@ -98,6 +100,20 @@ class WeatherViewModel(private val app: Application) : AndroidViewModel(app) {
                 .distinctUntilChanged()
                 .drop(1)
                 .collect { runCatching { RainAlerts.reschedule(app) } }
+        }
+        viewModelScope.launch {
+            settings
+                .map { it.eclipseAlerts to it.eclipseLeadMinutes }
+                .distinctUntilChanged()
+                .drop(1)
+                .collect { runCatching { EclipseAlerts.reschedule(app) } }
+        }
+        viewModelScope.launch {
+            settings
+                .map { it.snowAlerts to it.snowLeadMinutes }
+                .distinctUntilChanged()
+                .drop(1)
+                .collect { runCatching { SnowAlerts.reschedule(app) } }
         }
         viewModelScope.launch {
             WeatherBus.updates.collect { update ->
@@ -280,6 +296,8 @@ class WeatherViewModel(private val app: Application) : AndroidViewModel(app) {
             weather.value = WeatherState.Success(bundle)
             runCatching { WidgetUpdater.publish(app, target, bundle) }
             runCatching { RainAlerts.onFresh(app, target, bundle) }
+            runCatching { SnowAlerts.onFresh(app, target, bundle) }
+            runCatching { EclipseAlerts.onFresh(app, target) }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -319,6 +337,22 @@ class WeatherViewModel(private val app: Application) : AndroidViewModel(app) {
 
     fun setRainLead(minutes: Int) {
         viewModelScope.launch { store.setRainLead(minutes) }
+    }
+
+    fun setEclipseAlerts(value: Boolean) {
+        viewModelScope.launch { store.setEclipseAlerts(value) }
+    }
+
+    fun setEclipseLead(minutes: Int) {
+        viewModelScope.launch { store.setEclipseLead(minutes) }
+    }
+
+    fun setSnowAlerts(value: Boolean) {
+        viewModelScope.launch { store.setSnowAlerts(value) }
+    }
+
+    fun setSnowLead(minutes: Int) {
+        viewModelScope.launch { store.setSnowLead(minutes) }
     }
 
     fun importIcon(slot: Slot, uri: Uri, done: (Boolean) -> Unit) {
