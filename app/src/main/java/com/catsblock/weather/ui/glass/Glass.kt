@@ -18,10 +18,9 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
 import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.HazeStyle
 import dev.chrisbanes.haze.hazeEffect
 import dev.chrisbanes.haze.hazeSource
-import dev.chrisbanes.haze.materials.ExperimentalHazeMaterialsApi
-import dev.chrisbanes.haze.materials.HazeMaterials
 import kotlinx.coroutines.delay
 
 val LocalHazeState = compositionLocalOf { HazeState() }
@@ -52,7 +51,6 @@ fun Modifier.cardEntrance(): Modifier {
     }
 }
 
-@OptIn(ExperimentalHazeMaterialsApi::class)
 @Composable
 fun Modifier.frostedGlassCard(
     state: HazeState,
@@ -61,16 +59,24 @@ fun Modifier.frostedGlassCard(
 ): Modifier = this
     .cardEntrance()
     .clip(shape)
-    .hazeEffect(state = state, style = HazeMaterials.ultraThin(tint)) {
-        blurRadius = 10.dp
+    .hazeEffect(
+        state = state,
+        style = HazeStyle(
+            backgroundColor = Color.Transparent,
+            tints = emptyList(),
+            blurRadius = 3.dp,
+            noiseFactor = 0.0f
+        )
+    ) {
+        blurRadius = 3.dp
         noiseFactor = 0.0f
     }
     .background(
         Brush.linearGradient(
             colors = listOf(
-                Color.White.copy(alpha = 0.04f),
-                Color.White.copy(alpha = 0.01f),
-                Color.White.copy(alpha = 0.02f)
+                Color.White.copy(alpha = 0.012f),
+                Color.White.copy(alpha = 0.003f),
+                Color.White.copy(alpha = 0.006f)
             ),
             start = Offset.Zero,
             end = Offset(900f, 1400f)
@@ -80,9 +86,9 @@ fun Modifier.frostedGlassCard(
         1.dp,
         Brush.linearGradient(
             colors = listOf(
-                Color.White.copy(alpha = 0.30f),
-                Color.White.copy(alpha = 0.04f),
-                Color.White.copy(alpha = 0.12f)
+                Color.White.copy(alpha = 0.16f),
+                Color.White.copy(alpha = 0.02f),
+                Color.White.copy(alpha = 0.07f)
             ),
             start = Offset.Zero,
             end = Offset(900f, 1400f)
