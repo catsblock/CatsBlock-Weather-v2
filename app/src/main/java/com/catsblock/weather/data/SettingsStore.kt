@@ -23,6 +23,11 @@ class SettingsStore(private val context: Context) {
         val language = stringPreferencesKey("language")
         val rainAlerts = booleanPreferencesKey("rain_alerts")
         val rainLead = intPreferencesKey("rain_lead_minutes")
+        val eclipseAlerts = booleanPreferencesKey("eclipse_alerts")
+        val eclipseLead = intPreferencesKey("eclipse_lead_minutes")
+        val snowAlerts = booleanPreferencesKey("snow_alerts")
+        val snowLead = intPreferencesKey("snow_lead_minutes")
+        val govAlerts = booleanPreferencesKey("gov_alerts")
         val saved = stringPreferencesKey("saved_cities")
         val current = stringPreferencesKey("current_city")
     }
@@ -34,7 +39,12 @@ class SettingsStore(private val context: Context) {
             sounds = it[Keys.sounds] ?: true,
             language = AppLanguage.from(it[Keys.language]),
             rainAlerts = it[Keys.rainAlerts] ?: true,
-            rainLeadMinutes = it[Keys.rainLead]?.takeIf { value -> value in RainLeadOptions } ?: 60
+            rainLeadMinutes = it[Keys.rainLead]?.takeIf { value -> value in RainLeadOptions } ?: 60,
+            eclipseAlerts = it[Keys.eclipseAlerts] ?: true,
+            eclipseLeadMinutes = it[Keys.eclipseLead]?.takeIf { value -> value in EclipseLeadOptions } ?: 60,
+            snowAlerts = it[Keys.snowAlerts] ?: true,
+            snowLeadMinutes = it[Keys.snowLead]?.takeIf { value -> value in SnowLeadOptions } ?: 60,
+            govAlerts = it[Keys.govAlerts] ?: true
         )
     }
 
@@ -73,6 +83,26 @@ class SettingsStore(private val context: Context) {
 
     suspend fun setRainLead(minutes: Int) {
         context.dataStore.edit { it[Keys.rainLead] = minutes }
+    }
+
+    suspend fun setEclipseAlerts(value: Boolean) {
+        context.dataStore.edit { it[Keys.eclipseAlerts] = value }
+    }
+
+    suspend fun setEclipseLead(minutes: Int) {
+        context.dataStore.edit { it[Keys.eclipseLead] = minutes }
+    }
+
+    suspend fun setSnowAlerts(value: Boolean) {
+        context.dataStore.edit { it[Keys.snowAlerts] = value }
+    }
+
+    suspend fun setSnowLead(minutes: Int) {
+        context.dataStore.edit { it[Keys.snowLead] = minutes }
+    }
+
+    suspend fun setGovAlerts(value: Boolean) {
+        context.dataStore.edit { it[Keys.govAlerts] = value }
     }
 
     suspend fun saveCities(cities: List<City>) {
