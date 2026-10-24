@@ -164,7 +164,7 @@ object AppUpdates {
     fun startDownload(context: Context, data: Data) {
         val request = OneTimeWorkRequestBuilder<UpdateDownloadWorker>()
             .setInputData(data)
-            .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_IF_QUOTA_EXCEEDED)
+            .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
             .build()
         WorkManager.getInstance(context.applicationContext)
             .enqueueUniqueWork(WORK, ExistingWorkPolicy.REPLACE, request)
