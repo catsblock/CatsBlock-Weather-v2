@@ -12,7 +12,9 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
+import com.catsblock.weather.alerts.EclipseAlerts
 import com.catsblock.weather.alerts.RainAlerts
+import com.catsblock.weather.alerts.SnowAlerts
 import com.catsblock.weather.data.NetworkPolicy
 import com.catsblock.weather.data.SettingsStore
 import com.catsblock.weather.data.WeatherBus
@@ -63,6 +65,8 @@ class WeatherWorker(context: Context, params: WorkerParameters) : CoroutineWorke
             val bundle = WeatherRepository().fetch(city)
             WidgetUpdater.publish(app, city, bundle)
             runCatching { RainAlerts.onFresh(app, city, bundle) }
+            runCatching { SnowAlerts.onFresh(app, city, bundle) }
+            runCatching { EclipseAlerts.onFresh(app, city) }
             WeatherBus.emit(city, bundle)
             Result.success()
         } catch (e: CancellationException) {
