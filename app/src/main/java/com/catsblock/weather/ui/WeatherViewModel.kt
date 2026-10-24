@@ -9,6 +9,7 @@ import androidx.lifecycle.viewModelScope
 import com.catsblock.weather.alerts.EclipseAlerts
 import com.catsblock.weather.alerts.RainAlerts
 import com.catsblock.weather.alerts.SnowAlerts
+import com.catsblock.weather.update.AppUpdates
 import com.catsblock.weather.data.AppSettings
 import com.catsblock.weather.data.City
 import com.catsblock.weather.data.CitySummary
@@ -298,6 +299,7 @@ class WeatherViewModel(private val app: Application) : AndroidViewModel(app) {
             runCatching { RainAlerts.onFresh(app, target, bundle) }
             runCatching { SnowAlerts.onFresh(app, target, bundle) }
             runCatching { EclipseAlerts.onFresh(app, target) }
+            runCatching { AppUpdates.check(app) }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -345,6 +347,10 @@ class WeatherViewModel(private val app: Application) : AndroidViewModel(app) {
 
     fun setEclipseLead(minutes: Int) {
         viewModelScope.launch { store.setEclipseLead(minutes) }
+    }
+
+    fun setUpdateAlerts(value: Boolean) {
+        viewModelScope.launch { store.setUpdateAlerts(value) }
     }
 
     fun setSnowAlerts(value: Boolean) {
