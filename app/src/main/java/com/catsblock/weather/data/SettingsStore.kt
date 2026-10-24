@@ -18,6 +18,10 @@ class SettingsStore(private val context: Context) {
 
     private object Keys {
         val fahrenheit = booleanPreferencesKey("fahrenheit")
+        val theme = stringPreferencesKey("theme")
+        val compactHero = booleanPreferencesKey("compact_hero")
+        val showLifeIndex = booleanPreferencesKey("show_life_index")
+        val showPrecipitation = booleanPreferencesKey("show_precipitation")
         val mobileData = booleanPreferencesKey("mobile_data")
         val sounds = booleanPreferencesKey("sounds")
         val language = stringPreferencesKey("language")
@@ -35,6 +39,10 @@ class SettingsStore(private val context: Context) {
     val settings: Flow<AppSettings> = context.dataStore.data.map {
         AppSettings(
             fahrenheit = it[Keys.fahrenheit] ?: false,
+            theme = runCatching { ThemeMode.valueOf(it[Keys.theme] ?: "") }.getOrDefault(ThemeMode.System),
+            compactHero = it[Keys.compactHero] ?: false,
+            showLifeIndex = it[Keys.showLifeIndex] ?: true,
+            showPrecipitation = it[Keys.showPrecipitation] ?: true,
             mobileData = it[Keys.mobileData] ?: true,
             sounds = it[Keys.sounds] ?: true,
             language = AppLanguage.from(it[Keys.language]),
@@ -63,6 +71,22 @@ class SettingsStore(private val context: Context) {
 
     suspend fun setFahrenheit(value: Boolean) {
         context.dataStore.edit { it[Keys.fahrenheit] = value }
+    }
+
+    suspend fun setTheme(value: ThemeMode) {
+        context.dataStore.edit { it[Keys.theme] = value.name }
+    }
+
+    suspend fun setCompactHero(value: Boolean) {
+        context.dataStore.edit { it[Keys.compactHero] = value }
+    }
+
+    suspend fun setShowLifeIndex(value: Boolean) {
+        context.dataStore.edit { it[Keys.showLifeIndex] = value }
+    }
+
+    suspend fun setShowPrecipitation(value: Boolean) {
+        context.dataStore.edit { it[Keys.showPrecipitation] = value }
     }
 
     suspend fun setMobileData(value: Boolean) {
