@@ -1,5 +1,9 @@
 package com.catsblock.weather.ui
 
+import androidx.compose.ui.platform.LocalContext
+import com.catsblock.weather.data.NetworkPolicy
+import com.catsblock.weather.data.HubAlert
+import com.catsblock.weather.data.AlertHub
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutLinearInEasing
@@ -559,6 +563,15 @@ private fun WeatherDetails(
     val chipDays = upcoming.filter { d -> next36.any { it.time.toLocalDate() == d.date } }
     val chartScroll = rememberScrollState()
     var sheet by remember { mutableStateOf<Sheet?>(null) }
+    val hubContext = LocalContext.current
+    var hubAlerts by remember(city?.id) { mutableStateOf(emptyList<HubAlert>()) }
+    var hubSheet by remember { mutableStateOf(false) }
+    LaunchedEffect(city?.id, cur.now, settings.language) {
+        val target = city
+        if (target != null && NetworkPolicy.foregroundAllowed(hubContext, settings)) {
+            hubAlerts = runCatching { AlertHub.fetch(target.lat, target.lon) }.getOrDefault(hubAlerts)
+        }
+    }
     val screenHeight = LocalConfiguration.current.screenHeightDp
     val heroHeight = ((screenHeight * (if (settings.compactHero) 0.46f else 0.66f)).dp - headerHeight)
         .coerceAtLeast(if (settings.compactHero) 240.dp else 320.dp)
@@ -634,6 +647,7 @@ private fun WeatherDetails(
                     alert?.let { AlertCard(it) }
                     if (settings.showPrecipitation) PrecipitationCard(bundle)
                     HoursCard(next36, chipDays, today, fahrenheit, chartScroll)
+                    if (hubAlerts.isNotEmpty()) HubAlertCard(hubAlerts, { hubSheet = true })
                     DaysCard(
                         days = upcoming,
                         today = today,
@@ -673,6 +687,8 @@ private fun WeatherDetails(
     }
     }
     }
+
+    if (hubSheet && hubAlerts.isNotEmpty()) HubAlertsSheet(hubAlerts) { hubSheet = false }
 
     (sheet as? Sheet.DaySheet)?.let { current ->
         DayDetailSheet(current.day, bundle.hours, fahrenheit, today, cur.now) { sheet = null }
