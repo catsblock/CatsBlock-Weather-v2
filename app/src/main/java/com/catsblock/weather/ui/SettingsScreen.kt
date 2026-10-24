@@ -201,7 +201,7 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
                 }
             },
             confirmButton = {},
-            dismissButton = { TextButton(onClick = { langDialog = false }) { Text("OK") } }
+            dismissButton = { TextButton(onClick = { langDialog = false }) { Text(tr("OK")) } }
         )
     }
 
@@ -219,7 +219,7 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
                     )
                 }
             },
-            confirmButton = { TextButton(onClick = { companyDialog = false }) { Text("OK") } }
+            confirmButton = { TextButton(onClick = { companyDialog = false }) { Text(tr("OK")) } }
         )
     }
 
@@ -262,7 +262,7 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
                 }
             },
             confirmButton = {},
-            dismissButton = { TextButton(onClick = { leadDialog = null }) { Text("OK") } }
+            dismissButton = { TextButton(onClick = { leadDialog = null }) { Text(tr("OK")) } }
         )
     }
 
