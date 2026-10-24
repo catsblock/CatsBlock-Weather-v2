@@ -352,16 +352,20 @@ fun MainScreen(vm: WeatherViewModel) {
                     }
             ) {
             when {
-                bundle != null -> WeatherDetails(
-                    bundle = bundle,
-                    city = city,
-                    settings = settings,
-                    scroll = scroll,
-                    headerHeight = headerHeight,
-                    mode = mode,
-                    overscroll = { elastic.offset },
-                    onLiveMoon = vm::openLiveMoon
-                )
+                bundle != null -> CompositionLocalProvider(
+                    LocalUnits provides UnitPrefs(settings.windUnit, settings.pressureUnit)
+                ) {
+                    WeatherDetails(
+                        bundle = bundle,
+                        city = city,
+                        settings = settings,
+                        scroll = scroll,
+                        headerHeight = headerHeight,
+                        mode = mode,
+                        overscroll = { elastic.offset },
+                        onLiveMoon = vm::openLiveMoon
+                    )
+                }
                 state is WeatherState.Error -> Column(
                     Modifier.fillMaxSize().padding(32.dp),
                     verticalArrangement = Arrangement.Center,
@@ -747,13 +751,13 @@ private fun WeatherDetails(
                         )
                         Spacer(Modifier.height(12.dp))
                         SimpleChart(
-                            values = next24.map { it.windSpeed },
+                            values = next24.map { windValue(it.windSpeed, settings.windUnit) },
                             labels = next24.map { "${hourLabel(it.time)}\n${compassLabel(it.windDir)}" },
-                            valueLabel = { it.toInt().toString() },
+                            valueLabel = { it.roundToInt().toString() },
                             minY = 0.0,
-                            maxY = next24.maxOfOrNull { it.windSpeed }?.coerceAtLeast(10.0) ?: 10.0
+                            maxY = windValue(next24.maxOfOrNull { it.windSpeed }?.coerceAtLeast(10.0) ?: 10.0, settings.windUnit)
                         )
-                        Text(tr("Speed in km/h with direction"), style = MaterialTheme.typography.labelMedium)
+                        Text(windCaption(settings.windUnit), style = MaterialTheme.typography.labelMedium)
                     }
                     Sheet.Air -> {
                         val aqiHours = next24.filter { it.aqi != null }
@@ -824,13 +828,13 @@ private fun WeatherDetails(
                         )
                         Spacer(Modifier.height(12.dp))
                         SimpleChart(
-                            values = next24.map { it.pressure },
+                            values = next24.map { pressureValue(it.pressure, settings.pressureUnit) },
                             labels = next24.map { hourLabel(it.time) },
-                            valueLabel = { it.roundToInt().toString() },
-                            minY = pressureLow - 2.0,
-                            maxY = pressureHigh + 2.0
+                            valueLabel = { pressureFormat(it, settings.pressureUnit) },
+                            minY = pressureValue(pressureLow - 2.0, settings.pressureUnit),
+                            maxY = pressureValue(pressureHigh + 2.0, settings.pressureUnit)
                         )
-                        Text(tr("Hectopascals (hPa)"), style = MaterialTheme.typography.labelMedium)
+                        Text(pressureCaption(settings.pressureUnit), style = MaterialTheme.typography.labelMedium)
                     }
                     Sheet.Visibility -> {
                         Text(tr("Visibility, next 24 hours"), style = MaterialTheme.typography.titleLarge)
