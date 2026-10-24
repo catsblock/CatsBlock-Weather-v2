@@ -96,7 +96,9 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.catsblock.weather.data.EclipseLeadOptions
 import com.catsblock.weather.data.RainLeadOptions
+import com.catsblock.weather.data.SnowLeadOptions
 import com.catsblock.weather.data.SettingsStore
 import com.catsblock.weather.i18n.AppLanguage
 import com.catsblock.weather.i18n.leadFull
@@ -130,7 +132,7 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var langDialog by remember { mutableStateOf(false) }
-    var leadDialog by remember { mutableStateOf(false) }
+    var leadDialog by remember { mutableStateOf<String?>(null) }
     var notificationsOn by remember { mutableStateOf(notificationsAllowed(ctx)) }
     var openSettingsOnDeny by remember { mutableStateOf(false) }
     val owner = LocalLifecycleOwner.current
@@ -192,24 +194,38 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
         )
     }
 
-    if (leadDialog) {
+    leadDialog?.let { which ->
+        val options = when (which) {
+            "eclipse" -> EclipseLeadOptions
+            "snow" -> SnowLeadOptions
+            else -> RainLeadOptions
+        }
+        val selected = when (which) {
+            "eclipse" -> settings.eclipseLeadMinutes
+            "snow" -> settings.snowLeadMinutes
+            else -> settings.rainLeadMinutes
+        }
         AlertDialog(
-            onDismissRequest = { leadDialog = false },
+            onDismissRequest = { leadDialog = null },
             title = { Text(trx("Alert time")) },
             text = {
-                Column {
-                    RainLeadOptions.forEach { minutes ->
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    options.forEach { minutes ->
                         Row(
                             Modifier
                                 .fillMaxWidth()
                                 .clickable {
-                                    leadDialog = false
-                                    vm.setRainLead(minutes)
+                                    leadDialog = null
+                                    when (which) {
+                                        "eclipse" -> vm.setEclipseLead(minutes)
+                                        "snow" -> vm.setSnowLead(minutes)
+                                        else -> vm.setRainLead(minutes)
+                                    }
                                 }
                                 .padding(vertical = 4.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            RadioButton(selected = settings.rainLeadMinutes == minutes, onClick = null)
+                            RadioButton(selected = selected == minutes, onClick = null)
                             Spacer(Modifier.width(12.dp))
                             Text(leadFull(minutes), style = MaterialTheme.typography.bodyLarge)
                         }
@@ -217,7 +233,7 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
                 }
             },
             confirmButton = {},
-            dismissButton = { TextButton(onClick = { leadDialog = false }) { Text("OK") } }
+            dismissButton = { TextButton(onClick = { leadDialog = null }) { Text("OK") } }
         )
     }
 
@@ -312,23 +328,61 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
                 if (settings.rainAlerts) {
                     GroupDivider()
                     ListItem(
-                        modifier = Modifier.clickable { leadDialog = true },
+                        modifier = Modifier.clickable { leadDialog = "rain" },
                         headlineContent = { Text(trx("Alert time")) },
                         supportingContent = { Text(leadFull(settings.rainLeadMinutes)) },
                         trailingContent = { Icon(Icons.Rounded.ChevronRight, null) },
                         colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                     )
-                    if (!notificationsOn) {
-                        GroupDivider()
-                        ListItem(
-                            headlineContent = { Text(trx("Notifications are turned off")) },
-                            supportingContent = { Text(trx("Allow notifications so rain alerts can reach you.")) },
-                            trailingContent = {
-                                TextButton(onClick = { askNotifications(true) }) { Text(trx("Allow")) }
-                            },
-                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-                        )
-                    }
+                }
+                GroupDivider()
+                SwitchRow(
+                    trx("Snow alerts"),
+                    trx("Get notified before snow arrives."),
+                    settings.snowAlerts
+                ) { enabled ->
+                    vm.setSnowAlerts(enabled)
+                    if (enabled) askNotifications(false)
+                }
+                if (settings.snowAlerts) {
+                    GroupDivider()
+                    ListItem(
+                        modifier = Modifier.clickable { leadDialog = "snow" },
+                        headlineContent = { Text(trx("Alert time")) },
+                        supportingContent = { Text(leadFull(settings.snowLeadMinutes)) },
+                        trailingContent = { Icon(Icons.Rounded.ChevronRight, null) },
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                    )
+                }
+                GroupDivider()
+                SwitchRow(
+                    trx("Be notified when there is a lunar eclipse or a solar eclipse"),
+                    trx("Only eclipses you can see from your city are announced."),
+                    settings.eclipseAlerts
+                ) { enabled ->
+                    vm.setEclipseAlerts(enabled)
+                    if (enabled) askNotifications(false)
+                }
+                if (settings.eclipseAlerts) {
+                    GroupDivider()
+                    ListItem(
+                        modifier = Modifier.clickable { leadDialog = "eclipse" },
+                        headlineContent = { Text(trx("Alert time")) },
+                        supportingContent = { Text(leadFull(settings.eclipseLeadMinutes)) },
+                        trailingContent = { Icon(Icons.Rounded.ChevronRight, null) },
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                    )
+                }
+                if ((settings.rainAlerts || settings.snowAlerts || settings.eclipseAlerts) && !notificationsOn) {
+                    GroupDivider()
+                    ListItem(
+                        headlineContent = { Text(trx("Notifications are turned off")) },
+                        supportingContent = { Text(trx("Allow notifications so alerts can reach you.")) },
+                        trailingContent = {
+                            TextButton(onClick = { askNotifications(true) }) { Text(trx("Allow")) }
+                        },
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                    )
                 }
             }
 
