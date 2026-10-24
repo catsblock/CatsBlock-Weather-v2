@@ -217,7 +217,7 @@ fun MainScreen(vm: WeatherViewModel) {
         bundle?.let { b ->
             val today = b.current.now.toLocalDate()
             val d = b.days.firstOrNull { it.date == today } ?: b.days.first()
-            CitySummary(b.current.kind, b.current.isDay, b.current.temp, d.min, d.max)
+            CitySummary(b.current.kind, b.current.isDay, b.current.temp, d.min, d.max, b.current.now.toLocalTime())
         }
     }
     val progress = (scroll.value / 700f).coerceIn(0f, 1f)
@@ -254,7 +254,8 @@ fun MainScreen(vm: WeatherViewModel) {
                 WeatherBackground(
                     kind,
                     isDay,
-                    Modifier.fillMaxSize().blur((progress * 30f).dp, BlurredEdgeTreatment.Unbounded)
+                    Modifier.fillMaxSize().blur((progress * 30f).dp, BlurredEdgeTreatment.Unbounded),
+                    bundle?.current?.now?.toLocalTime()
                 )
             }
             Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = progress * 0.32f)))
