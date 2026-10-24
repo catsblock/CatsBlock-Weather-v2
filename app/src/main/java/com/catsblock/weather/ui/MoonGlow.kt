@@ -22,7 +22,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.PathOperation
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.graphicsLayer
@@ -34,7 +33,23 @@ import com.catsblock.weather.data.Moon
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
+import kotlin.math.max
 import kotlin.math.min
+
+fun moonLitPath(c: Offset, r: Float, cycle: Double): Path {
+    val k = cos(2.0 * PI * cycle).toFloat()
+    val waxing = cycle < 0.5
+    val ex = max(abs(k) * r, 0.01f)
+    val limb = Rect(c.x - r, c.y - r, c.x + r, c.y + r)
+    val terminator = Rect(c.x - ex, c.y - r, c.x + ex, c.y + r)
+    val limbSweep = if (waxing) 180f else -180f
+    val terminatorSweep = if (waxing == (k > 0f)) -180f else 180f
+    return Path().apply {
+        arcTo(limb, -90f, limbSweep, true)
+        arcTo(terminator, 90f, terminatorSweep, false)
+        close()
+    }
+}
 
 @Composable
 fun MoonDisc(cycle: Double, modifier: Modifier = Modifier, eclipse: Eclipse? = null) {
@@ -49,20 +64,8 @@ fun MoonDisc(cycle: Double, modifier: Modifier = Modifier, eclipse: Eclipse? = n
             Brush.radialGradient(listOf(Color(0xFF5E667B), Color(0xFF353B4B)), center = c, radius = r),
             r, c
         )
-        val circle = Path().apply { addOval(Rect(c, r)) }
-        val half = Path().apply {
-            addRect(
-                if (cycle < 0.5) Rect(c.x, c.y - r, c.x + r, c.y + r) else Rect(c.x - r, c.y - r, c.x, c.y + r)
-            )
-        }
-        val k = cos(2.0 * PI * cycle).toFloat()
-        val ellipse = Path().apply {
-            addOval(Rect(c.x - r * abs(k), c.y - r, c.x + r * abs(k), c.y + r))
-        }
-        val lit = Path.combine(PathOperation.Intersect, circle, half)
-        val shape = Path.combine(if (k > 0f) PathOperation.Difference else PathOperation.Union, lit, ellipse)
         drawPath(
-            shape,
+            moonLitPath(c, r, cycle),
             Brush.radialGradient(listOf(Color(0xFFFFFBEA), Color(0xFFE9E1C4)), center = c, radius = r)
         )
         drawCircle(Color(0x66FFFFFF), r, c, style = Stroke(1.2f.dp.toPx()))
