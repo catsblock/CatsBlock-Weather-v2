@@ -1,5 +1,9 @@
 package com.catsblock.weather.ui
 
+import com.catsblock.weather.i18n.trx
+import com.catsblock.weather.data.WindUnit
+import com.catsblock.weather.data.PressureUnit
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -62,6 +66,38 @@ fun Double.toUnit(fahrenheit: Boolean): Double = if (fahrenheit) this * 9.0 / 5.
 
 fun tempText(celsius: Double, fahrenheit: Boolean): String =
     "${celsius.toUnit(fahrenheit).roundToInt()}°"
+
+data class UnitPrefs(
+    val wind: WindUnit = WindUnit.Kmh,
+    val pressure: PressureUnit = PressureUnit.Hpa
+)
+
+val LocalUnits = compositionLocalOf { UnitPrefs() }
+
+fun windValue(kmh: Double, unit: WindUnit): Double = kmh * unit.factor
+
+fun windText(kmh: Double, unit: WindUnit): String = "${windValue(kmh, unit).roundToInt()} ${unit.label}"
+
+fun windCaption(unit: WindUnit): String =
+    if (unit == WindUnit.Kmh) tr("Speed in km/h with direction") else "Speed in ${unit.label} with direction"
+
+fun pressureValue(hpa: Double, unit: PressureUnit): Double = hpa * unit.factor
+
+fun pressureFormat(value: Double, unit: PressureUnit): String =
+    String.format(Locale.US, "%.${unit.decimals}f", value)
+
+fun pressureNumber(hpa: Double, unit: PressureUnit): String = pressureFormat(pressureValue(hpa, unit), unit)
+
+fun pressureCaption(unit: PressureUnit): String =
+    if (unit == PressureUnit.Hpa) tr("Hectopascals (hPa)") else unit.title
+
+fun intervalLabel(minutes: Int): String = trx(
+    when (minutes) {
+        30 -> "30 minutes"
+        60 -> "1 hour"
+        else -> "${minutes / 60} hours"
+    }
+)
 
 fun f1(value: Double): String = String.format(Locale.US, "%.1f", value)
 
