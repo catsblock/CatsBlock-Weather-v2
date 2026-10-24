@@ -18,6 +18,8 @@ val Condition.isWet: Boolean
         this == Condition.HeavySnow || this == Condition.Blizzard
 
 val RainLeadOptions: List<Int> = listOf(120, 60, 30, 15)
+val EclipseLeadOptions: List<Int> = listOf(1440, 720, 360, 180, 120, 60, 30, 15)
+val SnowLeadOptions: List<Int> = listOf(120, 60, 30, 15)
 
 data class City(
     val name: String,
@@ -124,7 +126,12 @@ data class AppSettings(
     val sounds: Boolean = true,
     val language: AppLanguage = AppLanguage.English,
     val rainAlerts: Boolean = true,
-    val rainLeadMinutes: Int = 60
+    val rainLeadMinutes: Int = 60,
+    val eclipseAlerts: Boolean = true,
+    val eclipseLeadMinutes: Int = 60,
+    val snowAlerts: Boolean = true,
+    val snowLeadMinutes: Int = 60,
+    val govAlerts: Boolean = true
 )
 
 data class Continent(val title: String, val cities: List<City>)
