@@ -1,5 +1,8 @@
 package com.catsblock.weather.ui
 
+import com.catsblock.weather.data.WindUnit
+import com.catsblock.weather.data.PressureUnit
+import com.catsblock.weather.data.BackgroundIntervalOptions
 import android.Manifest
 import android.content.Context
 import android.content.Intent
@@ -144,6 +147,7 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
         runCatching { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName }.getOrNull() ?: "1.0"
     }
     var leadDialog by remember { mutableStateOf<String?>(null) }
+    var intervalDialog by remember { mutableStateOf(false) }
     var notificationsOn by remember { mutableStateOf(notificationsAllowed(ctx)) }
     var openSettingsOnDeny by remember { mutableStateOf(false) }
     val owner = LocalLifecycleOwner.current
@@ -266,6 +270,35 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
         )
     }
 
+    if (intervalDialog) {
+        AlertDialog(
+            onDismissRequest = { intervalDialog = false },
+            title = { Text(tr("Update interval")) },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    BackgroundIntervalOptions.forEach { minutes ->
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    intervalDialog = false
+                                    vm.setBackgroundInterval(minutes)
+                                }
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(selected = settings.backgroundIntervalMinutes == minutes, onClick = null)
+                            Spacer(Modifier.width(12.dp))
+                            Text(intervalLabel(minutes), style = MaterialTheme.typography.bodyLarge)
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = { TextButton(onClick = { intervalDialog = false }) { Text(tr("OK")) } }
+        )
+    }
+
     Scaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
@@ -304,6 +337,34 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
                             onClick = { vm.setFahrenheit(true) },
                             shape = SegmentedButtonDefaults.itemShape(1, 2)
                         ) { Text(tr("Fahrenheit")) }
+                    }
+                }
+                GroupDivider()
+                Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
+                    Text(tr("Wind speed"), style = MaterialTheme.typography.titleMedium)
+                    Spacer(Modifier.height(10.dp))
+                    SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                        WindUnit.entries.forEachIndexed { index, unit ->
+                            SegmentedButton(
+                                selected = settings.windUnit == unit,
+                                onClick = { vm.setWindUnit(unit) },
+                                shape = SegmentedButtonDefaults.itemShape(index, WindUnit.entries.size)
+                            ) { Text(unit.label) }
+                        }
+                    }
+                }
+                GroupDivider()
+                Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
+                    Text(tr("Atmospheric pressure"), style = MaterialTheme.typography.titleMedium)
+                    Spacer(Modifier.height(10.dp))
+                    SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                        PressureUnit.entries.forEachIndexed { index, unit ->
+                            SegmentedButton(
+                                selected = settings.pressureUnit == unit,
+                                onClick = { vm.setPressureUnit(unit) },
+                                shape = SegmentedButtonDefaults.itemShape(index, PressureUnit.entries.size)
+                            ) { Text(unit.label) }
+                        }
                     }
                 }
             }
@@ -471,6 +532,23 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
                     settings.mobileData,
                     vm::setMobileData
                 )
+                GroupDivider()
+                SwitchRow(
+                    tr("Update weather in background"),
+                    tr("Refresh the weather automatically, even when the app is closed."),
+                    settings.backgroundUpdates,
+                    vm::setBackgroundUpdates
+                )
+                if (settings.backgroundUpdates) {
+                    GroupDivider()
+                    ListItem(
+                        modifier = Modifier.clickable { intervalDialog = true },
+                        headlineContent = { Text(tr("Update interval")) },
+                        supportingContent = { Text(intervalLabel(settings.backgroundIntervalMinutes)) },
+                        trailingContent = { Icon(Icons.Rounded.ChevronRight, null) },
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                    )
+                }
                 GroupDivider()
                 SwitchRow(
                     tr("Weather sounds"),
