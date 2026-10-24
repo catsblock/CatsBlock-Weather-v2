@@ -10,6 +10,7 @@ import coil.decode.SvgDecoder
 import com.catsblock.weather.alerts.EclipseAlerts
 import com.catsblock.weather.alerts.RainAlerts
 import com.catsblock.weather.alerts.SnowAlerts
+import com.catsblock.weather.update.AppUpdates
 import com.catsblock.weather.work.BackgroundUpdates
 
 class WeatherApp : Application(), ImageLoaderFactory {
@@ -20,6 +21,7 @@ class WeatherApp : Application(), ImageLoaderFactory {
         RainAlerts.ensureChannel(this)
         EclipseAlerts.ensureChannel(this)
         SnowAlerts.ensureChannel(this)
+        AppUpdates.ensureChannel(this)
         BackgroundUpdates.schedule(this)
     }
 
