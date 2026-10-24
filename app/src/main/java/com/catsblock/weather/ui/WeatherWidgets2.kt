@@ -262,7 +262,7 @@ fun WindCardV2(speedKmh: Double, fromDeg: Double, modifier: Modifier = Modifier,
             }
         }
         Spacer(Modifier.height(2.dp))
-        Text("${speedKmh.toInt()} km/h", style = MaterialTheme.typography.titleMedium, maxLines = 1)
+        Text(windText(speedKmh, LocalUnits.current.wind), style = MaterialTheme.typography.titleMedium, maxLines = 1)
         Text(
             "${tr("Blowing to")} ${compassLabel(going.toDouble())}",
             style = MaterialTheme.typography.labelSmall,
@@ -322,10 +322,10 @@ fun PressureCardV2(hpa: Double, modifier: Modifier = Modifier, onClick: (() -> U
             drawPath(needle, Color(0xFFFF5252), style = Fill)
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.Bottom) {
-            Text(hpa.roundToInt().toString(), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, maxLines = 1)
+            Text(pressureNumber(hpa, LocalUnits.current.pressure), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, maxLines = 1)
             Spacer(Modifier.width(4.dp))
             Text(
-                "hPa",
+                LocalUnits.current.pressure.label,
                 Modifier.padding(bottom = 3.dp),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
