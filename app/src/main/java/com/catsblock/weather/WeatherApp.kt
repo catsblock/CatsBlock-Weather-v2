@@ -7,7 +7,9 @@ import coil.ImageLoaderFactory
 import coil.decode.GifDecoder
 import coil.decode.ImageDecoderDecoder
 import coil.decode.SvgDecoder
+import com.catsblock.weather.alerts.EclipseAlerts
 import com.catsblock.weather.alerts.RainAlerts
+import com.catsblock.weather.alerts.SnowAlerts
 import com.catsblock.weather.work.BackgroundUpdates
 
 class WeatherApp : Application(), ImageLoaderFactory {
@@ -16,6 +18,8 @@ class WeatherApp : Application(), ImageLoaderFactory {
         super.onCreate()
         instance = this
         RainAlerts.ensureChannel(this)
+        EclipseAlerts.ensureChannel(this)
+        SnowAlerts.ensureChannel(this)
         BackgroundUpdates.schedule(this)
     }
 
