@@ -76,10 +76,10 @@ private fun AppRoot(vm: WeatherViewModel) {
         activity.enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
     }
 
-    LaunchedEffect(onMain, settings.rainAlerts) {
+    LaunchedEffect(onMain, settings.rainAlerts, settings.eclipseAlerts, settings.snowAlerts) {
         val missing = Build.VERSION.SDK_INT >= 33 &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
-        if (onMain && settings.rainAlerts && missing && !RainAlerts.wasAsked(context)) {
+        if (onMain && (settings.rainAlerts || settings.eclipseAlerts || settings.snowAlerts) && missing && !RainAlerts.wasAsked(context)) {
             RainAlerts.markAsked(context)
             notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
