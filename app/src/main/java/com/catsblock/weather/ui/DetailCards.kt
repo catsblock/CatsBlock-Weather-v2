@@ -103,7 +103,7 @@ fun GlassCard(
         contentColor = if (glass) Color.White else scheme.onSurface
     )
     val surface = if (glass) {
-        modifier.frostedGlassCard(hazeState, shape).collideWithParticles()
+        modifier.scrollEdgeFade().frostedGlassCard(hazeState, shape).collideWithParticles()
     } else {
         modifier
     }
