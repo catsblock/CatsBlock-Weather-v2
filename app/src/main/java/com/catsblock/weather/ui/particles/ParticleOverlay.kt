@@ -206,7 +206,7 @@ private class SnowSim(private val d: Float, val count: Int) {
     val rot = FloatArray(count)
     val rotSpeed = FloatArray(count)
     val mass = FloatArray(count)
-    val size = FloatArray(count)
+    val flakeSize = FloatArray(count)
     val drawX = FloatArray(count)
     private var ready = false
     private var wind = 0f
@@ -214,9 +214,9 @@ private class SnowSim(private val d: Float, val count: Int) {
     private fun respawn(i: Int, w: Float, h: Float, initial: Boolean) {
         z[i] = Random.nextFloat()
         mass[i] = 0.6f + Random.nextFloat() * 0.8f
-        size[i] = (1.2f + z[i] * 3.8f) * d * (0.8f + Random.nextFloat() * 0.4f)
+        flakeSize[i] = (1.2f + z[i] * 3.8f) * d * (0.8f + Random.nextFloat() * 0.4f)
         x[i] = Random.nextFloat() * w
-        y[i] = if (initial) Random.nextFloat() * h else -Random.nextFloat() * h * 0.2f - size[i]
+        y[i] = if (initial) Random.nextFloat() * h else -Random.nextFloat() * h * 0.2f - flakeSize[i]
         phase[i] = Random.nextFloat() * (2f * PI.toFloat())
         amp[i] = (10f + Random.nextFloat() * 18f) * d / mass[i]
         swaySpeed[i] = (0.6f + Random.nextFloat() * 0.8f) / sqrt(mass[i])
@@ -238,7 +238,7 @@ private class SnowSim(private val d: Float, val count: Int) {
             if (x[i] < -amp[i]) x[i] += w + 2f * amp[i]
             if (x[i] > w + amp[i]) x[i] -= w + 2f * amp[i]
             drawX[i] = x[i] + sin(phase[i]) * amp[i]
-            if (y[i] > h + size[i] * 2f) respawn(i, w, h, false)
+            if (y[i] > h + flakeSize[i] * 2f) respawn(i, w, h, false)
         }
     }
 
@@ -247,7 +247,7 @@ private class SnowSim(private val d: Float, val count: Int) {
             for (i in 0 until count) {
                 val px = drawX[i]
                 val py = y[i]
-                val r = size[i]
+                val r = flakeSize[i]
                 val depthBlur = abs(z[i] - 0.5f) * 1.6f
                 val edgeBlur = (abs(px / w - 0.5f) * 2f).pow(2f) * 0.7f
                 val soft = max(depthBlur, edgeBlur).coerceIn(0f, 1f)
