@@ -122,8 +122,14 @@ data class CitySummary(
     val localTime: LocalTime? = null
 )
 
+enum class ThemeMode { System, Light, Dark }
+
 data class AppSettings(
     val fahrenheit: Boolean = false,
+    val theme: ThemeMode = ThemeMode.System,
+    val compactHero: Boolean = false,
+    val showLifeIndex: Boolean = true,
+    val showPrecipitation: Boolean = true,
     val mobileData: Boolean = true,
     val sounds: Boolean = true,
     val language: AppLanguage = AppLanguage.English,
