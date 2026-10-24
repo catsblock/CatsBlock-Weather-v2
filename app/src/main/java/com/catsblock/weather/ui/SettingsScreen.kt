@@ -373,7 +373,16 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
                         colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                     )
                 }
-                if ((settings.rainAlerts || settings.snowAlerts || settings.eclipseAlerts) && !notificationsOn) {
+                GroupDivider()
+                SwitchRow(
+                    trx("Notify when there is a new app update"),
+                    trx("Get notified with the new version, and update straight from the notification."),
+                    settings.updateAlerts
+                ) { enabled ->
+                    vm.setUpdateAlerts(enabled)
+                    if (enabled) askNotifications(false)
+                }
+                if ((settings.rainAlerts || settings.snowAlerts || settings.eclipseAlerts || settings.updateAlerts) && !notificationsOn) {
                     GroupDivider()
                     ListItem(
                         headlineContent = { Text(trx("Notifications are turned off")) },
