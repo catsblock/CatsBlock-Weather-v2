@@ -16,6 +16,7 @@ import com.catsblock.weather.data.CitySummary
 import com.catsblock.weather.data.Condition
 import com.catsblock.weather.data.NetworkPolicy
 import com.catsblock.weather.data.SettingsStore
+import com.catsblock.weather.data.ThemeMode
 import com.catsblock.weather.data.WeatherBundle
 import com.catsblock.weather.data.WeatherBus
 import com.catsblock.weather.data.WeatherRepository
@@ -32,7 +33,10 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.delay
+import android.os.SystemClock
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.debounce
@@ -46,7 +50,7 @@ import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 import java.util.Locale
 
-enum class Screen { Welcome, Picker, Main, Settings, IconKit, BackgroundKit, AppIcon, LiveMoon }
+enum class Screen { Welcome, Picker, Main, Settings, IconKit, BackgroundKit, AppIcon, LiveMoon, Privacy }
 
 sealed interface WeatherState {
     data object Idle : WeatherState
@@ -58,11 +62,20 @@ sealed interface WeatherState {
 @OptIn(FlowPreview::class)
 class WeatherViewModel(private val app: Application) : AndroidViewModel(app) {
 
+    private companion object {
+        const val FRESH_MS = 120_000L
+    }
+
     private val store = SettingsStore(app)
     private val repo = WeatherRepository()
     private var loadJob: Job? = null
 
     val screen = MutableStateFlow<Screen?>(null)
+    val refreshing = MutableStateFlow(false)
+    val notices = MutableSharedFlow<String>(extraBufferCapacity = 1)
+    private val cache = HashMap<String, WeatherBundle>()
+    private val lastUpdated = HashMap<String, Long>()
+    private var privacyReturn = Screen.Settings
     val city = MutableStateFlow<City?>(null)
     val weather = MutableStateFlow<WeatherState>(WeatherState.Idle)
     val summaries = MutableStateFlow<Map<String, CitySummary>>(emptyMap())
@@ -118,6 +131,8 @@ class WeatherViewModel(private val app: Application) : AndroidViewModel(app) {
         }
         viewModelScope.launch {
             WeatherBus.updates.collect { update ->
+                cache[update.city.id] = update.bundle
+                lastUpdated[update.city.id] = SystemClock.elapsedRealtime()
                 if (update.city.id == city.value?.id) {
                     weather.value = WeatherState.Success(update.bundle)
                 }
@@ -170,6 +185,11 @@ class WeatherViewModel(private val app: Application) : AndroidViewModel(app) {
         screen.value = Screen.LiveMoon
     }
 
+    fun openPrivacy(from: Screen) {
+        privacyReturn = from
+        screen.value = Screen.Privacy
+    }
+
     fun openSettings() {
         screen.value = Screen.Settings
     }
@@ -186,6 +206,7 @@ class WeatherViewModel(private val app: Application) : AndroidViewModel(app) {
         screen.value = when (screen.value) {
             Screen.Picker -> if (city.value != null) Screen.Main else Screen.Welcome
             Screen.Settings, Screen.LiveMoon -> Screen.Main
+            Screen.Privacy -> privacyReturn
             Screen.IconKit, Screen.BackgroundKit, Screen.AppIcon -> Screen.Settings
             else -> screen.value
         }
@@ -203,7 +224,46 @@ class WeatherViewModel(private val app: Application) : AndroidViewModel(app) {
             if (list.none { it.id == selected.id }) store.saveCities(list + selected)
             store.setCurrent(selected)
         }
-        refresh()
+        val cached = cache[selected.id]
+        if (cached != null) {
+            weather.value = WeatherState.Success(cached)
+            val age = SystemClock.elapsedRealtime() - (lastUpdated[selected.id] ?: 0L)
+            if (age >= FRESH_MS) refresh(true)
+        } else {
+            weather.value = WeatherState.Loading
+            refresh()
+        }
+    }
+
+    fun selectAdjacent(step: Int): Boolean {
+        val list = savedCities.value
+        val index = list.indexOfFirst { it.id == city.value?.id }
+        if (index < 0) return false
+        val next = list.getOrNull(index + step) ?: return false
+        selectCity(next)
+        return true
+    }
+
+    fun pullRefresh(): Boolean {
+        val target = city.value ?: return false
+        val age = SystemClock.elapsedRealtime() - (lastUpdated[target.id] ?: 0L)
+        if (weather.value is WeatherState.Success && age < FRESH_MS) {
+            notices.tryEmit("Weather data is already up to date")
+            return false
+        }
+        refreshing.value = true
+        loadJob?.cancel()
+        loadJob = viewModelScope.launch {
+            val started = SystemClock.elapsedRealtime()
+            try {
+                load(target, true)
+                val rest = 900L - (SystemClock.elapsedRealtime() - started)
+                if (rest > 0) delay(rest)
+            } finally {
+                refreshing.value = false
+            }
+        }
+        return true
     }
 
     fun removeCity(target: City) {
@@ -278,6 +338,7 @@ class WeatherViewModel(private val app: Application) : AndroidViewModel(app) {
             locate()
             return
         }
+        refreshing.value = false
         loadJob?.cancel()
         loadJob = viewModelScope.launch { load(target, silent) }
     }
@@ -294,6 +355,8 @@ class WeatherViewModel(private val app: Application) : AndroidViewModel(app) {
         }
         try {
             val bundle = repo.fetch(target)
+            cache[target.id] = bundle
+            lastUpdated[target.id] = SystemClock.elapsedRealtime()
             weather.value = WeatherState.Success(bundle)
             runCatching { WidgetUpdater.publish(app, target, bundle) }
             runCatching { RainAlerts.onFresh(app, target, bundle) }
@@ -319,6 +382,22 @@ class WeatherViewModel(private val app: Application) : AndroidViewModel(app) {
             }
             summaries.value = results.mapNotNull { (id, summary) -> summary?.let { id to it } }.toMap()
         }
+    }
+
+    fun setTheme(value: ThemeMode) {
+        viewModelScope.launch { store.setTheme(value) }
+    }
+
+    fun setCompactHero(value: Boolean) {
+        viewModelScope.launch { store.setCompactHero(value) }
+    }
+
+    fun setShowLifeIndex(value: Boolean) {
+        viewModelScope.launch { store.setShowLifeIndex(value) }
+    }
+
+    fun setShowPrecipitation(value: Boolean) {
+        viewModelScope.launch { store.setShowPrecipitation(value) }
     }
 
     fun setFahrenheit(value: Boolean) {
