@@ -18,6 +18,10 @@ class SettingsStore(private val context: Context) {
 
     private object Keys {
         val fahrenheit = booleanPreferencesKey("fahrenheit")
+        val windUnit = stringPreferencesKey("wind_unit")
+        val pressureUnit = stringPreferencesKey("pressure_unit")
+        val backgroundUpdates = booleanPreferencesKey("background_updates")
+        val backgroundInterval = intPreferencesKey("background_interval_minutes")
         val theme = stringPreferencesKey("theme")
         val compactHero = booleanPreferencesKey("compact_hero")
         val showLifeIndex = booleanPreferencesKey("show_life_index")
@@ -39,6 +43,10 @@ class SettingsStore(private val context: Context) {
     val settings: Flow<AppSettings> = context.dataStore.data.map {
         AppSettings(
             fahrenheit = it[Keys.fahrenheit] ?: false,
+            windUnit = runCatching { WindUnit.valueOf(it[Keys.windUnit] ?: "") }.getOrDefault(WindUnit.Kmh),
+            pressureUnit = runCatching { PressureUnit.valueOf(it[Keys.pressureUnit] ?: "") }.getOrDefault(PressureUnit.Hpa),
+            backgroundUpdates = it[Keys.backgroundUpdates] ?: true,
+            backgroundIntervalMinutes = it[Keys.backgroundInterval]?.takeIf { value -> value in BackgroundIntervalOptions } ?: 120,
             theme = runCatching { ThemeMode.valueOf(it[Keys.theme] ?: "") }.getOrDefault(ThemeMode.System),
             compactHero = it[Keys.compactHero] ?: false,
             showLifeIndex = it[Keys.showLifeIndex] ?: true,
@@ -71,6 +79,22 @@ class SettingsStore(private val context: Context) {
 
     suspend fun setFahrenheit(value: Boolean) {
         context.dataStore.edit { it[Keys.fahrenheit] = value }
+    }
+
+    suspend fun setWindUnit(value: WindUnit) {
+        context.dataStore.edit { it[Keys.windUnit] = value.name }
+    }
+
+    suspend fun setPressureUnit(value: PressureUnit) {
+        context.dataStore.edit { it[Keys.pressureUnit] = value.name }
+    }
+
+    suspend fun setBackgroundUpdates(value: Boolean) {
+        context.dataStore.edit { it[Keys.backgroundUpdates] = value }
+    }
+
+    suspend fun setBackgroundInterval(minutes: Int) {
+        context.dataStore.edit { it[Keys.backgroundInterval] = minutes }
     }
 
     suspend fun setTheme(value: ThemeMode) {
