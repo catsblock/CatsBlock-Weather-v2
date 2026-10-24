@@ -19,6 +19,21 @@ val Condition.isWet: Boolean
         this == Condition.HeavySnow || this == Condition.Blizzard
 
 val RainLeadOptions: List<Int> = listOf(120, 60, 30, 15)
+val BackgroundIntervalOptions: List<Int> = listOf(30, 60, 120, 240, 480, 840)
+
+enum class WindUnit(val label: String, val factor: Double) {
+    Kmh("km/h", 1.0),
+    Mph("mph", 0.621371),
+    Ms("m/s", 0.277778),
+    Knots("kn", 0.539957)
+}
+
+enum class PressureUnit(val label: String, val title: String, val factor: Double, val decimals: Int) {
+    Hpa("hPa", "Hectopascals (hPa)", 1.0, 0),
+    Kpa("kPa", "Kilopascals (kPa)", 0.1, 1),
+    InHg("inHg", "Inches of mercury (inHg)", 0.02953, 2),
+    MmHg("mmHg", "Millimeters of mercury (mmHg)", 0.750062, 0)
+}
 val EclipseLeadOptions: List<Int> = listOf(1440, 720, 360, 180, 120, 60, 30, 15)
 val SnowLeadOptions: List<Int> = listOf(120, 60, 30, 15)
 
@@ -126,6 +141,10 @@ enum class ThemeMode { System, Light, Dark }
 
 data class AppSettings(
     val fahrenheit: Boolean = false,
+    val windUnit: WindUnit = WindUnit.Kmh,
+    val pressureUnit: PressureUnit = PressureUnit.Hpa,
+    val backgroundUpdates: Boolean = true,
+    val backgroundIntervalMinutes: Int = 120,
     val theme: ThemeMode = ThemeMode.System,
     val compactHero: Boolean = false,
     val showLifeIndex: Boolean = true,
