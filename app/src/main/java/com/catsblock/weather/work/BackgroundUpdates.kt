@@ -16,6 +16,7 @@ import com.catsblock.weather.alerts.EclipseAlerts
 import com.catsblock.weather.alerts.RainAlerts
 import com.catsblock.weather.alerts.SnowAlerts
 import com.catsblock.weather.data.NetworkPolicy
+import com.catsblock.weather.update.AppUpdates
 import com.catsblock.weather.data.SettingsStore
 import com.catsblock.weather.data.WeatherBus
 import com.catsblock.weather.data.WeatherRepository
@@ -60,6 +61,7 @@ class WeatherWorker(context: Context, params: WorkerParameters) : CoroutineWorke
         val store = SettingsStore(app)
         val settings = store.settings.first()
         if (!NetworkPolicy.foregroundAllowed(app, settings)) return Result.success()
+        runCatching { AppUpdates.check(app) }
         val city = store.currentCity.first() ?: return Result.success()
         return try {
             val bundle = WeatherRepository().fetch(city)
