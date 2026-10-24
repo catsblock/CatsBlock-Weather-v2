@@ -4,6 +4,7 @@ import com.catsblock.weather.i18n.AppLanguage
 import org.json.JSONObject
 import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.LocalTime
 import java.util.Locale
 
 enum class Condition {
@@ -117,7 +118,8 @@ data class CitySummary(
     val isDay: Boolean,
     val temp: Double,
     val min: Double = 0.0,
-    val max: Double = 0.0
+    val max: Double = 0.0,
+    val localTime: LocalTime? = null
 )
 
 data class AppSettings(
