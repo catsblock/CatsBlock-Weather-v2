@@ -195,8 +195,8 @@ private fun MoonChip(icon: ImageVector, label: String, value: String, modifier: 
     Row(
         modifier
             .clip(shape)
-            .background(Color.White.copy(alpha = 0.06f))
-            .border(1.dp, Color.White.copy(alpha = 0.14f), shape)
+            .background(Color.White.copy(alpha = 0.02f))
+            .border(1.dp, Color.White.copy(alpha = 0.09f), shape)
             .padding(horizontal = 14.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -455,8 +455,8 @@ fun MoonCalendarSheet(
                 Modifier
                     .fillMaxWidth()
                     .clip(panel)
-                    .background(Color.White.copy(alpha = 0.06f))
-                    .border(1.dp, Color.White.copy(alpha = 0.14f), panel)
+                    .background(Color.White.copy(alpha = 0.02f))
+                    .border(1.dp, Color.White.copy(alpha = 0.09f), panel)
                     .padding(18.dp)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
