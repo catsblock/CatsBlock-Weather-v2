@@ -18,7 +18,14 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import android.net.Uri
 import androidx.compose.foundation.Canvas
+import androidx.compose.material.icons.rounded.Business
+import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.PrivacyTip
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontWeight
+import com.catsblock.weather.data.ThemeMode
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -132,6 +139,10 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var langDialog by remember { mutableStateOf(false) }
+    var companyDialog by remember { mutableStateOf(false) }
+    val versionName = remember {
+        runCatching { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName }.getOrNull() ?: "1.0"
+    }
     var leadDialog by remember { mutableStateOf<String?>(null) }
     var notificationsOn by remember { mutableStateOf(notificationsAllowed(ctx)) }
     var openSettingsOnDeny by remember { mutableStateOf(false) }
@@ -191,6 +202,24 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
             },
             confirmButton = {},
             dismissButton = { TextButton(onClick = { langDialog = false }) { Text("OK") } }
+        )
+    }
+
+    if (companyDialog) {
+        AlertDialog(
+            onDismissRequest = { companyDialog = false },
+            title = { Text("CatsBlock Corporation") },
+            text = {
+                Column {
+                    Text(tr("Publisher of CatsBlock Weather."))
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        tr("Individual support is not available and no contact channel is provided."),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            },
+            confirmButton = { TextButton(onClick = { companyDialog = false }) { Text("OK") } }
         )
     }
 
@@ -257,19 +286,7 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
                 .navigationBarsPadding()
                 .padding(horizontal = 16.dp, vertical = 8.dp)
         ) {
-            UpdateCard(up)
-
-            GroupLabel(tr("App language"))
-            Group {
-                ListItem(
-                    modifier = Modifier.clickable { langDialog = true },
-                    leadingContent = { Icon(Icons.Rounded.Language, null, tint = MaterialTheme.colorScheme.primary) },
-                    headlineContent = { Text(tr("App language")) },
-                    supportingContent = { Text(settings.language.label) },
-                    trailingContent = { Icon(Icons.Rounded.ChevronRight, null) },
-                    colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-                )
-            }
+            CategoryTitle(tr("Personalization"))
 
             GroupLabel(tr("Units"))
             Group {
@@ -289,6 +306,57 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
                         ) { Text(tr("Fahrenheit")) }
                     }
                 }
+            }
+
+            GroupLabel(tr("Theme"))
+            Group {
+                Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
+                    SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                        ThemeMode.entries.forEachIndexed { index, mode ->
+                            SegmentedButton(
+                                selected = settings.theme == mode,
+                                onClick = { vm.setTheme(mode) },
+                                shape = SegmentedButtonDefaults.itemShape(index, ThemeMode.entries.size)
+                            ) { Text(tr(mode.name)) }
+                        }
+                    }
+                }
+            }
+
+            GroupLabel(tr("Layout"))
+            Group {
+                SwitchRow(
+                    tr("Compact current conditions"),
+                    tr("Use a shorter header so more cards fit on the screen."),
+                    settings.compactHero,
+                    vm::setCompactHero
+                )
+                GroupDivider()
+                SwitchRow(
+                    tr("Precipitation card"),
+                    tr("Show minute-by-minute rain when rain is expected within an hour."),
+                    settings.showPrecipitation,
+                    vm::setShowPrecipitation
+                )
+                GroupDivider()
+                SwitchRow(
+                    tr("Life index card"),
+                    tr("Show daily activity suggestions at the bottom of the forecast."),
+                    settings.showLifeIndex,
+                    vm::setShowLifeIndex
+                )
+            }
+
+            GroupLabel(tr("App language"))
+            Group {
+                ListItem(
+                    modifier = Modifier.clickable { langDialog = true },
+                    leadingContent = { Icon(Icons.Rounded.Language, null, tint = MaterialTheme.colorScheme.primary) },
+                    headlineContent = { Text(tr("App language")) },
+                    supportingContent = { Text(settings.language.label) },
+                    trailingContent = { Icon(Icons.Rounded.ChevronRight, null) },
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                )
             }
 
             GroupLabel(trx("Customization"))
@@ -412,21 +480,51 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
                 )
             }
 
-            GroupLabel(tr("Privacy"))
+            CategoryTitle(tr("About & Legal"))
+            UpdateCard(up)
+            Spacer(Modifier.height(12.dp))
             Group {
-                InfoRow(
-                    tr("Location permission"),
-                    tr("Used only to find the weather where you are. Stored on your device only.")
+                NavRow(
+                    Icons.Rounded.PrivacyTip,
+                    tr("Privacy Policy"),
+                    tr("How CatsBlock Weather handles your data."),
+                    { vm.openPrivacy(Screen.Settings) }
                 )
                 GroupDivider()
-                InfoRow(
-                    tr("Network access"),
-                    tr("City coordinates are sent to Open-Meteo. Moon images come from NASA and map tiles from OpenStreetMap. Media is downloaded from public CDNs.")
+                ListItem(
+                    leadingContent = { Icon(Icons.Rounded.Info, null, tint = MaterialTheme.colorScheme.primary) },
+                    headlineContent = { Text(tr("App version")) },
+                    trailingContent = { Text(versionName, color = MaterialTheme.colorScheme.onSurfaceVariant) },
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                 )
                 GroupDivider()
-                InfoRow(
-                    tr("Data stored on your device"),
-                    tr("Saved cities and your choices. No accounts, analytics or ads.")
+                NavRow(
+                    Icons.Rounded.Business,
+                    tr("Company information"),
+                    "CatsBlock Corporation",
+                    { companyDialog = true }
+                )
+            }
+
+            Row(
+                Modifier
+                    .align(Alignment.CenterHorizontally)
+                    .padding(top = 28.dp, bottom = 8.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .clickable {
+                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/catsblock/CatsBlock-Weather-v2"))
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        runCatching { ctx.startActivity(intent) }
+                    }
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(GitHubIcon, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    tr("Project code"),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
             Spacer(Modifier.height(16.dp))
@@ -452,7 +550,7 @@ private fun UpdateCard(up: UpdateViewModel) {
     }
 
     Surface(
-        shape = RoundedCornerShape(28.dp),
+        shape = RoundedCornerShape(20.dp),
         color = scheme.surfaceContainer,
         modifier = Modifier
             .fillMaxWidth()
@@ -575,11 +673,21 @@ private fun SnakeProgress(progress: Float) {
 }
 
 @Composable
-private fun GroupLabel(text: String) {
+private fun CategoryTitle(text: String) {
     Text(
         text,
-        style = MaterialTheme.typography.labelLarge,
-        color = MaterialTheme.colorScheme.primary,
+        style = MaterialTheme.typography.headlineSmall,
+        fontWeight = FontWeight.Bold,
+        modifier = Modifier.padding(start = 4.dp, top = 20.dp, bottom = 4.dp)
+    )
+}
+
+@Composable
+private fun GroupLabel(text: String) {
+    Text(
+        text.uppercase(),
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.padding(start = 16.dp, top = 20.dp, bottom = 8.dp)
     )
 }
@@ -587,7 +695,7 @@ private fun GroupLabel(text: String) {
 @Composable
 private fun Group(content: @Composable ColumnScope.() -> Unit) {
     Surface(
-        shape = RoundedCornerShape(28.dp),
+        shape = RoundedCornerShape(20.dp),
         color = MaterialTheme.colorScheme.surfaceContainer,
         modifier = Modifier.fillMaxWidth()
     ) {
