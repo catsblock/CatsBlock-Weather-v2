@@ -140,7 +140,7 @@ fun DayDetailSheet(
                                 title = tr("Wind"),
                                 icon = Icons.Rounded.Air,
                                 value = beaufort(windPeak.windSpeed).toString(),
-                                unit = "${compassLabel(windPeak.windDir)} | ${windPeak.windSpeed.toInt()} km/h",
+                                unit = "${compassLabel(windPeak.windDir)} | ${windText(windPeak.windSpeed, LocalUnits.current.wind)}",
                                 description = windShort(windPeak.windSpeed),
                                 modifier = Modifier.weight(1f)
                             )
