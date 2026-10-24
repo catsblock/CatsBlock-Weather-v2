@@ -1,5 +1,8 @@
 package com.catsblock.weather.ui
 
+import com.catsblock.weather.work.BackgroundUpdates
+import com.catsblock.weather.data.PressureUnit
+import com.catsblock.weather.data.WindUnit
 import android.annotation.SuppressLint
 import android.app.Application
 import android.location.Geocoder
@@ -107,6 +110,13 @@ class WeatherViewModel(private val app: Application) : AndroidViewModel(app) {
                 .distinctUntilChanged()
                 .drop(1)
                 .collect { runCatching { WidgetUpdater.refresh(app) } }
+        }
+        viewModelScope.launch {
+            settings
+                .map { it.backgroundUpdates to it.backgroundIntervalMinutes }
+                .distinctUntilChanged()
+                .drop(1)
+                .collect { runCatching { BackgroundUpdates.apply(app, it.first, it.second) } }
         }
         viewModelScope.launch {
             settings
@@ -398,6 +408,22 @@ class WeatherViewModel(private val app: Application) : AndroidViewModel(app) {
 
     fun setShowPrecipitation(value: Boolean) {
         viewModelScope.launch { store.setShowPrecipitation(value) }
+    }
+
+    fun setWindUnit(value: WindUnit) {
+        viewModelScope.launch { store.setWindUnit(value) }
+    }
+
+    fun setPressureUnit(value: PressureUnit) {
+        viewModelScope.launch { store.setPressureUnit(value) }
+    }
+
+    fun setBackgroundUpdates(value: Boolean) {
+        viewModelScope.launch { store.setBackgroundUpdates(value) }
+    }
+
+    fun setBackgroundInterval(minutes: Int) {
+        viewModelScope.launch { store.setBackgroundInterval(minutes) }
     }
 
     fun setFahrenheit(value: Boolean) {
