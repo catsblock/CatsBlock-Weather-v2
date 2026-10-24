@@ -57,7 +57,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.PathOperation
+import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipPath
@@ -80,9 +80,6 @@ import java.time.YearMonth
 import java.time.ZoneOffset
 import java.time.format.TextStyle
 import java.time.temporal.WeekFields
-import kotlin.math.PI
-import kotlin.math.abs
-import kotlin.math.cos
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -156,19 +153,12 @@ fun MoonOrb(cycle: Double, modifier: Modifier = Modifier, eclipse: Eclipse? = nu
                 r,
                 c
             )
-            val half = Path().apply {
-                addRect(
-                    if (cycle < 0.5) Rect(c.x, c.y - r, c.x + r, c.y + r) else Rect(c.x - r, c.y - r, c.x, c.y + r)
-                )
+            val shade = Path().apply {
+                fillType = PathFillType.EvenOdd
+                addRect(Rect(c.x - r * 1.1f, c.y - r * 1.1f, c.x + r * 1.1f, c.y + r * 1.1f))
+                addPath(moonLitPath(c, r, cycle))
             }
-            val k = cos(2.0 * PI * cycle).toFloat()
-            val ellipse = Path().apply {
-                addOval(Rect(c.x - r * abs(k), c.y - r, c.x + r * abs(k), c.y + r))
-            }
-            val lit = Path.combine(PathOperation.Intersect, circle, half)
-            val shape = Path.combine(if (k > 0f) PathOperation.Difference else PathOperation.Union, lit, ellipse)
-            val dark = Path.combine(PathOperation.Difference, circle, shape)
-            drawPath(dark, Color(0xFF070B14).copy(alpha = 0.88f))
+            drawPath(shade, Color(0xFF070B14).copy(alpha = 0.88f))
             drawCircle(
                 Brush.radialGradient(
                     colorStops = arrayOf(0.72f to Color.Transparent, 1f to Color(0x55000000)),
