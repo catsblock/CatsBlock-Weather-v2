@@ -1,5 +1,8 @@
 package com.catsblock.weather.work
 
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineScope
 import android.content.Context
 import androidx.work.BackoffPolicy
 import androidx.work.CoroutineWorker
@@ -36,12 +39,24 @@ object BackgroundUpdates {
         .build()
 
     fun schedule(context: Context) {
-        val request = PeriodicWorkRequestBuilder<WeatherWorker>(2, TimeUnit.HOURS)
+        val app = context.applicationContext
+        CoroutineScope(Dispatchers.IO).launch {
+            val settings = SettingsStore(app).settings.first()
+            apply(app, settings.backgroundUpdates, settings.backgroundIntervalMinutes)
+        }
+    }
+
+    fun apply(context: Context, enabled: Boolean, intervalMinutes: Int) {
+        val manager = WorkManager.getInstance(context.applicationContext)
+        if (!enabled) {
+            manager.cancelUniqueWork(PERIODIC_NAME)
+            return
+        }
+        val request = PeriodicWorkRequestBuilder<WeatherWorker>(intervalMinutes.toLong(), TimeUnit.MINUTES)
             .setConstraints(connected)
             .setBackoffCriteria(BackoffPolicy.LINEAR, 15, TimeUnit.MINUTES)
             .build()
-        WorkManager.getInstance(context.applicationContext)
-            .enqueueUniquePeriodicWork(PERIODIC_NAME, ExistingPeriodicWorkPolicy.UPDATE, request)
+        manager.enqueueUniquePeriodicWork(PERIODIC_NAME, ExistingPeriodicWorkPolicy.UPDATE, request)
     }
 
     fun runNow(context: Context) {
