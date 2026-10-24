@@ -1,6 +1,25 @@
 package com.catsblock.weather.ui
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animate
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.LocalOverscrollFactory
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.material.icons.rounded.ArrowDownward
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
+import com.catsblock.weather.data.AppSettings
+import kotlin.math.abs
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ScrollState
@@ -207,6 +226,32 @@ fun MainScreen(vm: WeatherViewModel) {
     var citiesOpen by remember { mutableStateOf(false) }
     val scroll = rememberScrollState()
     val scheme = MaterialTheme.colorScheme
+    val refreshing by vm.refreshing.collectAsStateWithLifecycle()
+    val density = LocalDensity.current
+    val widthPx = with(density) { LocalConfiguration.current.screenWidthDp.dp.toPx() }
+    val scope = rememberCoroutineScope()
+    val elastic = remember {
+        ElasticScrollState(
+            scope = scope,
+            maxPull = with(density) { 240.dp.toPx() },
+            threshold = with(density) { 72.dp.toPx() },
+            holdOffset = with(density) { 56.dp.toPx() },
+            onRefresh = { vm.pullRefresh() }
+        )
+    }
+    LaunchedEffect(refreshing) { if (!refreshing) elastic.endRefresh() }
+    var notice by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(Unit) {
+        vm.notices.collect {
+            notice = it
+            delay(2400)
+            notice = null
+        }
+    }
+    var swipe by remember { mutableFloatStateOf(0f) }
+    val cityIndex = saved.indexOfFirst { it.id == city?.id }
+    val nav by rememberUpdatedState(Pair(cityIndex > 0, cityIndex >= 0 && cityIndex < saved.lastIndex))
+    LaunchedEffect(city?.id) { scroll.scrollTo(0) }
     val hazeState = remember { HazeState() }
     var mode by remember { mutableStateOf(DashboardMode.Temperature) }
 
@@ -261,14 +306,60 @@ fun MainScreen(vm: WeatherViewModel) {
             Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = progress * 0.32f)))
             Box(Modifier.fillMaxSize().background(scheme.primary.copy(alpha = progress * 0.14f)))
 
+            CompositionLocalProvider(LocalOverscrollFactory provides null) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .nestedScroll(elastic.connection)
+                    .pointerInput(Unit) {
+                        var lastDx = 0f
+                        suspend fun settle(velocity: Float) {
+                            val threshold = widthPx * 0.25f
+                            val dir = when {
+                                swipe < -threshold || (swipe < -widthPx * 0.08f && velocity < -20f) -> 1
+                                swipe > threshold || (swipe > widthPx * 0.08f && velocity > 20f) -> -1
+                                else -> 0
+                            }
+                            val allowed = (dir == 1 && nav.second) || (dir == -1 && nav.first)
+                            if (allowed) {
+                                animate(swipe, -dir * widthPx, animationSpec = tween(180, easing = FastOutLinearInEasing)) { v, _ -> swipe = v }
+                                vm.selectAdjacent(dir)
+                                swipe = dir * widthPx
+                                animate(swipe, 0f, animationSpec = spring(0.85f, Spring.StiffnessMedium)) { v, _ -> swipe = v }
+                            } else {
+                                animate(swipe, 0f, animationSpec = spring(0.7f, Spring.StiffnessMediumLow)) { v, _ -> swipe = v }
+                            }
+                        }
+                        detectHorizontalDragGestures(
+                            onDragStart = { lastDx = 0f },
+                            onDragEnd = { scope.launch { settle(lastDx) } },
+                            onDragCancel = { scope.launch { settle(0f) } },
+                            onHorizontalDrag = { change, dx ->
+                                change.consume()
+                                lastDx = dx
+                                val allowed = if (swipe + dx < 0f) nav.second else nav.first
+                                swipe += if (allowed) dx else dx * 0.25f
+                            }
+                        )
+                    }
+            ) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .graphicsLayer {
+                        translationX = swipe
+                        alpha = 1f - (abs(swipe) / widthPx).coerceIn(0f, 1f) * 0.55f
+                    }
+            ) {
             when {
                 bundle != null -> WeatherDetails(
                     bundle = bundle,
                     city = city,
-                    fahrenheit = settings.fahrenheit,
+                    settings = settings,
                     scroll = scroll,
                     headerHeight = headerHeight,
                     mode = mode,
+                    overscroll = { elastic.offset },
                     onLiveMoon = vm::openLiveMoon
                 )
                 state is WeatherState.Error -> Column(
@@ -291,6 +382,11 @@ fun MainScreen(vm: WeatherViewModel) {
                     CircularProgressIndicator(Modifier.size(48.dp), color = Color.White)
                 }
             }
+            }
+            }
+            }
+
+            PullIndicator(elastic, refreshing, headerHeight)
 
             ParticleOverlay(
                 when {
@@ -300,7 +396,9 @@ fun MainScreen(vm: WeatherViewModel) {
                     kind == Condition.Drizzle -> ParticleWeather.Rain
                     kind in snowKinds -> ParticleWeather.Snow
                     else -> ParticleWeather.None
-                }
+                },
+                windSpeedKmh = bundle?.current?.windSpeed ?: 0.0,
+                windDirDeg = bundle?.current?.windDir ?: 0.0
             )
 
             HeaderBar(
@@ -317,6 +415,22 @@ fun MainScreen(vm: WeatherViewModel) {
                 },
                 onSettings = vm::openSettings
             )
+
+            AnimatedVisibility(
+                visible = notice != null,
+                modifier = Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 64.dp),
+                enter = fadeIn() + slideInVertically { -it },
+                exit = fadeOut() + slideOutVertically { -it }
+            ) {
+                Surface(shape = CircleShape, color = Color(0xCC1C1C1E)) {
+                    Text(
+                        tr(notice ?: ""),
+                        modifier = Modifier.padding(horizontal = 18.dp, vertical = 10.dp),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = Color.White
+                    )
+                }
+            }
 
             CitiesOverlay(
                 visible = citiesOpen,
@@ -338,6 +452,34 @@ fun MainScreen(vm: WeatherViewModel) {
             )
         }
         }
+    }
+}
+
+@Composable
+private fun PullIndicator(elastic: ElasticScrollState, refreshing: Boolean, headerHeight: Dp) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(top = headerHeight + 8.dp)
+            .graphicsLayer {
+                val pull = elastic.offset
+                alpha = if (refreshing) 1f else (pull / 90f).coerceIn(0f, 1f)
+                translationY = (pull * 0.4f).coerceAtLeast(0f)
+            },
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        if (refreshing) {
+            CircularProgressIndicator(Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
+        } else {
+            Icon(Icons.Rounded.ArrowDownward, null, Modifier.size(16.dp), tint = Color.White)
+        }
+        Spacer(Modifier.width(8.dp))
+        Text(
+            tr(if (refreshing) "Updating" else "Update"),
+            style = MaterialTheme.typography.labelLarge.merge(textShadow),
+            color = Color.White
+        )
     }
 }
 
@@ -393,12 +535,15 @@ private fun HeaderBar(
 private fun WeatherDetails(
     bundle: WeatherBundle,
     city: City?,
-    fahrenheit: Boolean,
+    settings: AppSettings,
     scroll: ScrollState,
     headerHeight: Dp,
     mode: DashboardMode,
+    overscroll: () -> Float,
     onLiveMoon: () -> Unit
 ) {
+    val fahrenheit = settings.fahrenheit
+    val density = LocalDensity.current
     val cur = bundle.current
     val nowHour = cur.now.truncatedTo(ChronoUnit.HOURS)
     val startIdx = bundle.hours.indexOfFirst { !it.time.isBefore(nowHour) }.coerceAtLeast(0)
@@ -411,7 +556,8 @@ private fun WeatherDetails(
     val chartScroll = rememberScrollState()
     var sheet by remember { mutableStateOf<Sheet?>(null) }
     val screenHeight = LocalConfiguration.current.screenHeightDp
-    val heroHeight = ((screenHeight * 0.66f).dp - headerHeight).coerceAtLeast(320.dp)
+    val heroHeight = ((screenHeight * (if (settings.compactHero) 0.46f else 0.66f)).dp - headerHeight)
+        .coerceAtLeast(if (settings.compactHero) 240.dp else 320.dp)
     val alert = remember(bundle, fahrenheit) { buildAlert(bundle, fahrenheit) }
     val baseScheme = MaterialTheme.colorScheme
     val glassScheme = remember(baseScheme) {
@@ -437,7 +583,9 @@ private fun WeatherDetails(
     }
     val snowingNow = cur.kind in snowKinds
 
+    CompositionLocalProvider(LocalEdgeFadeInset provides with(density) { headerHeight.toPx() }) {
     Column(Modifier.fillMaxSize().padding(top = headerHeight).verticalScroll(scroll)) {
+    Column(Modifier.graphicsLayer { translationY = overscroll() }) {
         Column(
             Modifier
                 .fillMaxWidth()
@@ -446,6 +594,7 @@ private fun WeatherDetails(
                     alpha = heroIn.value
                     translationY = (1f - heroIn.value) * 28.dp.toPx()
                 }
+                .scrollEdgeFade()
                 .padding(horizontal = 24.dp, vertical = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Bottom
@@ -479,6 +628,7 @@ private fun WeatherDetails(
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     alert?.let { AlertCard(it) }
+                    if (settings.showPrecipitation) PrecipitationCard(bundle)
                     HoursCard(next36, chipDays, today, fahrenheit, chartScroll)
                     DaysCard(
                         days = upcoming,
@@ -499,7 +649,7 @@ private fun WeatherDetails(
                             else -> Sheet.Moon
                         }
                     }
-                    LifeIndexCard(
+                    if (settings.showLifeIndex) LifeIndexCard(
                         lifeIndex(
                             temp = cur.temp,
                             feels = cur.feels,
@@ -516,6 +666,8 @@ private fun WeatherDetails(
                 }
             }
         }
+    }
+    }
     }
 
     (sheet as? Sheet.DaySheet)?.let { current ->
