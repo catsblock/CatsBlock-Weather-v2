@@ -17,6 +17,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.catsblock.weather.data.ThemeMode
 
 private val LightFallback = lightColorScheme(
     primary = Color(0xFF1565C0),
@@ -112,8 +113,12 @@ private val AppTypography = Typography(
 )
 
 @Composable
-fun WeatherTheme(content: @Composable () -> Unit) {
-    val dark = isSystemInDarkTheme()
+fun WeatherTheme(mode: ThemeMode = ThemeMode.System, content: @Composable () -> Unit) {
+    val dark = when (mode) {
+        ThemeMode.System -> isSystemInDarkTheme()
+        ThemeMode.Light -> false
+        ThemeMode.Dark -> true
+    }
     val context = LocalContext.current
     val scheme = when {
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ->
