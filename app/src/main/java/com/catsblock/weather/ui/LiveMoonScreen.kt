@@ -93,7 +93,7 @@ import kotlin.math.sin
 
 private fun normalize(deg: Double): Double = (deg % 360.0 + 360.0) % 360.0
 
-private val LiveGlass = Color(0x66101826)
+private val LiveGlass = Color(0x14101826)
 private val LiveSoft = Color(0xCCFFFFFF)
 
 private fun Modifier.liveGlass(shape: Shape): Modifier = this
