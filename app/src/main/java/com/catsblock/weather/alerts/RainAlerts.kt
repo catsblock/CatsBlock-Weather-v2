@@ -143,7 +143,7 @@ object RainAlerts {
         work.enqueueUniqueWork(WORK, ExistingWorkPolicy.REPLACE, request)
     }
 
-    private fun duration(minutes: Int): String {
+    internal fun duration(minutes: Int): String {
         val rounded = ((minutes + 2) / 5 * 5).coerceAtLeast(5)
         val hours = trx("h")
         val mins = trx("min")
