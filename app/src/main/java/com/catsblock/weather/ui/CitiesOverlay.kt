@@ -250,7 +250,7 @@ private fun CityCard(
 private fun CityCardBackdrop(summary: CitySummary?, modifier: Modifier) {
     Box(modifier) {
         if (summary != null) {
-            WeatherBackground(summary.kind, summary.isDay, Modifier.fillMaxSize())
+            WeatherBackground(summary.kind, summary.isDay, Modifier.fillMaxSize(), summary.localTime)
         } else {
             Box(
                 Modifier
