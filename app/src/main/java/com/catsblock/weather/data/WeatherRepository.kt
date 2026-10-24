@@ -11,6 +11,7 @@ import org.json.JSONObject
 import java.io.IOException
 import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.LocalTime
 import java.time.temporal.ChronoUnit
 import java.util.concurrent.TimeUnit
 
@@ -79,7 +80,8 @@ class WeatherRepository {
             isDay = cur.getInt("is_day") == 1,
             temp = now,
             min = daily?.optJSONArray("temperature_2m_min")?.optDouble(0, now) ?: now,
-            max = daily?.optJSONArray("temperature_2m_max")?.optDouble(0, now) ?: now
+            max = daily?.optJSONArray("temperature_2m_max")?.optDouble(0, now) ?: now,
+            localTime = runCatching { LocalDateTime.parse(cur.getString("time")).toLocalTime() }.getOrNull()
         )
     }
 
