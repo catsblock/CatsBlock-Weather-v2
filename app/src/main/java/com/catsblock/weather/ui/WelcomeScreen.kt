@@ -35,6 +35,12 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLinkStyles
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.withLink
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.catsblock.weather.R
@@ -101,7 +107,23 @@ fun WelcomeScreen(vm: WeatherViewModel) {
                     textAlign = TextAlign.Center
                 )
             }
-            Spacer(Modifier.height(40.dp))
+            Spacer(Modifier.height(24.dp))
+            Text(
+                buildAnnotatedString {
+                    append(tr("By using CatsBlock Weather, you agree to the "))
+                    withLink(
+                        LinkAnnotation.Clickable(
+                            "privacy",
+                            TextLinkStyles(SpanStyle(color = scheme.primary, fontWeight = FontWeight.SemiBold, textDecoration = TextDecoration.Underline))
+                        ) { vm.openPrivacy(Screen.Welcome) }
+                    ) { append(tr("Privacy Policy")) }
+                    append(".")
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = scheme.onSurfaceVariant,
+                textAlign = TextAlign.Center
+            )
+            Spacer(Modifier.height(16.dp))
             Button(
                 onClick = vm::openPicker,
                 modifier = Modifier.fillMaxWidth().height(56.dp)
