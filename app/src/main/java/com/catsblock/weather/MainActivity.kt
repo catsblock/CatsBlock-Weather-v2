@@ -29,6 +29,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.catsblock.weather.alerts.RainAlerts
+import com.catsblock.weather.data.ThemeMode
 import com.catsblock.weather.i18n.I18n
 import com.catsblock.weather.ui.AppIconScreen
 import com.catsblock.weather.ui.BackgroundKitScreen
@@ -36,6 +37,7 @@ import com.catsblock.weather.ui.CityPickerScreen
 import com.catsblock.weather.ui.IconKitScreen
 import com.catsblock.weather.ui.LiveMoonScreen
 import com.catsblock.weather.ui.MainScreen
+import com.catsblock.weather.ui.PrivacyPolicyScreen
 import com.catsblock.weather.ui.Screen
 import com.catsblock.weather.ui.SettingsScreen
 import com.catsblock.weather.ui.WeatherTheme
@@ -47,9 +49,9 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            WeatherTheme {
-                val vm: WeatherViewModel = viewModel()
-                val settings by vm.settings.collectAsStateWithLifecycle()
+            val vm: WeatherViewModel = viewModel()
+            val settings by vm.settings.collectAsStateWithLifecycle()
+            WeatherTheme(settings.theme) {
                 I18n.lang = settings.language
                 key(settings.language) { AppRoot(vm) }
             }
@@ -63,7 +65,11 @@ private fun AppRoot(vm: WeatherViewModel) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val activity = context as ComponentActivity
-    val dark = isSystemInDarkTheme()
+    val dark = when (settings.theme) {
+        ThemeMode.System -> isSystemInDarkTheme()
+        ThemeMode.Light -> false
+        ThemeMode.Dark -> true
+    }
     val onMain = screen == Screen.Main
     val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
@@ -71,7 +77,7 @@ private fun AppRoot(vm: WeatherViewModel) {
         val style = if (screen == Screen.Main || screen == Screen.LiveMoon) {
             SystemBarStyle.dark(AndroidColor.TRANSPARENT)
         } else {
-            SystemBarStyle.auto(AndroidColor.TRANSPARENT, AndroidColor.TRANSPARENT)
+            SystemBarStyle.auto(AndroidColor.TRANSPARENT, AndroidColor.TRANSPARENT) { dark }
         }
         activity.enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
     }
@@ -99,6 +105,7 @@ private fun AppRoot(vm: WeatherViewModel) {
             Screen.BackgroundKit -> BackgroundKitScreen(vm)
             Screen.AppIcon -> AppIconScreen(vm)
             Screen.LiveMoon -> LiveMoonScreen(vm)
+            Screen.Privacy -> PrivacyPolicyScreen(vm)
         }
     }
 }
