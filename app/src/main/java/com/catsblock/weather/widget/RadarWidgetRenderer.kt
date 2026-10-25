@@ -35,7 +35,7 @@ import kotlin.math.tan
 
 object RadarWidgetRenderer {
 
-    private const val ZOOM = 10
+    private const val ZOOM = 7
     private const val RADAR_ZOOM = 7
     private const val TILE = 256
     private const val MAX_SIDE = 1200
