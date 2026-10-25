@@ -15,12 +15,16 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    defaults:
-      run:
-        working-directory: cloudflare-worker
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Verify Worker source
+        run: |
+          if [ ! -f cloudflare-worker/worker.js ]; then
+            echo "::error::cloudflare-worker/worker.js was not found. Commit the cloudflare-worker folder to the repository root."
+            exit 1
+          fi
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -41,6 +45,7 @@ jobs:
           fi
 
       - name: Resolve KV namespace
+        working-directory: cloudflare-worker
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -62,6 +67,7 @@ jobs:
           echo "KV_ID=$EXISTING_ID" >> "$GITHUB_ENV"
 
       - name: Write wrangler configuration
+        working-directory: cloudflare-worker
         run: |
           cat > wrangler.toml <<EOF
           name = "catsblock-weather-proxy"
@@ -74,6 +80,7 @@ jobs:
           EOF
 
       - name: Deploy Worker
+        working-directory: cloudflare-worker
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
