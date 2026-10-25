@@ -5,7 +5,7 @@ import android.content.res.Configuration
 
 object MapStyle {
 
-    const val CREDIT = "© OpenStreetMap · CyclOSM · RainViewer"
+    const val CREDIT = "© OpenStreetMap · RainViewer"
 
     const val DARK_BASE = 0xFF45454A.toInt()
     const val LIGHT_BASE = 0xFFF5F5F5.toInt()
@@ -19,12 +19,9 @@ object MapStyle {
 
     val DARK_LIFT: FloatArray get() = DARK_WEB
 
-    fun tileUrl(dark: Boolean, z: Int, x: Int, y: Int): String {
-        val shard = "abc"[Math.floorMod(x + y, 3)]
-        return "https://$shard.tile-cyclosm.fr/cyclosm/$z/$x/$y.png"
-    }
+    fun tileUrl(dark: Boolean, z: Int, x: Int, y: Int): String = "https://tile.openstreetmap.org/$z/$x/$y.png"
 
-    fun fallbackUrl(z: Int, x: Int, y: Int): String = "https://tile.openstreetmap.org/$z/$x/$y.png"
+    fun fallbackUrl(z: Int, x: Int, y: Int): String = "https://a.basemaps.cartocdn.com/rastertiles/voyager/$z/$x/$y.png"
 
     fun isDark(context: Context, mode: ThemeMode): Boolean = when (mode) {
         ThemeMode.Light -> false
