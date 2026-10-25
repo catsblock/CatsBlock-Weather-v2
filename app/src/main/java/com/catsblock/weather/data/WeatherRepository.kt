@@ -39,12 +39,31 @@ class WeatherRepository {
         }
     }
 
-    private fun applyUsage(prev: UsageStatus, path: String, used: Int?, limit: Int?, reset: Long?): UsageStatus {
-        if (used == null || limit == null) return prev
-        val seconds = reset ?: 0L
+    private fun applyUsage(prev: UsageStatus, path: String, response: okhttp3.Response): UsageStatus {
+        val used = response.header("X-Provider-Used")?.toIntOrNull()
+        val limit = response.header("X-Provider-Limit")?.toIntOrNull()
+        val reset = response.header("X-Provider-Reset-Seconds")?.toLongOrNull() ?: 0L
+        val monthUsed = response.header("X-Monthly-Used")?.toIntOrNull()
+        val monthLimit = response.header("X-Monthly-Limit")?.toIntOrNull()
+        val monthReset = response.header("X-Monthly-Reset-Seconds")?.toLongOrNull() ?: 0L
+        if (used == null || limit == null || monthUsed == null || monthLimit == null) return prev
         return when {
-            path.endsWith("/v1/weather") -> prev.copy(weatherUsed = used, weatherLimit = limit, weatherResetSeconds = seconds)
-            path.endsWith("/v1/visual") -> prev.copy(visualUsed = used, visualLimit = limit, visualResetSeconds = seconds)
+            path.endsWith("/v1/weather") -> prev.copy(
+                weatherUsed = used,
+                weatherLimit = limit,
+                weatherResetSeconds = reset,
+                weatherMonthUsed = monthUsed,
+                weatherMonthLimit = monthLimit,
+                weatherMonthResetSeconds = monthReset
+            )
+            path.endsWith("/v1/visual") -> prev.copy(
+                visualUsed = used,
+                visualLimit = limit,
+                visualResetSeconds = reset,
+                visualMonthUsed = monthUsed,
+                visualMonthLimit = monthLimit,
+                visualMonthResetSeconds = monthReset
+            )
             else -> prev
         }
     }
@@ -67,13 +86,7 @@ class WeatherRepository {
                 exhaustedSeconds = exhaustedSeconds,
                 usingFallback = lockoutSeconds > 0 || exhaustedSeconds > 0
             )
-            _usageStatus.value = applyUsage(
-                base,
-                response.request.url.encodedPath,
-                response.header("X-Provider-Used")?.toIntOrNull(),
-                response.header("X-Provider-Limit")?.toIntOrNull(),
-                response.header("X-Provider-Reset-Seconds")?.toLongOrNull()
-            )
+            _usageStatus.value = applyUsage(base, response.request.url.encodedPath, response)
             if (!response.isSuccessful) {
                 val wait = max(lockoutSeconds, exhaustedSeconds)
                 if (response.code == 429 || response.code == 503 || wait > 0) {
@@ -104,6 +117,9 @@ class WeatherRepository {
             val usage = root.optJSONObject("usage")
             val weatherUsage = usage?.optJSONObject("weather")
             val visualUsage = usage?.optJSONObject("visual")
+            val monthly = usage?.optJSONObject("monthly")
+            val weatherMonth = monthly?.optJSONObject("weather")
+            val visualMonth = monthly?.optJSONObject("visual")
             val prev = _usageStatus.value
             _usageStatus.value = prev.copy(
                 shortRemaining = rate.optInt("shortRemaining", 20),
@@ -118,7 +134,13 @@ class WeatherRepository {
                 weatherResetSeconds = weatherUsage?.optLong("resetSeconds", 0) ?: 0L,
                 visualUsed = visualUsage?.optInt("used", prev.visualUsed) ?: prev.visualUsed,
                 visualLimit = visualUsage?.optInt("limit", prev.visualLimit) ?: prev.visualLimit,
-                visualResetSeconds = visualUsage?.optLong("resetSeconds", 0) ?: 0L
+                visualResetSeconds = visualUsage?.optLong("resetSeconds", 0) ?: 0L,
+                weatherMonthUsed = weatherMonth?.optInt("used", prev.weatherMonthUsed) ?: prev.weatherMonthUsed,
+                weatherMonthLimit = weatherMonth?.optInt("limit", prev.weatherMonthLimit) ?: prev.weatherMonthLimit,
+                weatherMonthResetSeconds = weatherMonth?.optLong("resetSeconds", 0) ?: 0L,
+                visualMonthUsed = visualMonth?.optInt("used", prev.visualMonthUsed) ?: prev.visualMonthUsed,
+                visualMonthLimit = visualMonth?.optInt("limit", prev.visualMonthLimit) ?: prev.visualMonthLimit,
+                visualMonthResetSeconds = visualMonth?.optLong("resetSeconds", 0) ?: 0L
             )
         }
     }
