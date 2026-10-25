@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -50,12 +49,16 @@ fun UsageStatusBar(status: UsageStatus, source: WeatherSource, modifier: Modifie
             status.lockoutSeconds > 0 -> tr("Too many requests. Try again in") + " " + formatWait(status.lockoutSeconds)
             else -> "${limit - used} " + tr("requests left")
         }
-        Surface(shape = RoundedCornerShape(16.dp), color = Color(0xCC1C1C1E)) {
-            Column(Modifier.width(260.dp).padding(horizontal = 16.dp, vertical = 12.dp)) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant
+        ) {
+            Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text(
                         name + " · " + tr("Free limit used"),
-                        color = Color.White,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.labelMedium
                     )
                     Text("$percent%", color = barColor, style = MaterialTheme.typography.labelMedium)
@@ -65,10 +68,10 @@ fun UsageStatusBar(status: UsageStatus, source: WeatherSource, modifier: Modifie
                     progress = { fraction },
                     modifier = Modifier.fillMaxWidth().height(4.dp),
                     color = barColor,
-                    trackColor = Color(0x33FFFFFF)
+                    trackColor = MaterialTheme.colorScheme.surface
                 )
                 Spacer()
-                Text(detail, color = Color(0xB3FFFFFF), style = MaterialTheme.typography.labelSmall)
+                Text(detail, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelSmall)
             }
         }
     }
