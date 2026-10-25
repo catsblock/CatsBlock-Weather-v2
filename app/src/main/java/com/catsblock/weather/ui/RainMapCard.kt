@@ -136,18 +136,18 @@ private object RadarMapRenderer {
         .build()
     private val cache = LruCache<String, Bitmap>(96)
 
-    private suspend fun tile(url: String): Bitmap? {
+    private fun fetch(url: String): Bitmap? = runCatching {
+        client.newCall(Request.Builder().url(url).header("User-Agent", "CatsBlockWeather/2.0 (Android)").build())
+            .execute()
+            .use { r ->
+                if (!r.isSuccessful) null
+                else r.body?.bytes()?.let { BitmapFactory.decodeByteArray(it, 0, it.size) }
+            }
+    }.getOrNull()
+
+    private suspend fun tile(url: String, fallback: String? = null): Bitmap? {
         cache.get(url)?.let { return it }
-        val bmp = withContext(Dispatchers.IO) {
-            runCatching {
-                client.newCall(Request.Builder().url(url).header("User-Agent", "CatsBlockWeather/2.0 (Android)").build())
-                    .execute()
-                    .use { r ->
-                        if (!r.isSuccessful) null
-                        else r.body?.bytes()?.let { BitmapFactory.decodeByteArray(it, 0, it.size) }
-                    }
-            }.getOrNull()
-        }
+        val bmp = withContext(Dispatchers.IO) { fetch(url) ?: fallback?.let { fetch(it) } }
         if (bmp != null) cache.put(url, bmp)
         return bmp
     }
@@ -168,7 +168,7 @@ private object RadarMapRenderer {
             if (y !in 0 until n) continue
             for (dx in -rx..rx) cells.add(Triple(bx + dx, y, Math.floorMod(bx + dx, n)))
         }
-        val base = cells.map { c -> async { c to tile(MapStyle.tileUrl(dark, zoom, c.third, c.second)) } }
+        val base = cells.map { c -> async { c to tile(MapStyle.tileUrl(dark, zoom, c.third, c.second), MapStyle.fallbackUrl(zoom, c.third, c.second)) } }
         val radar = if (set != null && frame != null && zoom <= 7) {
             cells.map { c -> async { c to tile("${set.host}${frame.path}/256/$zoom/${c.third}/${c.second}/2/1_1.png") } }
         } else {
