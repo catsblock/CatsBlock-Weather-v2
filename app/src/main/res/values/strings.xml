@@ -8,4 +8,8 @@
     <string name="widget_square_description">Location, temperature, condition and daily range.</string>
     <string name="widget_tips_description">Current temperature with clothing, exercise, travel and air tips.</string>
     <string name="widget_hourly_description">Current weather with the next hours.</string>
+    <string name="widget_radar_small">Rain radar 2x2</string>
+    <string name="widget_radar_wide">Rain radar 4x2</string>
+    <string name="widget_radar_small_description">Rain radar map around your location with government alerts.</string>
+    <string name="widget_radar_wide_description">Wide rain radar map around your location with government alerts.</string>
 </resources>
