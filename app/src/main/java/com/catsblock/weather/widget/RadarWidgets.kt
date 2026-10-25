@@ -74,6 +74,8 @@ class RadarWideWidget : BaseRadarWidget(true)
 
 object RadarWidgetUpdater {
 
+    private val loaded: MutableSet<Int> = java.util.concurrent.ConcurrentHashMap.newKeySet()
+
     private val providers: List<Pair<Class<*>, Boolean>> = listOf(
         RadarSmallWidget::class.java to false,
         RadarWideWidget::class.java to true
@@ -107,6 +109,13 @@ object RadarWidgetUpdater {
                 val (widthDp, heightDp) = sizeOf(context, manager, id, wide)
                 val widthPx = (widthDp * density).roundToInt()
                 val heightPx = (heightDp * density).roundToInt()
+                if (city != null && loaded.add(id)) {
+                    val loading = RadarWidgetRenderer.placeholder(widthPx, heightPx, tr("Loading radar…"), density, dark)
+                    val loadingViews = RemoteViews(context.packageName, R.layout.widget_image)
+                    loadingViews.setImageViewBitmap(R.id.widget_image, loading)
+                    loadingViews.setOnClickPendingIntent(R.id.widget_image, click)
+                    manager.updateAppWidget(id, loadingViews)
+                }
                 val bitmap = if (city == null) {
                     RadarWidgetRenderer.placeholder(widthPx, heightPx, tr("Open the app to choose a location"), density, dark)
                 } else {
