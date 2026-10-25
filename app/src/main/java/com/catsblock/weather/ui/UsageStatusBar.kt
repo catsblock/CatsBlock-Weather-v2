@@ -24,11 +24,42 @@ import com.catsblock.weather.i18n.tr
 
 @Composable
 fun UsageStatusBar(status: UsageStatus, source: WeatherSource, modifier: Modifier = Modifier) {
-    val limit = status.limitFor(source)
-    val used = status.usedFor(source).coerceAtLeast(0)
-    val visible = source != WeatherSource.OpenMeteo && limit > 0
+    UsageCard(
+        title = tr(if (source == WeatherSource.WeatherApi) "Weather API" else "Visual API") + " · " + tr("Free limit used"),
+        used = status.usedFor(source).coerceAtLeast(0),
+        limit = status.limitFor(source),
+        resetSeconds = status.resetFor(source).takeIf { it > 0 } ?: status.exhaustedSeconds,
+        lockoutSeconds = status.lockoutSeconds,
+        visible = source != WeatherSource.OpenMeteo,
+        modifier = modifier
+    )
+}
+
+@Composable
+fun MonthlyUsageBar(status: UsageStatus, source: WeatherSource, modifier: Modifier = Modifier) {
+    UsageCard(
+        title = tr(if (source == WeatherSource.WeatherApi) "Weather API" else "Visual API") + " · " + tr("Monthly limit used"),
+        used = status.monthUsedFor(source).coerceAtLeast(0),
+        limit = status.monthLimitFor(source),
+        resetSeconds = status.monthResetFor(source),
+        lockoutSeconds = 0L,
+        visible = source != WeatherSource.OpenMeteo,
+        modifier = modifier
+    )
+}
+
+@Composable
+private fun UsageCard(
+    title: String,
+    used: Int,
+    limit: Int,
+    resetSeconds: Long,
+    lockoutSeconds: Long,
+    visible: Boolean,
+    modifier: Modifier
+) {
     AnimatedVisibility(
-        visible = visible,
+        visible = visible && limit > 0,
         modifier = modifier,
         enter = fadeIn(),
         exit = fadeOut()
@@ -36,17 +67,14 @@ fun UsageStatusBar(status: UsageStatus, source: WeatherSource, modifier: Modifie
         val fraction = if (limit > 0) (used.toFloat() / limit.toFloat()).coerceIn(0f, 1f) else 0f
         val percent = (fraction * 100f).toInt()
         val exhausted = limit > 0 && used >= limit
-        val wait = status.resetFor(source).takeIf { it > 0 } ?: status.exhaustedSeconds
-        val name = if (source == WeatherSource.WeatherApi) tr("Weather API") else tr("Visual API")
         val barColor = when {
-            exhausted -> Color(0xFFFF6B6B)
             fraction >= 0.9f -> Color(0xFFFF6B6B)
             fraction >= 0.7f -> Color(0xFFFFC857)
             else -> Color(0xFF6BD68B)
         }
         val detail = when {
-            exhausted -> tr("Available again in") + " " + formatWait(wait)
-            status.lockoutSeconds > 0 -> tr("Too many requests. Try again in") + " " + formatWait(status.lockoutSeconds)
+            exhausted -> tr("Available again in") + " " + formatWait(resetSeconds)
+            lockoutSeconds > 0 -> tr("Too many requests. Try again in") + " " + formatWait(lockoutSeconds)
             else -> "${limit - used} " + tr("requests left")
         }
         Surface(
@@ -57,7 +85,7 @@ fun UsageStatusBar(status: UsageStatus, source: WeatherSource, modifier: Modifie
             Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text(
-                        name + " · " + tr("Free limit used"),
+                        title,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.labelMedium
                     )
