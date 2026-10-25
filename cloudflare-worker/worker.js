@@ -10,6 +10,10 @@ const VISUAL_EXHAUST_MS = 24 * 60 * 60 * 1000;
 const VISUAL_WINDOW_MS = 12 * 60 * 60 * 1000;
 const WEATHER_LIMIT = 220;
 const VISUAL_LIMIT = 75;
+const OPENWEATHER_EXHAUST_MS = 24 * 60 * 60 * 1000;
+const OPENWEATHER_WINDOW_MS = 12 * 60 * 60 * 1000;
+const OPENWEATHER_LIMIT = 100;
+const OPENWEATHER_MONTH_LIMIT = 350;
 const MONTH_MS = 30 * 24 * 60 * 60 * 1000;
 const WEATHER_MONTH_LIMIT = 590;
 const VISUAL_MONTH_LIMIT = 260;
@@ -132,19 +136,27 @@ async function markExhausted(kv, provider, durationMs) {
 }
 
 function providerLimit(provider) {
-  return provider === "weather" ? WEATHER_LIMIT : VISUAL_LIMIT;
+  if (provider === "weather") return WEATHER_LIMIT;
+  if (provider === "openweather") return OPENWEATHER_LIMIT;
+  return VISUAL_LIMIT;
 }
 
 function providerWindow(provider) {
-  return provider === "weather" ? WEATHER_WINDOW_MS : VISUAL_WINDOW_MS;
+  if (provider === "weather") return WEATHER_WINDOW_MS;
+  if (provider === "openweather") return OPENWEATHER_WINDOW_MS;
+  return VISUAL_WINDOW_MS;
 }
 
 function providerExhaust(provider) {
-  return provider === "weather" ? WEATHER_EXHAUST_MS : VISUAL_EXHAUST_MS;
+  if (provider === "weather") return WEATHER_EXHAUST_MS;
+  if (provider === "openweather") return OPENWEATHER_EXHAUST_MS;
+  return VISUAL_EXHAUST_MS;
 }
 
 function monthlyLimit(provider) {
-  return provider === "weather" ? WEATHER_MONTH_LIMIT : VISUAL_MONTH_LIMIT;
+  if (provider === "weather") return WEATHER_MONTH_LIMIT;
+  if (provider === "openweather") return OPENWEATHER_MONTH_LIMIT;
+  return VISUAL_MONTH_LIMIT;
 }
 
 async function peekCounter(kv, key, limit) {
@@ -162,21 +174,21 @@ async function peekAll(kv, provider) {
   };
 }
 
-async function recordCounter(kv, key, limit, windowMs, exhaustMs, provider) {
+async function recordCounter(kv, key, limit, windowMs, exhaustMs, provider, extend) {
   const now = Date.now();
   let data = await readJSON(kv, key);
   if (!data || data.reset <= now) data = { count: 0, reset: now + windowMs };
   data.count += 1;
   if (data.count >= limit) {
-    data.reset = now + exhaustMs;
-    await markExhausted(kv, provider, exhaustMs);
+    if (extend) data.reset = now + exhaustMs;
+    await markExhausted(kv, provider, Math.max(1000, data.reset - now));
   }
   await writeJSON(kv, key, data, Math.ceil((data.reset - now) / 1000) + 5);
 }
 
 async function recordUsage(kv, provider) {
-  await recordCounter(kv, "usage:" + provider, providerLimit(provider), providerWindow(provider), providerExhaust(provider), provider);
-  await recordCounter(kv, "monthly:" + provider, monthlyLimit(provider), MONTH_MS, MONTH_MS, provider);
+  await recordCounter(kv, "usage:" + provider, providerLimit(provider), providerWindow(provider), providerExhaust(provider), provider, true);
+  await recordCounter(kv, "monthly:" + provider, monthlyLimit(provider), MONTH_MS, MONTH_MS, provider, false);
 }
 
 function usageHeaders(all) {
@@ -215,6 +227,7 @@ function cacheKey(provider, lat, lon) {
 
 function isQuotaExceeded(provider, status, bodyText) {
   if (status === 429) return true;
+  if (provider === "openweather") return false;
   if (provider === "weather") {
     if (status === 400 || status === 401 || status === 403) {
       return /220[6-9]/.test(bodyText) || /quota/i.test(bodyText) || /exceeded/i.test(bodyText);
@@ -228,19 +241,29 @@ function isQuotaExceeded(provider, status, bodyText) {
 }
 
 function upstreamUrl(provider, lat, lon, apiKey) {
+  if (provider === "openweather") {
+    const params = new URLSearchParams({
+      lat: lat.toFixed(4),
+      lon: lon.toFixed(4),
+      units: "metric",
+      exclude: "minutely",
+      appid: apiKey,
+    });
+    return "https://api.openweathermap.org/data/3.0/onecall?" + params.toString();
+  }
   if (provider === "weather") {
     const params = new URLSearchParams({
       key: apiKey,
       q: lat.toFixed(4) + "," + lon.toFixed(4),
       days: "7",
       aqi: "no",
-      alerts: "no",
+      alerts: "yes",
     });
     return "https://api.weatherapi.com/v1/forecast.json?" + params.toString();
   }
   const params = new URLSearchParams({
     unitGroup: "metric",
-    include: "days,hours,current",
+    include: "days,hours,current,alerts",
     contentType: "json",
     key: apiKey,
   });
@@ -260,6 +283,8 @@ async function handleStatus(request, env) {
   const limitState = await peekRateLimit(env.APP_KV, ip);
   const weatherExhausted = await exhaustedSeconds(env.APP_KV, "weather");
   const visualExhausted = await exhaustedSeconds(env.APP_KV, "visual");
+  const openweatherExhausted = await exhaustedSeconds(env.APP_KV, "openweather");
+  const openweatherAll = await peekAll(env.APP_KV, "openweather");
   const weatherAll = await peekAll(env.APP_KV, "weather");
   const visualAll = await peekAll(env.APP_KV, "visual");
   return jsonResponse(
@@ -267,9 +292,11 @@ async function handleStatus(request, env) {
       usage: {
         weather: weatherAll.short,
         visual: visualAll.short,
+        openweather: openweatherAll.short,
         monthly: {
           weather: weatherAll.monthly,
           visual: visualAll.monthly,
+          openweather: openweatherAll.monthly,
         },
       },
       rateLimit: {
@@ -282,6 +309,7 @@ async function handleStatus(request, env) {
       exhausted: {
         weather: weatherExhausted,
         visual: visualExhausted,
+        openweather: openweatherExhausted,
       },
     },
     200,
@@ -296,12 +324,12 @@ async function handleProxy(request, env, provider) {
     return jsonResponse({ error: "invalid_coordinates" }, 400);
   }
 
-  const apiKey = provider === "weather" ? env.WEATHER_API_KEY : env.VISUAL_API_KEY;
+  const apiKey = provider === "weather" ? env.WEATHER_API_KEY : provider === "openweather" ? env.OPENWEATHER_API_KEY : env.VISUAL_API_KEY;
   if (!apiKey) {
     return jsonResponse({ error: "provider_unconfigured" }, 500);
   }
 
-  const exhaustDuration = provider === "weather" ? WEATHER_EXHAUST_MS : VISUAL_EXHAUST_MS;
+  const exhaustDuration = providerExhaust(provider);
   const remainingExhaust = await exhaustedSeconds(env.APP_KV, provider);
   if (remainingExhaust > 0) {
     const blockedUsage = await peekAll(env.APP_KV, provider);
@@ -402,6 +430,9 @@ export default {
       }
       if (url.pathname === "/v1/visual") {
         return await handleProxy(request, env, "visual");
+      }
+      if (url.pathname === "/v1/openweather") {
+        return await handleProxy(request, env, "openweather");
       }
 
       return jsonResponse({ error: "not_found" }, 404);
