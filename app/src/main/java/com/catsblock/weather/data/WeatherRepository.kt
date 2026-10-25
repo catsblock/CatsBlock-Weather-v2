@@ -64,6 +64,14 @@ class WeatherRepository {
                 visualMonthLimit = monthLimit,
                 visualMonthResetSeconds = monthReset
             )
+            path.endsWith("/v1/openweather") -> prev.copy(
+                openWeatherUsed = used,
+                openWeatherLimit = limit,
+                openWeatherResetSeconds = reset,
+                openWeatherMonthUsed = monthUsed,
+                openWeatherMonthLimit = monthLimit,
+                openWeatherMonthResetSeconds = monthReset
+            )
             else -> prev
         }
     }
@@ -114,12 +122,15 @@ class WeatherRepository {
             val exhausted = root.getJSONObject("exhausted")
             val weatherExhausted = exhausted.optLong("weather", 0)
             val visualExhausted = exhausted.optLong("visual", 0)
+            val openWeatherExhausted = exhausted.optLong("openweather", 0)
             val usage = root.optJSONObject("usage")
             val weatherUsage = usage?.optJSONObject("weather")
             val visualUsage = usage?.optJSONObject("visual")
+            val openWeatherUsage = usage?.optJSONObject("openweather")
             val monthly = usage?.optJSONObject("monthly")
             val weatherMonth = monthly?.optJSONObject("weather")
             val visualMonth = monthly?.optJSONObject("visual")
+            val openWeatherMonth = monthly?.optJSONObject("openweather")
             val prev = _usageStatus.value
             _usageStatus.value = prev.copy(
                 shortRemaining = rate.optInt("shortRemaining", 20),
@@ -127,8 +138,8 @@ class WeatherRepository {
                 longRemaining = rate.optInt("longRemaining", 150),
                 longLimit = rate.optInt("longLimit", 150),
                 lockoutSeconds = rate.optLong("lockoutSeconds", 0),
-                exhaustedSeconds = max(weatherExhausted, visualExhausted),
-                usingFallback = rate.optLong("lockoutSeconds", 0) > 0 || weatherExhausted > 0 || visualExhausted > 0,
+                exhaustedSeconds = max(max(weatherExhausted, visualExhausted), openWeatherExhausted),
+                usingFallback = rate.optLong("lockoutSeconds", 0) > 0 || weatherExhausted > 0 || visualExhausted > 0 || openWeatherExhausted > 0,
                 weatherUsed = weatherUsage?.optInt("used", prev.weatherUsed) ?: prev.weatherUsed,
                 weatherLimit = weatherUsage?.optInt("limit", prev.weatherLimit) ?: prev.weatherLimit,
                 weatherResetSeconds = weatherUsage?.optLong("resetSeconds", 0) ?: 0L,
@@ -140,7 +151,13 @@ class WeatherRepository {
                 weatherMonthResetSeconds = weatherMonth?.optLong("resetSeconds", 0) ?: 0L,
                 visualMonthUsed = visualMonth?.optInt("used", prev.visualMonthUsed) ?: prev.visualMonthUsed,
                 visualMonthLimit = visualMonth?.optInt("limit", prev.visualMonthLimit) ?: prev.visualMonthLimit,
-                visualMonthResetSeconds = visualMonth?.optLong("resetSeconds", 0) ?: 0L
+                visualMonthResetSeconds = visualMonth?.optLong("resetSeconds", 0) ?: 0L,
+                openWeatherUsed = openWeatherUsage?.optInt("used", prev.openWeatherUsed) ?: prev.openWeatherUsed,
+                openWeatherLimit = openWeatherUsage?.optInt("limit", prev.openWeatherLimit) ?: prev.openWeatherLimit,
+                openWeatherResetSeconds = openWeatherUsage?.optLong("resetSeconds", 0) ?: 0L,
+                openWeatherMonthUsed = openWeatherMonth?.optInt("used", prev.openWeatherMonthUsed) ?: prev.openWeatherMonthUsed,
+                openWeatherMonthLimit = openWeatherMonth?.optInt("limit", prev.openWeatherMonthLimit) ?: prev.openWeatherMonthLimit,
+                openWeatherMonthResetSeconds = openWeatherMonth?.optLong("resetSeconds", 0) ?: 0L
             )
         }
     }
@@ -214,6 +231,7 @@ class WeatherRepository {
         val bundle = try {
             when (source) {
                 WeatherSource.WeatherApi -> WeatherApiProvider { workerGet(it) }.fetch(city, base)
+                WeatherSource.OpenWeather -> OpenWeatherProvider { workerGet(it) }.fetch(city, base)
                 else -> VisualCrossingProvider { workerGet(it) }.fetch(city, base)
             }
         } catch (e: CancellationException) {
