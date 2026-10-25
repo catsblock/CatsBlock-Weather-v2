@@ -1,119 +1,146 @@
 package com.catsblock.weather.data
 
-import com.catsblock.weather.i18n.AppLanguage
 import com.catsblock.weather.i18n.I18n
-import com.catsblock.weather.i18n.trx
-import java.time.temporal.ChronoUnit
-import kotlin.math.abs
-import kotlin.math.roundToInt
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import org.json.JSONObject
+import java.io.IOException
+import java.time.Instant
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
+import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.TimeUnit
 
-enum class AlertKind { LightRain, LightSnow, HeavyRain, HeavySnow, Fog, Warm, Cool }
+data class HubAlert(
+    val id: String,
+    val event: String,
+    val headline: String,
+    val description: String,
+    val instruction: String,
+    val severity: String,
+    val urgency: String,
+    val certainty: String,
+    val sender: String,
+    val area: String,
+    val language: String,
+    val sent: Long?,
+    val effective: Long?,
+    val expires: Long?,
+    val web: String
+) {
+    val title: String get() = headline.ifBlank { event }
 
-data class WeatherAlert(val kind: AlertKind, val title: String)
-
-private val snowCodes = setOf(71, 73, 75, 77, 85, 86)
-private val lightCodes = setOf(51, 53, 55, 56, 57, 61, 66, 71, 77, 80, 85)
-private val heavyCodes = setOf(63, 65, 67, 73, 75, 81, 82, 86, 95, 96, 99)
-private val fogCodes = setOf(45, 48)
-
-private fun ruPlural(n: Int, one: String, few: String, many: String): String {
-    val m10 = n % 10
-    val m100 = n % 100
-    return when {
-        m10 == 1 && m100 != 11 -> one
-        m10 in 2..4 && m100 !in 12..14 -> few
-        else -> many
-    }
+    val rank: Int
+        get() = when (severity) {
+            "Extreme" -> 4
+            "Severe" -> 3
+            "Moderate" -> 2
+            "Minor" -> 1
+            else -> 0
+        }
 }
 
-private fun hoursText(n: Int, duration: Boolean): String {
-    if (I18n.lang == AppLanguage.Russian) {
-        val word = if (duration) {
-            if (n % 10 == 1 && n % 100 != 11) "часа" else "часов"
-        } else {
-            ruPlural(n, "час", "часа", "часов")
+object AlertHub {
+
+    private const val ENDPOINT =
+        "https://services9.arcgis.com/RHVPKKiFTONKtxq3/ArcGIS/rest/services/CAP_Alerts_Feed/FeatureServer/0/query"
+
+    private const val FIELDS =
+        "identifier,event,headline,description,instruction,severity,urgency,certainty," +
+            "senderName,orgName,areaDesc,language,sent,effective,onset,expires,web"
+
+    private const val TTL_MS = 300_000L
+
+    private class Entry(val at: Long, val alerts: List<HubAlert>)
+
+    private val cache = ConcurrentHashMap<String, Entry>()
+
+    private val stamp = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(ZoneOffset.UTC)
+
+    private val client = OkHttpClient.Builder()
+        .connectTimeout(10, TimeUnit.SECONDS)
+        .readTimeout(20, TimeUnit.SECONDS)
+        .build()
+
+    private fun JSONObject.text(key: String): String =
+        if (isNull(key)) "" else optString(key).trim()
+
+    private fun JSONObject.time(key: String): Long? =
+        if (isNull(key)) null else optLong(key).takeIf { it > 0L }
+
+    suspend fun fetch(lat: Double, lon: Double): List<HubAlert> = withContext(Dispatchers.IO) {
+        val key = String.format(Locale.US, "%.2f,%.2f|%s", lat, lon, I18n.lang.code)
+        val now = System.currentTimeMillis()
+        cache[key]?.takeIf { now - it.at < TTL_MS }?.let { return@withContext it.alerts }
+
+        val where = "msgType <> 'Cancel' AND status = 'Actual' AND " +
+            "(expires IS NULL OR expires >= timestamp '${stamp.format(Instant.ofEpochMilli(now))}')"
+        val url = ENDPOINT.toHttpUrl().newBuilder()
+            .addQueryParameter("f", "json")
+            .addQueryParameter("where", where)
+            .addQueryParameter("geometry", String.format(Locale.US, "%.5f,%.5f", lon, lat))
+            .addQueryParameter("geometryType", "esriGeometryPoint")
+            .addQueryParameter("inSR", "4326")
+            .addQueryParameter("spatialRel", "esriSpatialRelIntersects")
+            .addQueryParameter("outFields", FIELDS)
+            .addQueryParameter("returnGeometry", "false")
+            .addQueryParameter("orderByFields", "sent DESC")
+            .addQueryParameter("resultRecordCount", "100")
+            .build()
+
+        val raw = client.newCall(
+            Request.Builder().url(url).header("User-Agent", "CatsBlockWeather/2.0").build()
+        ).execute().use { response ->
+            if (!response.isSuccessful) throw IOException("HTTP ${response.code}")
+            response.body?.string() ?: throw IOException("Empty response")
         }
-        return "$n $word"
-    }
-    return if (n == 1) trx("1 hour") else trx("%d hours").format(n)
-}
 
-private fun daysText(n: Int): String {
-    if (I18n.lang == AppLanguage.Russian) return "$n " + ruPlural(n, "день", "дня", "дней")
-    return if (n == 1) trx("1 day") else trx("%d days").format(n)
-}
+        val root = JSONObject(raw)
+        if (root.has("error")) throw IOException(root.optJSONObject("error")?.optString("message") ?: "Alert Hub error")
+        val features = root.optJSONArray("features")
 
-fun buildAlert(bundle: WeatherBundle, fahrenheit: Boolean): WeatherAlert? {
-    val nowHour = bundle.current.now.truncatedTo(ChronoUnit.HOURS)
-    val start = bundle.hours.indexOfFirst { !it.time.isBefore(nowHour) }.coerceAtLeast(0)
-    val ahead = bundle.hours.drop(start).take(24)
-    val soon = ahead.take(8)
-
-    val heavyAt = soon.indexOfFirst { it.code in heavyCodes }
-    if (heavyAt >= 0) {
-        val snow = soon[heavyAt].code in snowCodes
-        val template = if (snow) {
-            "A moderate, heavy snow is arriving here in %s, be alert in case it snows."
-        } else {
-            "A moderate, heavy rain is arriving here in %s, be alert in case it rains."
-        }
-        return WeatherAlert(
-            if (snow) AlertKind.HeavySnow else AlertKind.HeavyRain,
-            trx(template).format(hoursText(heavyAt.coerceAtLeast(1), false))
-        )
-    }
-
-    val lightAt = soon.indexOfFirst { it.code in lightCodes }
-    if (lightAt >= 0) {
-        val snow = soon[lightAt].code in snowCodes
-        var count = 0
-        while (lightAt + count < ahead.size && ahead[lightAt + count].code in lightCodes) count++
-        val template = if (snow) {
-            "A light snow is expected here for %s. Be concerned if it snows."
-        } else {
-            "A light rain is expected here for %s. Be concerned if it rains."
-        }
-        return WeatherAlert(
-            if (snow) AlertKind.LightSnow else AlertKind.LightRain,
-            trx(template).format(hoursText(count, true))
-        )
-    }
-
-    val fogAt = ahead.take(12).indexOfFirst { it.code in fogCodes }
-    if (fogAt >= 0) {
-        var count = 0
-        while (fogAt + count < ahead.size && ahead[fogAt + count].code in fogCodes) count++
-        if (count <= 4) {
-            return WeatherAlert(
-                AlertKind.Fog,
-                trx("The city may be shrouded in fog for %s. Do not travel when there is fog.")
-                    .format(hoursText(count, true))
-            )
-        }
-    }
-
-    val today = bundle.current.now.toLocalDate()
-    val upcoming = bundle.days.filter { !it.date.isBefore(today) }
-    if (upcoming.size < 2) return null
-    val base = upcoming[0].max
-    for (i in 1 until minOf(upcoming.size, 7)) {
-        val delta = upcoming[i].max - base
-        if (abs(delta) >= 4.0) {
-            val shown = (abs(delta) * (if (fahrenheit) 1.8 else 1.0)).roundToInt()
-            return if (delta > 0) {
-                WeatherAlert(
-                    AlertKind.Warm,
-                    trx("The temperature will increase by approximately %1\$s° in %2\$s.")
-                        .format(shown.toString(), daysText(i))
-                )
-            } else {
-                WeatherAlert(
-                    AlertKind.Cool,
-                    trx("The temperature will decrease by %1\$s° in %2\$s.")
-                        .format(shown.toString(), daysText(i))
+        val parsed = ArrayList<HubAlert>()
+        if (features != null) {
+            for (i in 0 until features.length()) {
+                val a = features.getJSONObject(i).optJSONObject("attributes") ?: continue
+                val sender = a.text("senderName").ifBlank { a.text("orgName") }
+                parsed += HubAlert(
+                    id = a.text("identifier"),
+                    event = a.text("event"),
+                    headline = a.text("headline"),
+                    description = a.text("description"),
+                    instruction = a.text("instruction"),
+                    severity = a.text("severity"),
+                    urgency = a.text("urgency"),
+                    certainty = a.text("certainty"),
+                    sender = sender,
+                    area = a.text("areaDesc"),
+                    language = a.text("language"),
+                    sent = a.time("sent"),
+                    effective = a.time("effective") ?: a.time("onset") ?: a.time("sent"),
+                    expires = a.time("expires"),
+                    web = a.text("web")
                 )
             }
         }
+
+        val preferred = I18n.lang.code.substringBefore('-').lowercase()
+        val alerts = parsed
+            .groupBy { it.id }
+            .values
+            .map { group ->
+                group.firstOrNull { it.language.lowercase().startsWith(preferred) }
+                    ?: group.firstOrNull { it.language.lowercase().startsWith("en") }
+                    ?: group.first()
+            }
+            .distinctBy { "${it.sender}|${it.event}|${it.headline}" }
+            .sortedWith(compareByDescending<HubAlert> { it.rank }.thenByDescending { it.sent ?: 0L })
+
+        cache[key] = Entry(now, alerts)
+        alerts
     }
-    return null
 }
