@@ -127,7 +127,8 @@ data class WeatherBundle(
     val hours: List<Hour>,
     val days: List<Day>,
     val rain: List<RainSlot> = emptyList(),
-    val utcOffsetSeconds: Int = 0
+    val utcOffsetSeconds: Int = 0,
+    val alerts: List<GovAlert> = emptyList()
 )
 
 data class UsageStatus(
