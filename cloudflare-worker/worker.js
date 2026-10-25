@@ -7,18 +7,29 @@ const CACHE_TTL_S = 600;
 const WEATHER_EXHAUST_MS = 30 * 24 * 60 * 60 * 1000;
 const VISUAL_EXHAUST_MS = 24 * 60 * 60 * 1000;
 
-const CORS_HEADERS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type",
+const SAFE_HEADERS = {
+  "Cache-Control": "no-store",
+  "X-Content-Type-Options": "nosniff",
+  "Referrer-Policy": "no-referrer",
+  "Cross-Origin-Resource-Policy": "same-origin",
 };
+
+function redact(text, secrets) {
+  let out = text;
+  for (const secret of secrets) {
+    if (!secret) continue;
+    out = out.split(secret).join("[redacted]");
+    out = out.split(encodeURIComponent(secret)).join("[redacted]");
+  }
+  return out;
+}
 
 function jsonResponse(payload, status, extraHeaders) {
   return new Response(JSON.stringify(payload), {
     status,
     headers: Object.assign(
       { "Content-Type": "application/json; charset=utf-8" },
-      CORS_HEADERS,
+      SAFE_HEADERS,
       extraHeaders || {}
     ),
   });
@@ -29,7 +40,7 @@ function textResponse(body, status, contentType, extraHeaders) {
     status,
     headers: Object.assign(
       { "Content-Type": contentType },
-      CORS_HEADERS,
+      SAFE_HEADERS,
       extraHeaders || {}
     ),
   });
@@ -249,7 +260,12 @@ async function handleProxy(request, env, provider) {
     return jsonResponse({ error: "upstream_unreachable" }, 502, rateHeaders(limitState));
   }
 
-  const bodyText = await upstreamResponse.text();
+  let bodyText;
+  try {
+    bodyText = redact(await upstreamResponse.text(), [apiKey]);
+  } catch (err) {
+    return jsonResponse({ error: "upstream_unreadable" }, 502, rateHeaders(limitState));
+  }
 
   if (!upstreamResponse.ok) {
     if (isQuotaExceeded(provider, upstreamResponse.status, bodyText)) {
@@ -276,28 +292,32 @@ async function handleProxy(request, env, provider) {
 
 export default {
   async fetch(request, env) {
-    if (request.method === "OPTIONS") {
-      return new Response(null, { status: 204, headers: CORS_HEADERS });
-    }
-    if (request.method !== "GET") {
-      return jsonResponse({ error: "method_not_allowed" }, 405);
-    }
+    try {
+      if (request.method === "OPTIONS") {
+        return new Response(null, { status: 204, headers: SAFE_HEADERS });
+      }
+      if (request.method !== "GET") {
+        return jsonResponse({ error: "method_not_allowed" }, 405);
+      }
 
-    const url = new URL(request.url);
+      const url = new URL(request.url);
 
-    if (url.pathname === "/" || url.pathname === "/v1/health") {
-      return textResponse("ok", 200, "text/plain; charset=utf-8");
-    }
-    if (url.pathname === "/v1/status") {
-      return handleStatus(request, env);
-    }
-    if (url.pathname === "/v1/weather") {
-      return handleProxy(request, env, "weather");
-    }
-    if (url.pathname === "/v1/visual") {
-      return handleProxy(request, env, "visual");
-    }
+      if (url.pathname === "/" || url.pathname === "/v1/health") {
+        return textResponse("ok", 200, "text/plain; charset=utf-8");
+      }
+      if (url.pathname === "/v1/status") {
+        return await handleStatus(request, env);
+      }
+      if (url.pathname === "/v1/weather") {
+        return await handleProxy(request, env, "weather");
+      }
+      if (url.pathname === "/v1/visual") {
+        return await handleProxy(request, env, "visual");
+      }
 
-    return jsonResponse({ error: "not_found" }, 404);
+      return jsonResponse({ error: "not_found" }, 404);
+    } catch (err) {
+      return jsonResponse({ error: "internal_error" }, 500);
+    }
   },
 };
