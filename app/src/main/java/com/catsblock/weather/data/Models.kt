@@ -21,7 +21,7 @@ val Condition.isWet: Boolean
 val RainLeadOptions: List<Int> = listOf(120, 60, 30, 15)
 val BackgroundIntervalOptions: List<Int> = listOf(30, 60, 120, 240, 480, 840)
 
-enum class WeatherSource { OpenMeteo, WeatherApi, VisualCrossing }
+enum class WeatherSource { OpenMeteo, WeatherApi, VisualCrossing, OpenWeather }
 
 enum class WindUnit(val label: String, val factor: Double) {
     Kmh("km/h", 1.0),
@@ -150,41 +150,53 @@ data class UsageStatus(
     val weatherMonthResetSeconds: Long = 0,
     val visualMonthUsed: Int = 0,
     val visualMonthLimit: Int = 260,
-    val visualMonthResetSeconds: Long = 0
+    val visualMonthResetSeconds: Long = 0,
+    val openWeatherUsed: Int = 0,
+    val openWeatherLimit: Int = 100,
+    val openWeatherResetSeconds: Long = 0,
+    val openWeatherMonthUsed: Int = 0,
+    val openWeatherMonthLimit: Int = 350,
+    val openWeatherMonthResetSeconds: Long = 0
 ) {
     fun monthUsedFor(source: WeatherSource): Int = when (source) {
         WeatherSource.WeatherApi -> weatherMonthUsed
         WeatherSource.VisualCrossing -> visualMonthUsed
+        WeatherSource.OpenWeather -> openWeatherMonthUsed
         else -> 0
     }
 
     fun monthLimitFor(source: WeatherSource): Int = when (source) {
         WeatherSource.WeatherApi -> weatherMonthLimit
         WeatherSource.VisualCrossing -> visualMonthLimit
+        WeatherSource.OpenWeather -> openWeatherMonthLimit
         else -> 0
     }
 
     fun monthResetFor(source: WeatherSource): Long = when (source) {
         WeatherSource.WeatherApi -> weatherMonthResetSeconds
         WeatherSource.VisualCrossing -> visualMonthResetSeconds
+        WeatherSource.OpenWeather -> openWeatherMonthResetSeconds
         else -> 0
     }
 
     fun usedFor(source: WeatherSource): Int = when (source) {
         WeatherSource.WeatherApi -> weatherUsed
         WeatherSource.VisualCrossing -> visualUsed
+        WeatherSource.OpenWeather -> openWeatherUsed
         else -> 0
     }
 
     fun limitFor(source: WeatherSource): Int = when (source) {
         WeatherSource.WeatherApi -> weatherLimit
         WeatherSource.VisualCrossing -> visualLimit
+        WeatherSource.OpenWeather -> openWeatherLimit
         else -> 0
     }
 
     fun resetFor(source: WeatherSource): Long = when (source) {
         WeatherSource.WeatherApi -> weatherResetSeconds
         WeatherSource.VisualCrossing -> visualResetSeconds
+        WeatherSource.OpenWeather -> openWeatherResetSeconds
         else -> 0
     }
 }
