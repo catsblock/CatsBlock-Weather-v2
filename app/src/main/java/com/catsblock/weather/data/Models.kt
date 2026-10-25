@@ -137,8 +137,32 @@ data class UsageStatus(
     val longLimit: Int = 150,
     val lockoutSeconds: Long = 0,
     val exhaustedSeconds: Long = 0,
-    val usingFallback: Boolean = false
-)
+    val usingFallback: Boolean = false,
+    val weatherUsed: Int = 0,
+    val weatherLimit: Int = 220,
+    val weatherResetSeconds: Long = 0,
+    val visualUsed: Int = 0,
+    val visualLimit: Int = 75,
+    val visualResetSeconds: Long = 0
+) {
+    fun usedFor(source: WeatherSource): Int = when (source) {
+        WeatherSource.WeatherApi -> weatherUsed
+        WeatherSource.VisualCrossing -> visualUsed
+        else -> 0
+    }
+
+    fun limitFor(source: WeatherSource): Int = when (source) {
+        WeatherSource.WeatherApi -> weatherLimit
+        WeatherSource.VisualCrossing -> visualLimit
+        else -> 0
+    }
+
+    fun resetFor(source: WeatherSource): Long = when (source) {
+        WeatherSource.WeatherApi -> weatherResetSeconds
+        WeatherSource.VisualCrossing -> visualResetSeconds
+        else -> 0
+    }
+}
 
 data class CitySummary(
     val kind: Condition,
