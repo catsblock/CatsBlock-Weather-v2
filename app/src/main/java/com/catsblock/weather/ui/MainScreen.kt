@@ -424,6 +424,12 @@ fun MainScreen(vm: WeatherViewModel) {
                 onSettings = vm::openSettings
             )
 
+            val usageStatus by vm.usageStatus.collectAsStateWithLifecycle()
+            UsageStatusBar(
+                status = usageStatus,
+                modifier = Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 118.dp)
+            )
+
             AnimatedVisibility(
                 visible = notice != null,
                 modifier = Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 64.dp),
@@ -645,7 +651,7 @@ private fun WeatherDetails(
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     alert?.let { AlertCard(it) }
-                    if (settings.showPrecipitation) PrecipitationCard(bundle)
+                    if (settings.showPrecipitation && bundle.rain.isNotEmpty()) PrecipitationCard(bundle)
                     HoursCard(next36, chipDays, today, fahrenheit, chartScroll)
                     if (hubAlerts.isNotEmpty()) HubAlertCard(hubAlerts, { hubSheet = true })
                     DaysCard(
