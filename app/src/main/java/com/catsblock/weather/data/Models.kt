@@ -130,6 +130,16 @@ data class WeatherBundle(
     val utcOffsetSeconds: Int = 0
 )
 
+data class UsageStatus(
+    val shortRemaining: Int = 20,
+    val shortLimit: Int = 20,
+    val longRemaining: Int = 150,
+    val longLimit: Int = 150,
+    val lockoutSeconds: Long = 0,
+    val exhaustedSeconds: Long = 0,
+    val usingFallback: Boolean = false
+)
+
 data class CitySummary(
     val kind: Condition,
     val isDay: Boolean,
