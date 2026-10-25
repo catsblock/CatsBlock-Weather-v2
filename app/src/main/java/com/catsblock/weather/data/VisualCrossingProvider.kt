@@ -40,14 +40,10 @@ internal class VisualCrossingProvider(private val get: suspend (String) -> Strin
         }
     }
 
-    suspend fun fetch(city: City, key: String): WeatherBundle {
-        val path = String.format(Locale.US, "%.4f,%.4f", city.lat, city.lon)
-        val url = "https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/$path"
-            .toHttpUrl().newBuilder()
-            .addQueryParameter("unitGroup", "metric")
-            .addQueryParameter("include", "days,hours,current")
-            .addQueryParameter("contentType", "json")
-            .addQueryParameter("key", key)
+    suspend fun fetch(city: City, baseUrl: String): WeatherBundle {
+        val url = "$baseUrl/v1/visual".toHttpUrl().newBuilder()
+            .addQueryParameter("lat", String.format(Locale.US, "%.4f", city.lat))
+            .addQueryParameter("lon", String.format(Locale.US, "%.4f", city.lon))
             .build()
             .toString()
         val root = JSONObject(get(url))
