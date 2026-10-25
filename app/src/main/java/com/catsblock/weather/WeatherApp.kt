@@ -11,6 +11,8 @@ import com.catsblock.weather.alerts.EclipseAlerts
 import com.catsblock.weather.alerts.RainAlerts
 import com.catsblock.weather.alerts.SnowAlerts
 import com.catsblock.weather.update.AppUpdates
+import com.catsblock.weather.widget.RadarWidgetUpdater
+import com.catsblock.weather.widget.RadarWidgetWork
 import com.catsblock.weather.work.BackgroundUpdates
 
 class WeatherApp : Application(), ImageLoaderFactory {
@@ -23,6 +25,7 @@ class WeatherApp : Application(), ImageLoaderFactory {
         SnowAlerts.ensureChannel(this)
         AppUpdates.ensureChannel(this)
         BackgroundUpdates.schedule(this)
+        if (RadarWidgetUpdater.hasWidgets(this)) RadarWidgetWork.schedule(this)
     }
 
     override fun newImageLoader(): ImageLoader =
