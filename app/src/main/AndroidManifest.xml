@@ -83,6 +83,30 @@
         </receiver>
 
         <receiver
+            android:name=".widget.RadarSmallWidget"
+            android:exported="true"
+            android:label="@string/widget_radar_small">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_radar_small_info" />
+        </receiver>
+
+        <receiver
+            android:name=".widget.RadarWideWidget"
+            android:exported="true"
+            android:label="@string/widget_radar_wide">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_radar_wide_info" />
+        </receiver>
+
+        <receiver
             android:name=".update.UpdateReceiver"
             android:exported="false" />
 
