@@ -40,6 +40,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -53,6 +55,7 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.catsblock.weather.data.AlertKind
 import com.catsblock.weather.data.City
+import com.catsblock.weather.data.MapStyle
 import com.catsblock.weather.data.RadarFrames
 import com.catsblock.weather.data.WeatherAlert
 import com.catsblock.weather.i18n.tr
@@ -106,7 +109,8 @@ private fun TileLayer(
     n: Int,
     radius: Int,
     tile: Dp,
-    alpha: Float
+    alpha: Float,
+    colorFilter: ColorFilter? = null
 ) {
     val context = LocalContext.current
     Column {
@@ -123,7 +127,8 @@ private fun TileLayer(
                         contentDescription = null,
                         modifier = Modifier.size(tile),
                         contentScale = ContentScale.Crop,
-                        alpha = alpha
+                        alpha = alpha,
+                        colorFilter = colorFilter
                     )
                 }
             }
@@ -141,15 +146,17 @@ private fun TileMap(city: City, zoom: Int, tile: Dp, radius: Int, radar: String?
     val iy = floor(ty).toInt()
     val fx = (tx - ix).toFloat()
     val fy = (ty - iy).toFloat()
+    val dark = rememberDarkMap()
+    val baseFilter = remember(dark) { if (dark) ColorFilter.colorMatrix(ColorMatrix(MapStyle.DARK_LIFT)) else null }
 
-    Box(modifier) {
+    Box(modifier.background(Color(if (dark) MapStyle.DARK_BASE else MapStyle.LIGHT_BASE))) {
         Box(
             Modifier
                 .align(Alignment.Center)
                 .requiredSize(tile * (2 * radius + 1))
                 .offset(tile * (0.5f - fx), tile * (0.5f - fy))
         ) {
-            TileLayer({ x, y -> "https://tile.openstreetmap.org/$zoom/$x/$y.png" }, ix, iy, n, radius, tile, 1f)
+            TileLayer({ x, y -> MapStyle.tileUrl(dark, zoom, x, y) }, ix, iy, n, radius, tile, 1f, baseFilter)
             if (radar != null) {
                 TileLayer({ x, y -> RadarFrames.tileUrl(radar, zoom, x, y) }, ix, iy, n, radius, tile, 0.85f)
             }
@@ -184,7 +191,7 @@ private fun BoxScope.MapLabels(text: String) {
         style = MaterialTheme.typography.labelLarge
     )
     Text(
-        "© OpenStreetMap · RainViewer",
+        MapStyle.CREDIT,
         modifier = Modifier
             .align(Alignment.BottomEnd)
             .padding(8.dp)
