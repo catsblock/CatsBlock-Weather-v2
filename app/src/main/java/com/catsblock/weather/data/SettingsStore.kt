@@ -18,6 +18,7 @@ class SettingsStore(private val context: Context) {
 
     private object Keys {
         val fahrenheit = booleanPreferencesKey("fahrenheit")
+        val weatherSource = stringPreferencesKey("weather_source")
         val windUnit = stringPreferencesKey("wind_unit")
         val pressureUnit = stringPreferencesKey("pressure_unit")
         val backgroundUpdates = booleanPreferencesKey("background_updates")
@@ -43,6 +44,7 @@ class SettingsStore(private val context: Context) {
     val settings: Flow<AppSettings> = context.dataStore.data.map {
         AppSettings(
             fahrenheit = it[Keys.fahrenheit] ?: false,
+            weatherSource = runCatching { WeatherSource.valueOf(it[Keys.weatherSource] ?: "") }.getOrDefault(WeatherSource.OpenMeteo),
             windUnit = runCatching { WindUnit.valueOf(it[Keys.windUnit] ?: "") }.getOrDefault(WindUnit.Kmh),
             pressureUnit = runCatching { PressureUnit.valueOf(it[Keys.pressureUnit] ?: "") }.getOrDefault(PressureUnit.Hpa),
             backgroundUpdates = it[Keys.backgroundUpdates] ?: true,
@@ -79,6 +81,10 @@ class SettingsStore(private val context: Context) {
 
     suspend fun setFahrenheit(value: Boolean) {
         context.dataStore.edit { it[Keys.fahrenheit] = value }
+    }
+
+    suspend fun setWeatherSource(value: WeatherSource) {
+        context.dataStore.edit { it[Keys.weatherSource] = value.name }
     }
 
     suspend fun setWindUnit(value: WindUnit) {
