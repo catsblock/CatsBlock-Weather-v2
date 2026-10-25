@@ -9,3 +9,8 @@ captures/
 *.apk
 *.aab
 .DS_Store
+*.p12
+*.jks
+*.keystore
+.env
+*.env
