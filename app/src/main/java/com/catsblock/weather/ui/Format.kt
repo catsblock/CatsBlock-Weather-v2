@@ -95,12 +95,14 @@ fun sourceTitle(source: WeatherSource): String = when (source) {
     WeatherSource.OpenMeteo -> tr("Open-Meteo (free, no key)")
     WeatherSource.WeatherApi -> "WeatherAPI.com"
     WeatherSource.VisualCrossing -> "Visual Crossing Weather"
+    WeatherSource.OpenWeather -> "OpenWeather"
 }
 
 fun sourceNote(source: WeatherSource, available: Boolean): String = when {
     !available -> tr("Not available in this build")
     source == WeatherSource.OpenMeteo -> tr("Default. Free and works without an API key.")
     source == WeatherSource.WeatherApi -> tr("Forecast from WeatherAPI.com. Free plans cover a shorter forecast range.")
+    source == WeatherSource.OpenWeather -> tr("Forecast and government alerts from OpenWeather. Falls back to Open-Meteo if a request fails.")
     else -> tr("Forecast from Visual Crossing. Falls back to Open-Meteo if a request fails.")
 }
 
