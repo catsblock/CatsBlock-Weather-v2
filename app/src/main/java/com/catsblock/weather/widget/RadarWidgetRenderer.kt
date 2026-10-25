@@ -4,6 +4,8 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
@@ -11,6 +13,7 @@ import android.graphics.Typeface
 import android.text.TextPaint
 import android.text.TextUtils
 import com.catsblock.weather.data.City
+import com.catsblock.weather.data.MapStyle
 import com.catsblock.weather.data.RadarFrames
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -60,7 +63,7 @@ object RadarWidgetRenderer {
             }
     }.getOrNull()
 
-    suspend fun render(context: Context, city: City, widthPx: Int, heightPx: Int, alert: String?): Bitmap? = coroutineScope {
+    suspend fun render(context: Context, city: City, widthPx: Int, heightPx: Int, alert: String?, dark: Boolean): Bitmap? = coroutineScope {
         val scale = min(1f, MAX_SIDE.toFloat() / max(widthPx, heightPx).toFloat())
         val w = max(2, (widthPx * scale).toInt())
         val h = max(2, (heightPx * scale).toInt())
@@ -80,7 +83,7 @@ object RadarWidgetRenderer {
 
         val baseJobs = (y0..y1).filter { it in 0 until n }.flatMap { y ->
             (x0..x1).map { x ->
-                async(Dispatchers.IO) { Triple(x, y, tile(http, "https://tile.openstreetmap.org/$ZOOM/${Math.floorMod(x, n)}/$y.png")) }
+                async(Dispatchers.IO) { Triple(x, y, tile(http, MapStyle.tileUrl(dark, ZOOM, Math.floorMod(x, n), y))) }
             }
         }
 
@@ -109,7 +112,13 @@ object RadarWidgetRenderer {
         val canvas = Canvas(out)
         val corner = 22f * density
         canvas.clipPath(Path().apply { addRoundRect(RectF(0f, 0f, w.toFloat(), h.toFloat()), corner, corner, Path.Direction.CW) })
-        canvas.drawColor(0xFFF2EFE9.toInt())
+        canvas.drawColor(if (dark) MapStyle.DARK_BASE else MapStyle.LIGHT_BASE)
+
+        val basePaint = if (dark) {
+            Paint(Paint.FILTER_BITMAP_FLAG).apply { colorFilter = ColorMatrixColorFilter(ColorMatrix(MapStyle.DARK_LIFT)) }
+        } else {
+            null
+        }
 
         baseTiles.forEach { (x, y, bmp) ->
             if (bmp != null) {
@@ -117,7 +126,7 @@ object RadarWidgetRenderer {
                     bmp,
                     (w / 2.0 + TILE * (x - tx)).toFloat(),
                     (h / 2.0 + TILE * (y - ty)).toFloat(),
-                    null
+                    basePaint
                 )
             }
         }
@@ -133,21 +142,21 @@ object RadarWidgetRenderer {
         }
 
         drawMarker(canvas, w / 2f, h / 2f, density)
-        drawFooter(context, canvas, w, h, density)
+        drawFooter(context, canvas, w, h, density, dark)
         if (!alert.isNullOrBlank()) drawAlert(canvas, w, alert, density)
         out
     }
 
-    fun placeholder(widthPx: Int, heightPx: Int, text: String, density: Float): Bitmap {
+    fun placeholder(widthPx: Int, heightPx: Int, text: String, density: Float, dark: Boolean): Bitmap {
         val w = max(2, widthPx)
         val h = max(2, heightPx)
         val out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(out)
         val corner = 22f * density
         canvas.clipPath(Path().apply { addRoundRect(RectF(0f, 0f, w.toFloat(), h.toFloat()), corner, corner, Path.Direction.CW) })
-        canvas.drawColor(0xFF1C1C1E.toInt())
+        canvas.drawColor(if (dark) MapStyle.DARK_BASE else MapStyle.LIGHT_BASE)
         val paint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = 0xFFFFFFFF.toInt()
+            color = if (dark) 0xFFFFFFFF.toInt() else 0xFF333333.toInt()
             textSize = 13f * density
             textAlign = Paint.Align.CENTER
         }
@@ -166,15 +175,15 @@ object RadarWidgetRenderer {
         canvas.drawCircle(cx, cy, 7f * density, paint)
     }
 
-    private fun drawFooter(context: Context, canvas: Canvas, w: Int, h: Int, density: Float) {
+    private fun drawFooter(context: Context, canvas: Canvas, w: Int, h: Int, density: Float, dark: Boolean) {
         val margin = 8f * density
         val text = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
             textSize = 8f * density
-            color = 0xFF444444.toInt()
+            color = if (dark) 0xCCFFFFFF.toInt() else 0xFF444444.toInt()
         }
-        val credit = "© OpenStreetMap · RainViewer"
+        val credit = MapStyle.CREDIT
         val creditWidth = text.measureText(credit)
-        val pill = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xB3FFFFFF.toInt() }
+        val pill = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = if (dark) 0x99202022.toInt() else 0xB3FFFFFF.toInt() }
         val pad = 4f * density
         val creditRect = RectF(
             w - margin - creditWidth - pad * 2,
