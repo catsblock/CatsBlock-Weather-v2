@@ -40,6 +40,15 @@ jobs:
             exit 1
           fi
 
+      - name: Check backend secrets
+        env:
+          CLOUDFLARE_WEBSITE: ${{ secrets.CLOUDFLARE_WEBSITE }}
+        run: |
+          if [ -z "$CLOUDFLARE_WEBSITE" ]; then
+            echo "::error::Create the repository secret CLOUDFLARE_WEBSITE with the deployed Cloudflare Worker URL."
+            exit 1
+          fi
+
       - name: Decode keystore
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
@@ -71,8 +80,7 @@ jobs:
       - name: Build release APK
         env:
           KS_PASS: ${{ secrets.KS_PASS }}
-          WEATHER_API_KEY: ${{ secrets.WEATHER_API_KEY }}
-          VISUAL_API_KEY: ${{ secrets.VISUAL_API_KEY }}
+          CLOUDFLARE_WEBSITE: ${{ secrets.CLOUDFLARE_WEBSITE }}
         run: gradle assembleRelease --no-daemon --stacktrace -PbuildNumber=${{ github.run_number }}
 
       - name: Locate APK
