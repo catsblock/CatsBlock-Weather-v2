@@ -140,6 +140,7 @@ private fun openNotificationSettings(context: Context) {
 @Composable
 fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
     val settings by vm.settings.collectAsStateWithLifecycle()
+    val usageStatus by vm.usageStatus.collectAsStateWithLifecycle()
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -339,6 +340,12 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
                     )
                 }
             }
+
+            UsageStatusBar(
+                status = usageStatus,
+                source = settings.weatherSource,
+                modifier = Modifier.fillMaxWidth().padding(top = 12.dp)
+            )
 
             GroupLabel(tr("Units"))
             Group {
