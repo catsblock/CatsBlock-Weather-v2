@@ -347,6 +347,12 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
                 modifier = Modifier.fillMaxWidth().padding(top = 12.dp)
             )
 
+            MonthlyUsageBar(
+                status = usageStatus,
+                source = settings.weatherSource,
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+            )
+
             GroupLabel(tr("Units"))
             Group {
                 Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
