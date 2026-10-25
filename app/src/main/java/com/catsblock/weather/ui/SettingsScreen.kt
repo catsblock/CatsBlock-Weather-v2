@@ -1,5 +1,7 @@
 package com.catsblock.weather.ui
 
+import com.catsblock.weather.data.SecretKeys
+import com.catsblock.weather.data.WeatherSource
 import com.catsblock.weather.data.WindUnit
 import com.catsblock.weather.data.PressureUnit
 import com.catsblock.weather.data.BackgroundIntervalOptions
@@ -320,6 +322,23 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
                 .padding(horizontal = 16.dp, vertical = 8.dp)
         ) {
             CategoryTitle(tr("Personalization"))
+
+            GroupLabel(tr("Weather data source"))
+            Group {
+                WeatherSource.entries.forEachIndexed { index, source ->
+                    if (index > 0) GroupDivider()
+                    val available = SecretKeys.available(source)
+                    ListItem(
+                        modifier = Modifier.clickable(enabled = available) { vm.setWeatherSource(source) },
+                        leadingContent = {
+                            RadioButton(selected = settings.weatherSource == source, onClick = null, enabled = available)
+                        },
+                        headlineContent = { Text(sourceTitle(source)) },
+                        supportingContent = { Text(sourceNote(source, available)) },
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                    )
+                }
+            }
 
             GroupLabel(tr("Units"))
             Group {
