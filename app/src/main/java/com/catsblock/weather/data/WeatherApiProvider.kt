@@ -47,13 +47,10 @@ internal class WeatherApiProvider(private val get: suspend (String) -> String) {
         else -> 3
     }
 
-    suspend fun fetch(city: City, key: String): WeatherBundle {
-        val url = "https://api.weatherapi.com/v1/forecast.json".toHttpUrl().newBuilder()
-            .addQueryParameter("key", key)
-            .addQueryParameter("q", String.format(Locale.US, "%.4f,%.4f", city.lat, city.lon))
-            .addQueryParameter("days", "7")
-            .addQueryParameter("aqi", "no")
-            .addQueryParameter("alerts", "no")
+    suspend fun fetch(city: City, baseUrl: String): WeatherBundle {
+        val url = "$baseUrl/v1/weather".toHttpUrl().newBuilder()
+            .addQueryParameter("lat", String.format(Locale.US, "%.4f", city.lat))
+            .addQueryParameter("lon", String.format(Locale.US, "%.4f", city.lon))
             .build()
             .toString()
         val root = JSONObject(get(url))
