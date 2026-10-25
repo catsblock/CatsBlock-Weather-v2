@@ -71,6 +71,8 @@ jobs:
       - name: Build release APK
         env:
           KS_PASS: ${{ secrets.KS_PASS }}
+          WEATHER_API_KEY: ${{ secrets.WEATHER_API_KEY }}
+          VISUAL_API_KEY: ${{ secrets.VISUAL_API_KEY }}
         run: gradle assembleRelease --no-daemon --stacktrace -PbuildNumber=${{ github.run_number }}
 
       - name: Locate APK
