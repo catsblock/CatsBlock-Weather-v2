@@ -78,6 +78,8 @@ class WeatherViewModel(private val app: Application) : AndroidViewModel(app) {
     val screen = MutableStateFlow<Screen?>(null)
     val refreshing = MutableStateFlow(false)
     val notices = MutableSharedFlow<String>(extraBufferCapacity = 1)
+    val usageStatus = repo.usageStatus
+    private var lastLimitNotice: String? = null
     private val cache = HashMap<String, WeatherBundle>()
     private val lastUpdated = HashMap<String, Long>()
     private var privacyReturn = Screen.Settings
@@ -93,6 +95,9 @@ class WeatherViewModel(private val app: Application) : AndroidViewModel(app) {
     val searchMessage = MutableStateFlow<String?>(null)
 
     init {
+        viewModelScope.launch {
+            if (settings.first().weatherSource != WeatherSource.OpenMeteo) repo.refreshUsageStatus()
+        }
         viewModelScope.launch {
             val saved = store.currentCity.first()
             if (saved != null) {
@@ -121,6 +126,7 @@ class WeatherViewModel(private val app: Application) : AndroidViewModel(app) {
                 .collect {
                     cache.clear()
                     lastUpdated.clear()
+                    if (it != WeatherSource.OpenMeteo) viewModelScope.launch { repo.refreshUsageStatus() }
                     if (city.value != null) refresh(silent = true)
                 }
         }
@@ -381,6 +387,7 @@ class WeatherViewModel(private val app: Application) : AndroidViewModel(app) {
             cache[target.id] = bundle
             lastUpdated[target.id] = SystemClock.elapsedRealtime()
             weather.value = WeatherState.Success(bundle)
+            notifyUsageLimitIfNeeded()
             runCatching { WidgetUpdater.publish(app, target, bundle) }
             runCatching { RainAlerts.onFresh(app, target, bundle) }
             runCatching { SnowAlerts.onFresh(app, target, bundle) }
@@ -392,6 +399,21 @@ class WeatherViewModel(private val app: Application) : AndroidViewModel(app) {
             if (!silent || !hasData) {
                 weather.value = WeatherState.Error("Could not load the weather. Check your connection and try again.")
             }
+        }
+    }
+
+    private fun notifyUsageLimitIfNeeded() {
+        val status = usageStatus.value
+        val message = when {
+            status.exhaustedSeconds > 0 ->
+                tr("Provider limit reached. Using the free data source for") + " " + formatWait(status.exhaustedSeconds)
+            status.lockoutSeconds > 0 ->
+                tr("Too many requests. Try again in") + " " + formatWait(status.lockoutSeconds)
+            else -> null
+        }
+        if (message != lastLimitNotice) {
+            lastLimitNotice = message
+            if (message != null) notices.tryEmit(message)
         }
     }
 
