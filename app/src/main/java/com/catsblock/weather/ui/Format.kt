@@ -104,6 +104,17 @@ fun sourceNote(source: WeatherSource, available: Boolean): String = when {
     else -> tr("Forecast from Visual Crossing. Falls back to Open-Meteo if a request fails.")
 }
 
+fun formatWait(totalSeconds: Long): String {
+    val clamped = totalSeconds.coerceAtLeast(0)
+    val hours = clamped / 3600
+    val minutes = (clamped % 3600) / 60
+    return if (hours > 0) {
+        String.format(Locale.US, "%dh %02dm", hours, minutes)
+    } else {
+        String.format(Locale.US, "%dm", minutes.coerceAtLeast(1))
+    }
+}
+
 fun intervalLabel(minutes: Int): String = trx(
     when (minutes) {
         30 -> "30 minutes"
