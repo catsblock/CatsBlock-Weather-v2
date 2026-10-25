@@ -24,6 +24,8 @@ object MapStyle {
         return "https://$shard.tile-cyclosm.fr/cyclosm/$z/$x/$y.png"
     }
 
+    fun fallbackUrl(z: Int, x: Int, y: Int): String = "https://tile.openstreetmap.org/$z/$x/$y.png"
+
     fun isDark(context: Context, mode: ThemeMode): Boolean = when (mode) {
         ThemeMode.Light -> false
         ThemeMode.Dark -> true
