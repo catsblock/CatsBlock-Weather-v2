@@ -3,7 +3,9 @@ package com.catsblock.weather.ui
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -18,36 +20,55 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.catsblock.weather.data.UsageStatus
+import com.catsblock.weather.data.WeatherSource
 import com.catsblock.weather.i18n.tr
 
 @Composable
-fun UsageStatusBar(status: UsageStatus, modifier: Modifier = Modifier) {
-    val nearLimit = status.shortLimit > 0 && status.shortRemaining <= 5
-    val visible = status.lockoutSeconds > 0 || status.exhaustedSeconds > 0 || nearLimit
+fun UsageStatusBar(status: UsageStatus, source: WeatherSource, modifier: Modifier = Modifier) {
+    val limit = status.limitFor(source)
+    val used = status.usedFor(source).coerceAtLeast(0)
+    val visible = source != WeatherSource.OpenMeteo && limit > 0
     AnimatedVisibility(
         visible = visible,
         modifier = modifier,
         enter = fadeIn(),
         exit = fadeOut()
     ) {
+        val fraction = if (limit > 0) (used.toFloat() / limit.toFloat()).coerceIn(0f, 1f) else 0f
+        val percent = (fraction * 100f).toInt()
+        val exhausted = limit > 0 && used >= limit
+        val wait = status.resetFor(source).takeIf { it > 0 } ?: status.exhaustedSeconds
+        val name = if (source == WeatherSource.WeatherApi) tr("Weather API") else tr("Visual API")
+        val barColor = when {
+            exhausted -> Color(0xFFFF6B6B)
+            fraction >= 0.9f -> Color(0xFFFF6B6B)
+            fraction >= 0.7f -> Color(0xFFFFC857)
+            else -> Color(0xFF6BD68B)
+        }
+        val detail = when {
+            exhausted -> tr("Available again in") + " " + formatWait(wait)
+            status.lockoutSeconds > 0 -> tr("Too many requests. Try again in") + " " + formatWait(status.lockoutSeconds)
+            else -> "${limit - used} " + tr("requests left")
+        }
         Surface(shape = RoundedCornerShape(16.dp), color = Color(0xCC1C1C1E)) {
             Column(Modifier.width(260.dp).padding(horizontal = 16.dp, vertical = 12.dp)) {
-                val label = when {
-                    status.exhaustedSeconds > 0 ->
-                        tr("Provider limit reached. Using the free data source for") + " " + formatWait(status.exhaustedSeconds)
-                    status.lockoutSeconds > 0 ->
-                        tr("Too many requests. Try again in") + " " + formatWait(status.lockoutSeconds)
-                    else -> tr("Approaching the API usage limit")
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text(
+                        name + " · " + tr("Free limit used"),
+                        color = Color.White,
+                        style = MaterialTheme.typography.labelMedium
+                    )
+                    Text("$percent%", color = barColor, style = MaterialTheme.typography.labelMedium)
                 }
-                Text(label, color = Color.White, style = MaterialTheme.typography.labelMedium)
                 Spacer()
-                val used = (status.shortLimit - status.shortRemaining).coerceAtLeast(0)
-                val fraction = if (status.shortLimit > 0) used.toFloat() / status.shortLimit.toFloat() else 0f
                 LinearProgressIndicator(
-                    progress = { fraction.coerceIn(0f, 1f) },
+                    progress = { fraction },
                     modifier = Modifier.fillMaxWidth().height(4.dp),
-                    color = if (status.exhaustedSeconds > 0 || status.lockoutSeconds > 0) Color(0xFFFF6B6B) else Color(0xFFFFC857)
+                    color = barColor,
+                    trackColor = Color(0x33FFFFFF)
                 )
+                Spacer()
+                Text(detail, color = Color(0xB3FFFFFF), style = MaterialTheme.typography.labelSmall)
             }
         }
     }
