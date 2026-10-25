@@ -160,6 +160,7 @@ class WeatherRepository {
 
     private suspend fun fetchViaWorker(city: City, source: WeatherSource, base: String): WeatherBundle = coroutineScope {
         val air = async { runCatching { airMap(city) }.getOrDefault(emptyMap()) }
+        val rainSlots = async { runCatching { rainMap(city) }.getOrDefault(emptyList()) }
         val bundle = try {
             when (source) {
                 WeatherSource.WeatherApi -> WeatherApiProvider { workerGet(it) }.fetch(city, base)
@@ -174,9 +175,29 @@ class WeatherRepository {
         }
         val aqi = air.await()
         bundle.copy(
+            rain = rainSlots.await(),
             current = bundle.current.copy(aqi = aqi[bundle.current.now.truncatedTo(ChronoUnit.HOURS).toString()]),
             hours = bundle.hours.map { it.copy(aqi = aqi[it.time.toString()]) }
         )
+    }
+
+    private suspend fun rainMap(city: City): List<RainSlot> {
+        val raw = get(
+            url(
+                "https://api.open-meteo.com/v1/forecast",
+                "latitude" to city.lat.toString(),
+                "longitude" to city.lon.toString(),
+                "minutely_15" to "precipitation",
+                "forecast_minutely_15" to "48",
+                "timezone" to "auto"
+            )
+        )
+        val minutely = JSONObject(raw).getJSONObject("minutely_15")
+        val t = minutely.getJSONArray("time")
+        val v = minutely.getJSONArray("precipitation")
+        return (0 until t.length()).map { i ->
+            RainSlot(LocalDateTime.parse(t.getString(i)), v.optDouble(i, 0.0))
+        }
     }
 
     private suspend fun airMap(city: City): Map<String, Double> {
