@@ -89,7 +89,7 @@ fun HubAlertCard(alerts: List<HubAlert>, onClick: () -> Unit, modifier: Modifier
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
             Text(
-                top.title,
+                top.title.ifBlank { tr("Weather alert") },
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold,
                 color = Color.White,
@@ -164,7 +164,12 @@ private fun HubAlertDetail(alert: HubAlert) {
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Text(alert.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = ink)
+        Text(
+            alert.title.ifBlank { tr("Weather alert") },
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = ink
+        )
 
         val tags = listOf(alert.severity, alert.urgency, alert.certainty)
             .filter { it.isNotBlank() && it != "Unknown" }
