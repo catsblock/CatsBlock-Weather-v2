@@ -17,13 +17,6 @@ val localProps = java.util.Properties().apply {
 
 fun secret(name: String): String = (System.getenv(name) ?: localProps.getProperty(name) ?: "").trim()
 
-val keyMask = ByteArray(32).also { java.security.SecureRandom().nextBytes(it) }
-
-fun masked(value: String): String =
-    value.toByteArray(Charsets.UTF_8)
-        .mapIndexed { i, b -> "%02x".format((b.toInt() xor (keyMask[i % keyMask.size].toInt() and 0xff)) and 0xff) }
-        .joinToString("")
-
 fun quoted(value: String): String = "\"$value\""
 
 android {
@@ -36,9 +29,7 @@ android {
         targetSdk = 36
         versionCode = buildNum
         versionName = "1.0.$buildNum"
-        buildConfigField("String", "WEATHER_KEY_DATA", quoted(masked(secret("WEATHER_API_KEY"))))
-        buildConfigField("String", "VISUAL_KEY_DATA", quoted(masked(secret("VISUAL_API_KEY"))))
-        buildConfigField("String", "KEY_MASK", quoted(keyMask.joinToString("") { "%02x".format(it.toInt() and 0xff) }))
+        buildConfigField("String", "CLOUDFLARE_WEBSITE", quoted(secret("CLOUDFLARE_WEBSITE").trimEnd('/')))
     }
 
     signingConfigs {
