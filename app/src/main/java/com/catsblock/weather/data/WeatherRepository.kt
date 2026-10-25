@@ -4,6 +4,9 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
@@ -15,6 +18,9 @@ import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.temporal.ChronoUnit
 import java.util.concurrent.TimeUnit
+import kotlin.math.max
+
+internal class WorkerLimitException(val waitSeconds: Long, val exhausted: Boolean) : IOException("Worker limit reached")
 
 class WeatherRepository {
 
@@ -23,9 +29,40 @@ class WeatherRepository {
         .readTimeout(20, TimeUnit.SECONDS)
         .build()
 
+    private val _usageStatus = MutableStateFlow(UsageStatus())
+    val usageStatus: StateFlow<UsageStatus> = _usageStatus.asStateFlow()
+
     private suspend fun get(url: String): String = withContext(Dispatchers.IO) {
         client.newCall(Request.Builder().url(url).build()).execute().use { response ->
             if (!response.isSuccessful) throw IOException("HTTP ${response.code}")
+            response.body?.string() ?: throw IOException("Empty response")
+        }
+    }
+
+    private suspend fun workerGet(url: String): String = withContext(Dispatchers.IO) {
+        client.newCall(Request.Builder().url(url).build()).execute().use { response ->
+            val shortRemaining = response.header("X-RateLimit-Remaining-10m")?.toIntOrNull() ?: 20
+            val shortLimit = response.header("X-RateLimit-Limit-10m")?.toIntOrNull() ?: 20
+            val longRemaining = response.header("X-RateLimit-Remaining-12h")?.toIntOrNull() ?: 150
+            val longLimit = response.header("X-RateLimit-Limit-12h")?.toIntOrNull() ?: 150
+            val lockoutSeconds = response.header("X-Lockout-Seconds")?.toLongOrNull() ?: 0L
+            val exhaustedSeconds = response.header("X-Global-Exhausted-Seconds")?.toLongOrNull() ?: 0L
+            _usageStatus.value = UsageStatus(
+                shortRemaining = shortRemaining,
+                shortLimit = shortLimit,
+                longRemaining = longRemaining,
+                longLimit = longLimit,
+                lockoutSeconds = lockoutSeconds,
+                exhaustedSeconds = exhaustedSeconds,
+                usingFallback = lockoutSeconds > 0 || exhaustedSeconds > 0
+            )
+            if (!response.isSuccessful) {
+                val wait = max(lockoutSeconds, exhaustedSeconds)
+                if (response.code == 429 || response.code == 503 || wait > 0) {
+                    throw WorkerLimitException(wait, exhaustedSeconds > 0)
+                }
+                throw IOException("HTTP ${response.code}")
+            }
             response.body?.string() ?: throw IOException("Empty response")
         }
     }
@@ -34,6 +71,28 @@ class WeatherRepository {
         val builder = base.toHttpUrl().newBuilder()
         params.forEach { builder.addQueryParameter(it.first, it.second) }
         return builder.build().toString()
+    }
+
+    suspend fun refreshUsageStatus() {
+        val base = SecretKeys.baseUrl()
+        if (base.isEmpty()) return
+        runCatching {
+            val raw = workerGet("$base/v1/status")
+            val root = JSONObject(raw)
+            val rate = root.getJSONObject("rateLimit")
+            val exhausted = root.getJSONObject("exhausted")
+            val weatherExhausted = exhausted.optLong("weather", 0)
+            val visualExhausted = exhausted.optLong("visual", 0)
+            _usageStatus.value = UsageStatus(
+                shortRemaining = rate.optInt("shortRemaining", 20),
+                shortLimit = rate.optInt("shortLimit", 20),
+                longRemaining = rate.optInt("longRemaining", 150),
+                longLimit = rate.optInt("longLimit", 150),
+                lockoutSeconds = rate.optLong("lockoutSeconds", 0),
+                exhaustedSeconds = max(weatherExhausted, visualExhausted),
+                usingFallback = rate.optLong("lockoutSeconds", 0) > 0 || weatherExhausted > 0 || visualExhausted > 0
+            )
+        }
     }
 
     suspend fun searchCities(query: String): List<City> {
@@ -87,14 +146,11 @@ class WeatherRepository {
     }
 
     suspend fun fetch(city: City, source: WeatherSource = WeatherSource.OpenMeteo): WeatherBundle {
-        val key = when (source) {
-            WeatherSource.OpenMeteo -> ""
-            WeatherSource.WeatherApi -> SecretKeys.weather()
-            WeatherSource.VisualCrossing -> SecretKeys.visual()
-        }
-        if (key.isEmpty()) return fetchOpenMeteo(city)
+        if (source == WeatherSource.OpenMeteo) return fetchOpenMeteo(city)
+        val base = SecretKeys.baseUrl()
+        if (base.isEmpty()) return fetchOpenMeteo(city)
         return try {
-            fetchAlternative(city, source, key)
+            fetchViaWorker(city, source, base)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -102,14 +158,16 @@ class WeatherRepository {
         }
     }
 
-    private suspend fun fetchAlternative(city: City, source: WeatherSource, key: String): WeatherBundle = coroutineScope {
+    private suspend fun fetchViaWorker(city: City, source: WeatherSource, base: String): WeatherBundle = coroutineScope {
         val air = async { runCatching { airMap(city) }.getOrDefault(emptyMap()) }
         val bundle = try {
             when (source) {
-                WeatherSource.WeatherApi -> WeatherApiProvider { get(it) }.fetch(city, key)
-                else -> VisualCrossingProvider { get(it) }.fetch(city, key)
+                WeatherSource.WeatherApi -> WeatherApiProvider { workerGet(it) }.fetch(city, base)
+                else -> VisualCrossingProvider { workerGet(it) }.fetch(city, base)
             }
         } catch (e: CancellationException) {
+            throw e
+        } catch (e: WorkerLimitException) {
             throw e
         } catch (e: Exception) {
             throw IOException("Provider request failed")
