@@ -143,8 +143,32 @@ data class UsageStatus(
     val weatherResetSeconds: Long = 0,
     val visualUsed: Int = 0,
     val visualLimit: Int = 75,
-    val visualResetSeconds: Long = 0
+    val visualResetSeconds: Long = 0,
+    val weatherMonthUsed: Int = 0,
+    val weatherMonthLimit: Int = 590,
+    val weatherMonthResetSeconds: Long = 0,
+    val visualMonthUsed: Int = 0,
+    val visualMonthLimit: Int = 260,
+    val visualMonthResetSeconds: Long = 0
 ) {
+    fun monthUsedFor(source: WeatherSource): Int = when (source) {
+        WeatherSource.WeatherApi -> weatherMonthUsed
+        WeatherSource.VisualCrossing -> visualMonthUsed
+        else -> 0
+    }
+
+    fun monthLimitFor(source: WeatherSource): Int = when (source) {
+        WeatherSource.WeatherApi -> weatherMonthLimit
+        WeatherSource.VisualCrossing -> visualMonthLimit
+        else -> 0
+    }
+
+    fun monthResetFor(source: WeatherSource): Long = when (source) {
+        WeatherSource.WeatherApi -> weatherMonthResetSeconds
+        WeatherSource.VisualCrossing -> visualMonthResetSeconds
+        else -> 0
+    }
+
     fun usedFor(source: WeatherSource): Int = when (source) {
         WeatherSource.WeatherApi -> weatherUsed
         WeatherSource.VisualCrossing -> visualUsed
