@@ -1,5 +1,6 @@
 package com.catsblock.weather.ui
 
+import com.catsblock.weather.data.WeatherSource
 import com.catsblock.weather.i18n.trx
 import com.catsblock.weather.data.WindUnit
 import com.catsblock.weather.data.PressureUnit
@@ -79,7 +80,7 @@ fun windValue(kmh: Double, unit: WindUnit): Double = kmh * unit.factor
 fun windText(kmh: Double, unit: WindUnit): String = "${windValue(kmh, unit).roundToInt()} ${unit.label}"
 
 fun windCaption(unit: WindUnit): String =
-    if (unit == WindUnit.Kmh) tr("Speed in km/h with direction") else "Speed in ${unit.label} with direction"
+    if (unit == WindUnit.Kmh) tr("Speed in km/h with direction") else tr("Speed in %s with direction").format(unit.label)
 
 fun pressureValue(hpa: Double, unit: PressureUnit): Double = hpa * unit.factor
 
@@ -88,8 +89,20 @@ fun pressureFormat(value: Double, unit: PressureUnit): String =
 
 fun pressureNumber(hpa: Double, unit: PressureUnit): String = pressureFormat(pressureValue(hpa, unit), unit)
 
-fun pressureCaption(unit: PressureUnit): String =
-    if (unit == PressureUnit.Hpa) tr("Hectopascals (hPa)") else unit.title
+fun pressureCaption(unit: PressureUnit): String = tr(unit.title)
+
+fun sourceTitle(source: WeatherSource): String = when (source) {
+    WeatherSource.OpenMeteo -> tr("Open-Meteo (free, no key)")
+    WeatherSource.WeatherApi -> "WeatherAPI.com"
+    WeatherSource.VisualCrossing -> "Visual Crossing Weather"
+}
+
+fun sourceNote(source: WeatherSource, available: Boolean): String = when {
+    !available -> tr("Not available in this build")
+    source == WeatherSource.OpenMeteo -> tr("Default. Free and works without an API key.")
+    source == WeatherSource.WeatherApi -> tr("Forecast from WeatherAPI.com. Free plans cover a shorter forecast range.")
+    else -> tr("Forecast from Visual Crossing. Falls back to Open-Meteo if a request fails.")
+}
 
 fun intervalLabel(minutes: Int): String = trx(
     when (minutes) {
