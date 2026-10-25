@@ -1,0 +1,80 @@
+name: Deploy Cloudflare Worker
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'cloudflare-worker/**'
+      - '.github/workflows/worker-deploy.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: cloudflare-worker
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Wrangler
+        run: npm install -g wrangler@3
+
+      - name: Check required secrets
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "::error::Create the repository secrets CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID."
+            exit 1
+          fi
+
+      - name: Resolve KV namespace
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          LIST_JSON=$(wrangler kv namespace list)
+          EXISTING_ID=$(node -e "
+            const list = JSON.parse(process.argv[1]);
+            const match = list.find(n => n.title === 'catsblock-weather-proxy-APP_KV');
+            process.stdout.write(match ? match.id : '');
+          " "$LIST_JSON")
+          if [ -z "$EXISTING_ID" ]; then
+            CREATE_OUTPUT=$(wrangler kv namespace create APP_KV)
+            EXISTING_ID=$(echo "$CREATE_OUTPUT" | grep -oE '[a-f0-9]{32}' | head -n 1)
+          fi
+          if [ -z "$EXISTING_ID" ]; then
+            echo "::error::Could not resolve the APP_KV namespace id."
+            exit 1
+          fi
+          echo "KV_ID=$EXISTING_ID" >> "$GITHUB_ENV"
+
+      - name: Write wrangler configuration
+        run: |
+          cat > wrangler.toml <<EOF
+          name = "catsblock-weather-proxy"
+          main = "worker.js"
+          compatibility_date = "2024-11-01"
+
+          [[kv_namespaces]]
+          binding = "APP_KV"
+          id = "${KV_ID}"
+          EOF
+
+      - name: Deploy Worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: wrangler deploy
