@@ -25,7 +25,7 @@ import com.catsblock.weather.i18n.tr
 @Composable
 fun UsageStatusBar(status: UsageStatus, source: WeatherSource, modifier: Modifier = Modifier) {
     UsageCard(
-        title = tr(if (source == WeatherSource.WeatherApi) "Weather API" else "Visual API") + " · " + tr("Free limit used"),
+        title = tr(apiName(source)) + " · " + tr("Free limit used"),
         used = status.usedFor(source).coerceAtLeast(0),
         limit = status.limitFor(source),
         resetSeconds = status.resetFor(source).takeIf { it > 0 } ?: status.exhaustedSeconds,
@@ -38,7 +38,7 @@ fun UsageStatusBar(status: UsageStatus, source: WeatherSource, modifier: Modifie
 @Composable
 fun MonthlyUsageBar(status: UsageStatus, source: WeatherSource, modifier: Modifier = Modifier) {
     UsageCard(
-        title = tr(if (source == WeatherSource.WeatherApi) "Weather API" else "Visual API") + " · " + tr("Monthly limit used"),
+        title = tr(apiName(source)) + " · " + tr("Monthly limit used"),
         used = status.monthUsedFor(source).coerceAtLeast(0),
         limit = status.monthLimitFor(source),
         resetSeconds = status.monthResetFor(source),
@@ -103,6 +103,12 @@ private fun UsageCard(
             }
         }
     }
+}
+
+private fun apiName(source: WeatherSource): String = when (source) {
+    WeatherSource.WeatherApi -> "Weather API"
+    WeatherSource.OpenWeather -> "OpenWeather API"
+    else -> "Visual API"
 }
 
 @Composable
