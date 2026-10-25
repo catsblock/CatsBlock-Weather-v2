@@ -3,6 +3,8 @@ package com.catsblock.weather.ui
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas as AndroidCanvas
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
 import android.graphics.Paint
 import android.util.LruCache
 import androidx.compose.animation.core.LinearEasing
@@ -59,6 +61,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -71,6 +74,7 @@ import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.catsblock.weather.data.City
+import com.catsblock.weather.data.MapStyle
 import com.catsblock.weather.i18n.tr
 import java.time.LocalDateTime
 import java.time.ZoneOffset
@@ -122,9 +126,8 @@ object RadarLoader {
     }
 }
 
-private val RainMapBase = Color(0xFFF2EFE9)
-
-private fun osmTileUrl(z: Int, x: Int, y: Int): String = "https://tile.openstreetmap.org/$z/$x/$y.png"
+@Composable
+internal fun rememberDarkMap(): Boolean = MaterialTheme.colorScheme.background.luminance() < 0.5f
 
 private object RadarMapRenderer {
     private val client = OkHttpClient.Builder()
@@ -149,7 +152,7 @@ private object RadarMapRenderer {
         return bmp
     }
 
-    suspend fun render(city: City, zoom: Int, w: Int, h: Int, set: RadarSet?, frame: RadarFrame?): Bitmap = coroutineScope {
+    suspend fun render(city: City, zoom: Int, w: Int, h: Int, set: RadarSet?, frame: RadarFrame?, dark: Boolean): Bitmap = coroutineScope {
         val size = 256
         val n = 1 shl zoom
         val latR = Math.toRadians(city.lat.coerceIn(-85.0, 85.0))
@@ -165,7 +168,7 @@ private object RadarMapRenderer {
             if (y !in 0 until n) continue
             for (dx in -rx..rx) cells.add(Triple(bx + dx, y, Math.floorMod(bx + dx, n)))
         }
-        val base = cells.map { c -> async { c to tile(osmTileUrl(zoom, c.third, c.second)) } }
+        val base = cells.map { c -> async { c to tile(MapStyle.tileUrl(dark, zoom, c.third, c.second)) } }
         val radar = if (set != null && frame != null && zoom <= 7) {
             cells.map { c -> async { c to tile("${set.host}${frame.path}/256/$zoom/${c.third}/${c.second}/2/1_1.png") } }
         } else {
@@ -175,7 +178,12 @@ private object RadarMapRenderer {
         val radarTiles = radar.awaitAll()
         val out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
         val canvas = AndroidCanvas(out)
-        canvas.drawColor(0xFFF2EFE9.toInt())
+        canvas.drawColor(if (dark) MapStyle.DARK_BASE else MapStyle.LIGHT_BASE)
+        val basePaint = if (dark) {
+            Paint(Paint.FILTER_BITMAP_FLAG).apply { colorFilter = ColorMatrixColorFilter(ColorMatrix(MapStyle.DARK_LIFT)) }
+        } else {
+            null
+        }
         val radarPaint = Paint(Paint.FILTER_BITMAP_FLAG).apply { alpha = 204 }
         fun draw(list: List<Pair<Triple<Int, Int, Int>, Bitmap?>>, paint: Paint?) {
             list.forEach { (c, bmp) ->
@@ -186,20 +194,20 @@ private object RadarMapRenderer {
                 }
             }
         }
-        draw(baseTiles, null)
+        draw(baseTiles, basePaint)
         draw(radarTiles, radarPaint)
         out
     }
 }
 
 @Composable
-private fun RainTiles(city: City, zoom: Int, set: RadarSet?, frame: RadarFrame?, modifier: Modifier = Modifier) {
-    BoxWithConstraints(modifier.clipToBounds().background(RainMapBase)) {
+private fun RainTiles(city: City, zoom: Int, set: RadarSet?, frame: RadarFrame?, dark: Boolean, modifier: Modifier = Modifier) {
+    BoxWithConstraints(modifier.clipToBounds().background(Color(if (dark) MapStyle.DARK_BASE else MapStyle.LIGHT_BASE))) {
         val w = constraints.maxWidth
         val h = constraints.maxHeight
         var image by remember { mutableStateOf<ImageBitmap?>(null) }
-        LaunchedEffect(city, zoom, set, frame, w, h) {
-            if (w > 0 && h > 0) image = RadarMapRenderer.render(city, zoom, w, h, set, frame).asImageBitmap()
+        LaunchedEffect(city, zoom, set, frame, w, h, dark) {
+            if (w > 0 && h > 0) image = RadarMapRenderer.render(city, zoom, w, h, set, frame, dark).asImageBitmap()
         }
         image?.let { Image(it, null, Modifier.fillMaxSize(), contentScale = ContentScale.FillBounds) }
     }
@@ -237,6 +245,7 @@ private fun RainPanel(
     val frame = frames.getOrNull(index)
     val last = frames.lastOrNull()
     var zoom by remember { mutableIntStateOf(7) }
+    val dark = rememberDarkMap()
     val pulse by rememberInfiniteTransition(label = "pulse").animateFloat(
         0f,
         1f,
@@ -246,7 +255,7 @@ private fun RainPanel(
     val shape = RoundedCornerShape(if (fullscreen) 0.dp else 18.dp)
     val open = if (fullscreen) Modifier else Modifier.clickable(onClick = onFullscreen)
     Box(modifier.clip(shape).then(open)) {
-        RainTiles(city, zoom, set, frame, Modifier.fillMaxSize())
+        RainTiles(city, zoom, set, frame, dark, Modifier.fillMaxSize())
         Box(
             Modifier
                 .align(Alignment.Center)
@@ -265,9 +274,9 @@ private fun RainPanel(
                 .border(2.dp, Color(0xFF1E88E5), CircleShape)
         )
         Text(
-            "© OpenStreetMap · RainViewer",
+            MapStyle.CREDIT,
             modifier = Modifier.align(Alignment.BottomEnd).padding(end = 8.dp, bottom = 52.dp),
-            color = Color.Black.copy(alpha = 0.55f),
+            color = if (dark) Color.White.copy(alpha = 0.6f) else Color.Black.copy(alpha = 0.55f),
             fontSize = 8.sp
         )
         RainMapButton(
