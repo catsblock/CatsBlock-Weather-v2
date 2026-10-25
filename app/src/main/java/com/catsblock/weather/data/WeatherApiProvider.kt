@@ -120,6 +120,13 @@ internal class WeatherApiProvider(private val get: suspend (String) -> String) {
             visibility = cur.optDouble("vis_km", 10.0) * 1000.0
         )
 
-        return WeatherBundle(current = current, hours = hours, days = days, rain = emptyList(), utcOffsetSeconds = offset)
+        return WeatherBundle(
+            current = current,
+            hours = hours,
+            days = days,
+            rain = emptyList(),
+            utcOffsetSeconds = offset,
+            alerts = GovAlertParser.weatherApi(root)
+        )
     }
 }
