@@ -1,5 +1,6 @@
 package com.catsblock.weather.data
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -85,7 +86,64 @@ class WeatherRepository {
         )
     }
 
-    suspend fun fetch(city: City): WeatherBundle = coroutineScope {
+    suspend fun fetch(city: City, source: WeatherSource = WeatherSource.OpenMeteo): WeatherBundle {
+        val key = when (source) {
+            WeatherSource.OpenMeteo -> ""
+            WeatherSource.WeatherApi -> SecretKeys.weather()
+            WeatherSource.VisualCrossing -> SecretKeys.visual()
+        }
+        if (key.isEmpty()) return fetchOpenMeteo(city)
+        return try {
+            fetchAlternative(city, source, key)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            fetchOpenMeteo(city)
+        }
+    }
+
+    private suspend fun fetchAlternative(city: City, source: WeatherSource, key: String): WeatherBundle = coroutineScope {
+        val air = async { runCatching { airMap(city) }.getOrDefault(emptyMap()) }
+        val bundle = try {
+            when (source) {
+                WeatherSource.WeatherApi -> WeatherApiProvider { get(it) }.fetch(city, key)
+                else -> VisualCrossingProvider { get(it) }.fetch(city, key)
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            throw IOException("Provider request failed")
+        }
+        val aqi = air.await()
+        bundle.copy(
+            current = bundle.current.copy(aqi = aqi[bundle.current.now.truncatedTo(ChronoUnit.HOURS).toString()]),
+            hours = bundle.hours.map { it.copy(aqi = aqi[it.time.toString()]) }
+        )
+    }
+
+    private suspend fun airMap(city: City): Map<String, Double> {
+        val raw = get(
+            url(
+                "https://air-quality-api.open-meteo.com/v1/air-quality",
+                "latitude" to city.lat.toString(),
+                "longitude" to city.lon.toString(),
+                "hourly" to "us_aqi",
+                "timezone" to "auto",
+                "past_days" to "1",
+                "forecast_days" to "7"
+            )
+        )
+        val h = JSONObject(raw).getJSONObject("hourly")
+        val t = h.getJSONArray("time")
+        val v = h.getJSONArray("us_aqi")
+        val map = HashMap<String, Double>()
+        for (i in 0 until t.length()) {
+            if (!v.isNull(i)) map[LocalDateTime.parse(t.getString(i)).toString()] = v.getDouble(i)
+        }
+        return map
+    }
+
+    private suspend fun fetchOpenMeteo(city: City): WeatherBundle = coroutineScope {
         val lat = city.lat.toString()
         val lon = city.lon.toString()
         val forecast = async {
