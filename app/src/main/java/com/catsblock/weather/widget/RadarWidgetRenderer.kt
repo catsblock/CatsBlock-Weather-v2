@@ -54,7 +54,7 @@ object RadarWidgetRenderer {
         return built
     }
 
-    private fun tile(client: OkHttpClient, url: String): Bitmap? = runCatching {
+    private fun fetch(client: OkHttpClient, url: String): Bitmap? = runCatching {
         client.newCall(Request.Builder().url(url).header("User-Agent", "CatsBlockWeather/2.0 (Android)").build())
             .execute()
             .use { response ->
@@ -62,6 +62,9 @@ object RadarWidgetRenderer {
                 else response.body?.bytes()?.let { BitmapFactory.decodeByteArray(it, 0, it.size) }
             }
     }.getOrNull()
+
+    private fun tile(client: OkHttpClient, url: String, fallback: String? = null): Bitmap? =
+        fetch(client, url) ?: fallback?.let { fetch(client, it) }
 
     suspend fun render(context: Context, city: City, widthPx: Int, heightPx: Int, alert: String?, dark: Boolean): Bitmap? = coroutineScope {
         val scale = min(1f, MAX_SIDE.toFloat() / max(widthPx, heightPx).toFloat())
@@ -83,7 +86,7 @@ object RadarWidgetRenderer {
 
         val baseJobs = (y0..y1).filter { it in 0 until n }.flatMap { y ->
             (x0..x1).map { x ->
-                async(Dispatchers.IO) { Triple(x, y, tile(http, MapStyle.tileUrl(dark, ZOOM, Math.floorMod(x, n), y))) }
+                async(Dispatchers.IO) { Triple(x, y, tile(http, MapStyle.tileUrl(dark, ZOOM, Math.floorMod(x, n), y), MapStyle.fallbackUrl(ZOOM, Math.floorMod(x, n), y))) }
             }
         }
 
@@ -106,7 +109,6 @@ object RadarWidgetRenderer {
 
         val baseTiles = baseJobs.awaitAll()
         val radarTiles = radarJobs.awaitAll()
-        if (baseTiles.none { it.third != null }) return@coroutineScope null
 
         val out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(out)
