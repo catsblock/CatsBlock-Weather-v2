@@ -4,6 +4,15 @@ import android.content.Context
 import org.json.JSONObject
 import java.time.OffsetDateTime
 
+data class GovAlert(
+    val event: String,
+    val headline: String,
+    val description: String,
+    val sender: String,
+    val severity: String,
+    val endsEpoch: Long
+)
+
 internal object GovAlertParser {
 
     private fun clean(list: List<GovAlert>): List<GovAlert> =
