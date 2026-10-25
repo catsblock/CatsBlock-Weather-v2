@@ -32,13 +32,15 @@ private val policySections = listOf(
     "Agreement" to
         "By downloading, opening or using CatsBlock Weather, you acknowledge that you have read this Privacy Policy and agree to it. If you do not agree, do not use the App.",
     "No personal data collected" to
-        "CatsBlock Corporation does not collect, store or share any personal data on its own servers. We do not operate servers that receive your information, and the App has no accounts, analytics or advertising.",
+        "CatsBlock Corporation does not collect, store or share any personal data. The App has no accounts, analytics or advertising, and location coordinates are never associated with your identity.",
     "Location permission" to
-        "If you allow location access, your position is used only locally on your device, at runtime, to find the weather where you are. It is never sent to or stored on servers owned by CatsBlock Corporation.",
+        "If you allow location access, your position is used only locally on your device, at runtime, to find the weather where you are. It is never stored on servers owned by CatsBlock Corporation.",
     "Data stored on your device" to
         "Saved cities and your preferences are stored only on your device and can be removed at any time by clearing the App data or uninstalling the App.",
     "Third-party public APIs" to
-        "To show weather, the coordinates of a city are requested from free, public third-party services such as Open-Meteo. Moon images and map tiles are loaded from public providers such as NASA and OpenStreetMap. These services are not operated by CatsBlock Corporation and are governed by their own terms.",
+        "To show weather, city coordinates are requested from free, public third-party services such as Open-Meteo. Moon images and map tiles are loaded from public providers such as NASA and OpenStreetMap. These services are not operated by CatsBlock Corporation and are governed by their own terms.",
+    "Cloudflare Worker proxy" to
+        "When the WeatherAPI.com or Visual Crossing data source is selected in Settings, the App sends the requested coordinates through a Cloudflare Worker operated by CatsBlock Corporation. This proxy exists only to keep API keys off your device and to limit abuse. It temporarily processes your IP address to enforce a request limit, briefly caches the weather response for the requested coordinates to reduce load on upstream providers, and never stores your precise location history, your identity or any data beyond what is strictly needed for that single request. No personal profile is built from this processing. The Open-Meteo data source does not use this proxy.",
     "Disclaimer of liability" to
         "The App is provided \"as is\" and \"as available\", without warranties of any kind. CatsBlock Corporation expressly disclaims all liability for the state, performance, errors, interruptions or availability of the software, and for any decision or loss resulting from its use. The accuracy, completeness and availability of weather data are the exclusive responsibility of the free public APIs used by the App.",
     "No individual support" to
