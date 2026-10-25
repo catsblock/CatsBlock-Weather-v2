@@ -19,6 +19,7 @@ private val N: Map<String, Array<String>> = mapOf(
     n("Weather API", "API Weather", "API Weather", "API Weather", "API Weather", "API Weather", "Weather API"),
     n("Visual API", "API Visual", "API Visual", "API Visual", "API Visual", "API Visual", "Visual API"),
     n("Free limit used", "Limite gratuito usado", "Limite gratuito usado", "Límite gratuito usado", "Limite gratuite utilisée", "Использовано бесплатного лимита", "Kostenloses Limit verbraucht"),
+    n("Monthly limit used", "Limite mensal usado", "Limite mensal usado", "Límite mensual usado", "Limite mensuelle utilisée", "Использовано месячного лимита", "Monatslimit verbraucht"),
     n("requests left", "pedidos restantes", "pedidos restantes", "solicitudes restantes", "requêtes restantes", "запросов осталось", "Anfragen übrig"),
     n("Available again in", "Disponível novamente em", "Disponível novamente em", "Disponible de nuevo en", "De nouveau disponible dans", "Снова доступно через", "Wieder verfügbar in"),
     n("Close", "Fechar", "Fechar", "Cerrar", "Fermer", "Закрыть", "Schließen"),
