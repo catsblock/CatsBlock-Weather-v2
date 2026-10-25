@@ -1,5 +1,7 @@
 package com.catsblock.weather.ui
 
+import com.catsblock.weather.i18n.tr
+import com.catsblock.weather.data.WeatherSource
 import com.catsblock.weather.work.BackgroundUpdates
 import com.catsblock.weather.data.PressureUnit
 import com.catsblock.weather.data.WindUnit
@@ -110,6 +112,17 @@ class WeatherViewModel(private val app: Application) : AndroidViewModel(app) {
                 .distinctUntilChanged()
                 .drop(1)
                 .collect { runCatching { WidgetUpdater.refresh(app) } }
+        }
+        viewModelScope.launch {
+            settings
+                .map { it.weatherSource }
+                .distinctUntilChanged()
+                .drop(1)
+                .collect {
+                    cache.clear()
+                    lastUpdated.clear()
+                    if (city.value != null) refresh(silent = true)
+                }
         }
         viewModelScope.launch {
             settings
@@ -332,14 +345,14 @@ class WeatherViewModel(private val app: Application) : AndroidViewModel(app) {
         runCatching {
             val address = Geocoder(app, Locale.ENGLISH).getFromLocation(lat, lon, 1)?.firstOrNull()
             City(
-                name = address?.locality ?: address?.subAdminArea ?: "Current location",
+                name = address?.locality ?: address?.subAdminArea ?: tr("Current location"),
                 region = address?.adminArea ?: "",
                 country = address?.countryName ?: "",
                 code = address?.countryCode ?: "",
                 lat = lat,
                 lon = lon
             )
-        }.getOrElse { City("Current location", "", "", "", lat, lon) }
+        }.getOrElse { City(tr("Current location"), "", "", "", lat, lon) }
     }
 
     fun refresh(silent: Boolean = false) {
@@ -364,7 +377,7 @@ class WeatherViewModel(private val app: Application) : AndroidViewModel(app) {
             return
         }
         try {
-            val bundle = repo.fetch(target)
+            val bundle = repo.fetch(target, current.weatherSource)
             cache[target.id] = bundle
             lastUpdated[target.id] = SystemClock.elapsedRealtime()
             weather.value = WeatherState.Success(bundle)
@@ -408,6 +421,10 @@ class WeatherViewModel(private val app: Application) : AndroidViewModel(app) {
 
     fun setShowPrecipitation(value: Boolean) {
         viewModelScope.launch { store.setShowPrecipitation(value) }
+    }
+
+    fun setWeatherSource(value: WeatherSource) {
+        viewModelScope.launch { store.setWeatherSource(value) }
     }
 
     fun setWindUnit(value: WindUnit) {
