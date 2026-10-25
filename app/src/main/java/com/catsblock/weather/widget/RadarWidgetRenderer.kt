@@ -144,6 +144,7 @@ object RadarWidgetRenderer {
         }
 
         drawMarker(canvas, w / 2f, h / 2f, density)
+        drawBorder(canvas, w, h, density, dark)
         drawFooter(context, canvas, w, h, density, dark)
         if (!alert.isNullOrBlank()) drawAlert(canvas, w, alert, density)
         out
@@ -164,17 +165,28 @@ object RadarWidgetRenderer {
         }
         val line = TextUtils.ellipsize(text, paint, w - 24f * density, TextUtils.TruncateAt.END).toString()
         canvas.drawText(line, w / 2f, h / 2f + paint.textSize / 3f, paint)
+        drawBorder(canvas, w, h, density, dark)
         return out
     }
 
     private fun drawMarker(canvas: Canvas, cx: Float, cy: Float, density: Float) {
         val paint = Paint(Paint.ANTI_ALIAS_FLAG)
         paint.color = 0x33000000
-        canvas.drawCircle(cx, cy + 1f * density, 11.5f * density, paint)
+        canvas.drawCircle(cx, cy + 0.8f * density, 7f * density, paint)
         paint.color = 0xFFFFFFFF.toInt()
-        canvas.drawCircle(cx, cy, 10f * density, paint)
+        canvas.drawCircle(cx, cy, 6f * density, paint)
         paint.color = 0xFF1E88E5.toInt()
-        canvas.drawCircle(cx, cy, 7f * density, paint)
+        canvas.drawCircle(cx, cy, 4.2f * density, paint)
+    }
+
+    private fun drawBorder(canvas: Canvas, w: Int, h: Int, density: Float, dark: Boolean) {
+        val border = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+            strokeWidth = density
+            color = if (dark) 0x30FFFFFF else 0x30000000
+        }
+        val radius = 22f * density
+        canvas.drawRoundRect(RectF(density / 2f, density / 2f, w - density / 2f, h - density / 2f), radius, radius, border)
     }
 
     private fun drawFooter(context: Context, canvas: Canvas, w: Int, h: Int, density: Float, dark: Boolean) {
