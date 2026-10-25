@@ -43,6 +43,10 @@ jobs:
             echo "::error::Create the repository secrets CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID."
             exit 1
           fi
+          if ! printf '%s' "$CLOUDFLARE_ACCOUNT_ID" | grep -qE '^[a-f0-9]{32}$'; then
+            echo "::error::CLOUDFLARE_ACCOUNT_ID must be only the 32-character hexadecimal Account ID, not a URL."
+            exit 1
+          fi
 
       - name: Resolve KV namespace
         working-directory: cloudflare-worker
@@ -53,11 +57,11 @@ jobs:
           LIST_JSON=$(wrangler kv namespace list)
           EXISTING_ID=$(node -e "
             const list = JSON.parse(process.argv[1]);
-            const match = list.find(n => n.title === 'catsblock-weather-proxy-APP_KV');
+            const match = list.find(n => n.title.endsWith('catsblock-weather-kv'));
             process.stdout.write(match ? match.id : '');
           " "$LIST_JSON")
           if [ -z "$EXISTING_ID" ]; then
-            CREATE_OUTPUT=$(wrangler kv namespace create APP_KV)
+            CREATE_OUTPUT=$(wrangler kv namespace create catsblock-weather-kv)
             EXISTING_ID=$(echo "$CREATE_OUTPUT" | grep -oE '[a-f0-9]{32}' | head -n 1)
           fi
           if [ -z "$EXISTING_ID" ]; then
@@ -70,9 +74,13 @@ jobs:
         working-directory: cloudflare-worker
         run: |
           cat > wrangler.toml <<EOF
-          name = "catsblock-weather-proxy"
+          name = "muddy-frost-4aeb"
           main = "worker.js"
           compatibility_date = "2024-11-01"
+          logpush = false
+
+          [observability]
+          enabled = false
 
           [[kv_namespaces]]
           binding = "APP_KV"
