@@ -21,6 +21,8 @@ val Condition.isWet: Boolean
 val RainLeadOptions: List<Int> = listOf(120, 60, 30, 15)
 val BackgroundIntervalOptions: List<Int> = listOf(30, 60, 120, 240, 480, 840)
 
+enum class WeatherSource { OpenMeteo, WeatherApi, VisualCrossing }
+
 enum class WindUnit(val label: String, val factor: Double) {
     Kmh("km/h", 1.0),
     Mph("mph", 0.621371),
@@ -141,6 +143,7 @@ enum class ThemeMode { System, Light, Dark }
 
 data class AppSettings(
     val fahrenheit: Boolean = false,
+    val weatherSource: WeatherSource = WeatherSource.OpenMeteo,
     val windUnit: WindUnit = WindUnit.Kmh,
     val pressureUnit: PressureUnit = PressureUnit.Hpa,
     val backgroundUpdates: Boolean = true,
