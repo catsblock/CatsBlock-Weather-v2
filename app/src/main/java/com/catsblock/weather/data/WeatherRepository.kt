@@ -39,15 +39,26 @@ class WeatherRepository {
         }
     }
 
+    private fun applyUsage(prev: UsageStatus, path: String, used: Int?, limit: Int?, reset: Long?): UsageStatus {
+        if (used == null || limit == null) return prev
+        val seconds = reset ?: 0L
+        return when {
+            path.endsWith("/v1/weather") -> prev.copy(weatherUsed = used, weatherLimit = limit, weatherResetSeconds = seconds)
+            path.endsWith("/v1/visual") -> prev.copy(visualUsed = used, visualLimit = limit, visualResetSeconds = seconds)
+            else -> prev
+        }
+    }
+
     private suspend fun workerGet(url: String): String = withContext(Dispatchers.IO) {
         client.newCall(Request.Builder().url(url).build()).execute().use { response ->
-            val shortRemaining = response.header("X-RateLimit-Remaining-10m")?.toIntOrNull() ?: 20
-            val shortLimit = response.header("X-RateLimit-Limit-10m")?.toIntOrNull() ?: 20
-            val longRemaining = response.header("X-RateLimit-Remaining-12h")?.toIntOrNull() ?: 150
-            val longLimit = response.header("X-RateLimit-Limit-12h")?.toIntOrNull() ?: 150
+            val prev = _usageStatus.value
+            val shortRemaining = response.header("X-RateLimit-Remaining-10m")?.toIntOrNull() ?: prev.shortRemaining
+            val shortLimit = response.header("X-RateLimit-Limit-10m")?.toIntOrNull() ?: prev.shortLimit
+            val longRemaining = response.header("X-RateLimit-Remaining-12h")?.toIntOrNull() ?: prev.longRemaining
+            val longLimit = response.header("X-RateLimit-Limit-12h")?.toIntOrNull() ?: prev.longLimit
             val lockoutSeconds = response.header("X-Lockout-Seconds")?.toLongOrNull() ?: 0L
             val exhaustedSeconds = response.header("X-Global-Exhausted-Seconds")?.toLongOrNull() ?: 0L
-            _usageStatus.value = UsageStatus(
+            val base = prev.copy(
                 shortRemaining = shortRemaining,
                 shortLimit = shortLimit,
                 longRemaining = longRemaining,
@@ -55,6 +66,13 @@ class WeatherRepository {
                 lockoutSeconds = lockoutSeconds,
                 exhaustedSeconds = exhaustedSeconds,
                 usingFallback = lockoutSeconds > 0 || exhaustedSeconds > 0
+            )
+            _usageStatus.value = applyUsage(
+                base,
+                response.request.url.encodedPath,
+                response.header("X-Provider-Used")?.toIntOrNull(),
+                response.header("X-Provider-Limit")?.toIntOrNull(),
+                response.header("X-Provider-Reset-Seconds")?.toLongOrNull()
             )
             if (!response.isSuccessful) {
                 val wait = max(lockoutSeconds, exhaustedSeconds)
@@ -83,14 +101,24 @@ class WeatherRepository {
             val exhausted = root.getJSONObject("exhausted")
             val weatherExhausted = exhausted.optLong("weather", 0)
             val visualExhausted = exhausted.optLong("visual", 0)
-            _usageStatus.value = UsageStatus(
+            val usage = root.optJSONObject("usage")
+            val weatherUsage = usage?.optJSONObject("weather")
+            val visualUsage = usage?.optJSONObject("visual")
+            val prev = _usageStatus.value
+            _usageStatus.value = prev.copy(
                 shortRemaining = rate.optInt("shortRemaining", 20),
                 shortLimit = rate.optInt("shortLimit", 20),
                 longRemaining = rate.optInt("longRemaining", 150),
                 longLimit = rate.optInt("longLimit", 150),
                 lockoutSeconds = rate.optLong("lockoutSeconds", 0),
                 exhaustedSeconds = max(weatherExhausted, visualExhausted),
-                usingFallback = rate.optLong("lockoutSeconds", 0) > 0 || weatherExhausted > 0 || visualExhausted > 0
+                usingFallback = rate.optLong("lockoutSeconds", 0) > 0 || weatherExhausted > 0 || visualExhausted > 0,
+                weatherUsed = weatherUsage?.optInt("used", prev.weatherUsed) ?: prev.weatherUsed,
+                weatherLimit = weatherUsage?.optInt("limit", prev.weatherLimit) ?: prev.weatherLimit,
+                weatherResetSeconds = weatherUsage?.optLong("resetSeconds", 0) ?: 0L,
+                visualUsed = visualUsage?.optInt("used", prev.visualUsed) ?: prev.visualUsed,
+                visualLimit = visualUsage?.optInt("limit", prev.visualLimit) ?: prev.visualLimit,
+                visualResetSeconds = visualUsage?.optLong("resetSeconds", 0) ?: 0L
             )
         }
     }
