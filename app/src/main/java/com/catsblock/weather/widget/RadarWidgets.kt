@@ -110,7 +110,9 @@ object RadarWidgetUpdater {
                 val bitmap = if (city == null) {
                     RadarWidgetRenderer.placeholder(widthPx, heightPx, tr("Open the app to choose a location"), density, dark)
                 } else {
-                    RadarWidgetRenderer.render(context, city, widthPx, heightPx, GovAlertStore.current(context, city), dark)
+                    runCatching {
+                        RadarWidgetRenderer.render(context, city, widthPx, heightPx, GovAlertStore.current(context, city), dark)
+                    }.getOrNull() ?: RadarWidgetRenderer.placeholder(widthPx, heightPx, "", density, dark)
                 }
                 if (bitmap != null) {
                     val views = RemoteViews(context.packageName, R.layout.widget_image)
