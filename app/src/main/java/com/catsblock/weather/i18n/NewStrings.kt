@@ -10,6 +10,11 @@ private fun n(en: String, br: String, pt: String, es: String, fr: String, ru: St
     en to arrayOf(br, pt, es, fr, ru, de)
 
 private val N: Map<String, Array<String>> = mapOf(
+    n("OpenWeather API", "API OpenWeather", "API OpenWeather", "API OpenWeather", "API OpenWeather", "API OpenWeather", "OpenWeather API"),
+    n("Forecast and government alerts from OpenWeather. Falls back to Open-Meteo if a request fails.", "Previsão e alertas do governo do OpenWeather. Usa o Open-Meteo se um pedido falhar.", "Previsão e alertas do governo do OpenWeather. Usa o Open-Meteo se um pedido falhar.", "Pronóstico y alertas del gobierno de OpenWeather. Usa Open-Meteo si falla una solicitud.", "Prévisions et alertes officielles d'OpenWeather. Repli sur Open-Meteo en cas d'échec d'une requête.", "Прогноз и официальные предупреждения от OpenWeather. При сбое запроса используется Open-Meteo.", "Vorhersage und behördliche Warnungen von OpenWeather. Bei einem Fehler wird Open-Meteo verwendet."),
+    n("Government weather alert", "Alerta meteorológico do governo", "Alerta meteorológico do governo", "Alerta meteorológica del gobierno", "Alerte météo officielle", "Официальное предупреждение о погоде", "Behördliche Wetterwarnung"),
+    n("Government weather alerts", "Alertas meteorológicos do governo", "Alertas meteorológicos do governo", "Alertas meteorológicas del gobierno", "Alertes météo officielles", "Официальные предупреждения о погоде", "Behördliche Wetterwarnungen"),
+    n("Open the app to choose a location", "Abra o app para escolher um local", "Abra a app para escolher um local", "Abre la app para elegir una ubicación", "Ouvrez l'app pour choisir un lieu", "Откройте приложение, чтобы выбрать место", "Öffne die App, um einen Ort zu wählen"),
     n("Your location", "Sua localização", "A sua localização", "Tu ubicación", "Votre position", "Ваше местоположение", "Dein Standort"),
     n("Rain radar", "Radar de chuva", "Radar de chuva", "Radar de lluvia", "Radar de pluie", "Радар осадков", "Regenradar"),
     n("Blowing to", "Soprando para", "A soprar para", "Soplando hacia", "Soufflant vers", "Дует на", "Weht nach"),
