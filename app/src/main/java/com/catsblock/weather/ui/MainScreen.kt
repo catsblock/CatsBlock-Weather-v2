@@ -427,6 +427,7 @@ fun MainScreen(vm: WeatherViewModel) {
             val usageStatus by vm.usageStatus.collectAsStateWithLifecycle()
             UsageStatusBar(
                 status = usageStatus,
+                source = settings.weatherSource,
                 modifier = Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 118.dp)
             )
 
