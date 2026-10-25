@@ -19,6 +19,7 @@ import androidx.work.WorkerParameters
 import com.catsblock.weather.MainActivity
 import com.catsblock.weather.R
 import com.catsblock.weather.data.GovAlertStore
+import com.catsblock.weather.data.MapStyle
 import com.catsblock.weather.data.NetworkPolicy
 import com.catsblock.weather.data.SettingsStore
 import com.catsblock.weather.i18n.I18n
@@ -96,7 +97,9 @@ object RadarWidgetUpdater {
     suspend fun render(context: Context, manager: AppWidgetManager, ids: IntArray, wide: Boolean) {
         withContext(Dispatchers.IO) {
             val store = SettingsStore(context)
-            I18n.lang = store.settings.first().language
+            val settings = store.settings.first()
+            I18n.lang = settings.language
+            val dark = MapStyle.isDark(context, settings.theme)
             val city = store.currentCity.first()
             val density = context.resources.displayMetrics.density
             val click = openApp(context)
@@ -105,9 +108,9 @@ object RadarWidgetUpdater {
                 val widthPx = (widthDp * density).roundToInt()
                 val heightPx = (heightDp * density).roundToInt()
                 val bitmap = if (city == null) {
-                    RadarWidgetRenderer.placeholder(widthPx, heightPx, tr("Open the app to choose a location"), density)
+                    RadarWidgetRenderer.placeholder(widthPx, heightPx, tr("Open the app to choose a location"), density, dark)
                 } else {
-                    RadarWidgetRenderer.render(context, city, widthPx, heightPx, GovAlertStore.current(context, city))
+                    RadarWidgetRenderer.render(context, city, widthPx, heightPx, GovAlertStore.current(context, city), dark)
                 }
                 if (bitmap != null) {
                     val views = RemoteViews(context.packageName, R.layout.widget_image)
