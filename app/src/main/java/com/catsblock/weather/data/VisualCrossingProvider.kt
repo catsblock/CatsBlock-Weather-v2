@@ -118,6 +118,13 @@ internal class VisualCrossingProvider(private val get: suspend (String) -> Strin
             visibility = cur.optDouble("visibility", 10.0) * 1000.0
         )
 
-        return WeatherBundle(current = current, hours = hours, days = days, rain = emptyList(), utcOffsetSeconds = offset)
+        return WeatherBundle(
+            current = current,
+            hours = hours,
+            days = days,
+            rain = emptyList(),
+            utcOffsetSeconds = offset,
+            alerts = GovAlertParser.visual(root)
+        )
     }
 }
