@@ -51,7 +51,7 @@ async function writeJSON(kv, key, value, ttlSeconds) {
 }
 
 function clientIp(request) {
-  return request.headers.get("CF-Connecting-IP") || request.headers.get("X-Forwarded-For") || "0.0.0.0";
+  return request.headers.get("CF-Connecting-IP") || "";
 }
 
 async function peekRateLimit(kv, ip) {
@@ -177,6 +177,7 @@ function upstreamUrl(provider, lat, lon, apiKey) {
 
 async function handleStatus(request, env) {
   const ip = clientIp(request);
+  if (!ip) return jsonResponse({ error: "client_unidentified" }, 400);
   const limitState = await peekRateLimit(env.APP_KV, ip);
   const weatherExhausted = await exhaustedSeconds(env.APP_KV, "weather");
   const visualExhausted = await exhaustedSeconds(env.APP_KV, "visual");
@@ -221,7 +222,12 @@ async function handleProxy(request, env, provider) {
     );
   }
 
-  const limitState = await consumeRateLimit(env.APP_KV, clientIp(request));
+  const ip = clientIp(request);
+  if (!ip) {
+    return jsonResponse({ error: "client_unidentified" }, 400);
+  }
+
+  const limitState = await consumeRateLimit(env.APP_KV, ip);
   if (!limitState.allowed) {
     return jsonResponse(
       { error: "rate_limited", retryAfterSeconds: limitState.lockoutSeconds },
@@ -257,7 +263,13 @@ async function handleProxy(request, env, provider) {
     return jsonResponse({ error: "upstream_error", status: upstreamResponse.status }, 502, rateHeaders(limitState));
   }
 
-  await writeJSON(env.APP_KV, key, JSON.parse(bodyText), CACHE_TTL_S);
+  try {
+    JSON.parse(bodyText);
+  } catch (err) {
+    return jsonResponse({ error: "upstream_invalid_response" }, 502, rateHeaders(limitState));
+  }
+
+  await env.APP_KV.put(key, bodyText, { expirationTtl: CACHE_TTL_S });
 
   return textResponse(bodyText, 200, "application/json; charset=utf-8", Object.assign(rateHeaders(limitState), { "X-Cache": "MISS" }));
 }
