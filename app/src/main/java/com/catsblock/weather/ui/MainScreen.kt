@@ -424,13 +424,6 @@ fun MainScreen(vm: WeatherViewModel) {
                 onSettings = vm::openSettings
             )
 
-            val usageStatus by vm.usageStatus.collectAsStateWithLifecycle()
-            UsageStatusBar(
-                status = usageStatus,
-                source = settings.weatherSource,
-                modifier = Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 118.dp)
-            )
-
             AnimatedVisibility(
                 visible = notice != null,
                 modifier = Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 64.dp),
