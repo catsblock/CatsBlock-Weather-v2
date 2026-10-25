@@ -10,6 +10,7 @@ import android.widget.RemoteViews
 import com.catsblock.weather.MainActivity
 import com.catsblock.weather.R
 import com.catsblock.weather.data.City
+import com.catsblock.weather.data.GovAlertStore
 import com.catsblock.weather.data.SettingsStore
 import com.catsblock.weather.data.WeatherBundle
 import com.catsblock.weather.i18n.I18n
@@ -33,7 +34,9 @@ object WidgetUpdater {
         val icons = listOf(snapshot.kind to snapshot.isDay) +
             snapshot.upcomingHours(24).map { it.kind to it.isDay }
         WidgetIcons.prefetch(app, icons)
+        GovAlertStore.save(app, city, bundle.alerts)
         refresh(app)
+        runCatching { RadarWidgetUpdater.refresh(app) }
     }
 
     suspend fun refresh(context: Context) {
