@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -10,7 +12,7 @@ val buildNum = (project.findProperty("buildNumber") as String?)?.toIntOrNull() ?
 val ksPath: String? = System.getenv("KS_PATH")
 val ksPass: String? = System.getenv("KS_PASS")
 
-val localProps = java.util.Properties().apply {
+val localProps = Properties().apply {
     val file = rootProject.file("local.properties")
     if (file.exists()) file.inputStream().use { load(it) }
 }
