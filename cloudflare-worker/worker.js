@@ -6,6 +6,8 @@ const LONG_LIMIT = 150;
 const CACHE_TTL_S = 600;
 const WEATHER_EXHAUST_MS = 30 * 24 * 60 * 60 * 1000;
 const VISUAL_EXHAUST_MS = 24 * 60 * 60 * 1000;
+const WEATHER_LIMIT = 220;
+const VISUAL_LIMIT = 75;
 
 const SAFE_HEADERS = {
   "Cache-Control": "no-store",
@@ -122,6 +124,48 @@ async function markExhausted(kv, provider, durationMs) {
   await writeJSON(kv, "exhausted:" + provider, { until }, Math.ceil(durationMs / 1000));
 }
 
+function providerLimit(provider) {
+  return provider === "weather" ? WEATHER_LIMIT : VISUAL_LIMIT;
+}
+
+function providerWindow(provider) {
+  return provider === "weather" ? WEATHER_EXHAUST_MS : VISUAL_EXHAUST_MS;
+}
+
+async function peekUsage(kv, provider) {
+  const now = Date.now();
+  const limit = providerLimit(provider);
+  const data = await readJSON(kv, "usage:" + provider);
+  const blocked = await exhaustedSeconds(kv, provider);
+  if (!data || data.reset <= now) {
+    return { used: blocked > 0 ? limit : 0, limit, resetSeconds: blocked };
+  }
+  const used = blocked > 0 ? limit : Math.min(data.count, limit);
+  const resetSeconds = Math.max(blocked, used >= limit ? Math.ceil((data.reset - now) / 1000) : 0);
+  return { used, limit, resetSeconds };
+}
+
+async function recordUsage(kv, provider) {
+  const now = Date.now();
+  const limit = providerLimit(provider);
+  let data = await readJSON(kv, "usage:" + provider);
+  if (!data || data.reset <= now) data = { count: 0, reset: now + providerWindow(provider) };
+  data.count += 1;
+  await writeJSON(kv, "usage:" + provider, data, Math.ceil((data.reset - now) / 1000) + 5);
+  if (data.count >= limit) {
+    await markExhausted(kv, provider, Math.max(1000, data.reset - now));
+  }
+  return data.count;
+}
+
+function usageHeaders(usage) {
+  return {
+    "X-Provider-Used": String(usage.used),
+    "X-Provider-Limit": String(usage.limit),
+    "X-Provider-Reset-Seconds": String(usage.resetSeconds),
+  };
+}
+
 function rateHeaders(limitState) {
   return {
     "X-RateLimit-Remaining-10m": String(limitState.shortRemaining),
@@ -192,8 +236,14 @@ async function handleStatus(request, env) {
   const limitState = await peekRateLimit(env.APP_KV, ip);
   const weatherExhausted = await exhaustedSeconds(env.APP_KV, "weather");
   const visualExhausted = await exhaustedSeconds(env.APP_KV, "visual");
+  const weatherUsage = await peekUsage(env.APP_KV, "weather");
+  const visualUsage = await peekUsage(env.APP_KV, "visual");
   return jsonResponse(
     {
+      usage: {
+        weather: weatherUsage,
+        visual: visualUsage,
+      },
       rateLimit: {
         shortRemaining: limitState.shortRemaining,
         shortLimit: limitState.shortLimit,
@@ -226,10 +276,11 @@ async function handleProxy(request, env, provider) {
   const exhaustDuration = provider === "weather" ? WEATHER_EXHAUST_MS : VISUAL_EXHAUST_MS;
   const remainingExhaust = await exhaustedSeconds(env.APP_KV, provider);
   if (remainingExhaust > 0) {
+    const blockedUsage = await peekUsage(env.APP_KV, provider);
     return jsonResponse(
       { error: "provider_exhausted", provider, retryAfterSeconds: remainingExhaust },
       503,
-      { "X-Global-Exhausted-Seconds": String(remainingExhaust) }
+      Object.assign(usageHeaders(blockedUsage), { "X-Global-Exhausted-Seconds": String(remainingExhaust) })
     );
   }
 
@@ -250,21 +301,31 @@ async function handleProxy(request, env, provider) {
   const key = cacheKey(provider, coords.lat, coords.lon);
   const cached = await env.APP_KV.get(key);
   if (cached) {
-    return textResponse(cached, 200, "application/json; charset=utf-8", Object.assign(rateHeaders(limitState), { "X-Cache": "HIT" }));
+    const cachedUsage = await peekUsage(env.APP_KV, provider);
+    return textResponse(
+      cached,
+      200,
+      "application/json; charset=utf-8",
+      Object.assign(rateHeaders(limitState), usageHeaders(cachedUsage), { "X-Cache": "HIT" })
+    );
   }
 
   let upstreamResponse;
   try {
     upstreamResponse = await fetch(upstreamUrl(provider, coords.lat, coords.lon, apiKey));
   } catch (err) {
-    return jsonResponse({ error: "upstream_unreachable" }, 502, rateHeaders(limitState));
+    const failedUsage = await peekUsage(env.APP_KV, provider);
+    return jsonResponse({ error: "upstream_unreachable" }, 502, Object.assign(rateHeaders(limitState), usageHeaders(failedUsage)));
   }
+  await recordUsage(env.APP_KV, provider);
+  const usage = await peekUsage(env.APP_KV, provider);
+  const metaHeaders = Object.assign(rateHeaders(limitState), usageHeaders(usage));
 
   let bodyText;
   try {
     bodyText = redact(await upstreamResponse.text(), [apiKey]);
   } catch (err) {
-    return jsonResponse({ error: "upstream_unreadable" }, 502, rateHeaders(limitState));
+    return jsonResponse({ error: "upstream_unreadable" }, 502, metaHeaders);
   }
 
   if (!upstreamResponse.ok) {
@@ -273,21 +334,21 @@ async function handleProxy(request, env, provider) {
       return jsonResponse(
         { error: "provider_exhausted", provider, retryAfterSeconds: Math.ceil(exhaustDuration / 1000) },
         503,
-        { "X-Global-Exhausted-Seconds": String(Math.ceil(exhaustDuration / 1000)) }
+        Object.assign({}, metaHeaders, { "X-Global-Exhausted-Seconds": String(Math.ceil(exhaustDuration / 1000)) })
       );
     }
-    return jsonResponse({ error: "upstream_error", status: upstreamResponse.status }, 502, rateHeaders(limitState));
+    return jsonResponse({ error: "upstream_error", status: upstreamResponse.status }, 502, metaHeaders);
   }
 
   try {
     JSON.parse(bodyText);
   } catch (err) {
-    return jsonResponse({ error: "upstream_invalid_response" }, 502, rateHeaders(limitState));
+    return jsonResponse({ error: "upstream_invalid_response" }, 502, metaHeaders);
   }
 
   await env.APP_KV.put(key, bodyText, { expirationTtl: CACHE_TTL_S });
 
-  return textResponse(bodyText, 200, "application/json; charset=utf-8", Object.assign(rateHeaders(limitState), { "X-Cache": "MISS" }));
+  return textResponse(bodyText, 200, "application/json; charset=utf-8", Object.assign({}, metaHeaders, { "X-Cache": "MISS" }));
 }
 
 export default {
