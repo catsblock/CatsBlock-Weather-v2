@@ -81,10 +81,12 @@ fun buildPrecipitationForecast(bundle: WeatherBundle): PrecipitationForecast? {
 
 private fun durationText(minutes: Int): String {
     val m = max(1, minutes)
-    return if (m < 60) "$m min" else {
+    val min = tr("min")
+    val hour = tr("h")
+    return if (m < 60) "$m $min" else {
         val h = m / 60
         val r = m % 60
-        if (r == 0) "$h h" else "$h h $r min"
+        if (r == 0) "$h $hour" else "$h $hour $r $min"
     }
 }
 
