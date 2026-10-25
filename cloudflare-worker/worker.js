@@ -3,11 +3,16 @@ const LONG_WINDOW_MS = 12 * 60 * 60 * 1000;
 const LOCKOUT_MS = 6 * 60 * 60 * 1000;
 const SHORT_LIMIT = 20;
 const LONG_LIMIT = 150;
-const CACHE_TTL_S = 600;
-const WEATHER_EXHAUST_MS = 30 * 24 * 60 * 60 * 1000;
+const CACHE_TTL_S = 900;
+const WEATHER_EXHAUST_MS = 14 * 24 * 60 * 60 * 1000;
+const WEATHER_WINDOW_MS = 4 * 24 * 60 * 60 * 1000;
 const VISUAL_EXHAUST_MS = 24 * 60 * 60 * 1000;
+const VISUAL_WINDOW_MS = 12 * 60 * 60 * 1000;
 const WEATHER_LIMIT = 220;
 const VISUAL_LIMIT = 75;
+const MONTH_MS = 30 * 24 * 60 * 60 * 1000;
+const WEATHER_MONTH_LIMIT = 590;
+const VISUAL_MONTH_LIMIT = 260;
 
 const SAFE_HEADERS = {
   "Cache-Control": "no-store",
@@ -120,8 +125,10 @@ async function exhaustedSeconds(kv, provider) {
 }
 
 async function markExhausted(kv, provider, durationMs) {
-  const until = Date.now() + durationMs;
-  await writeJSON(kv, "exhausted:" + provider, { until }, Math.ceil(durationMs / 1000));
+  const now = Date.now();
+  const current = await readJSON(kv, "exhausted:" + provider);
+  const until = Math.max(now + durationMs, current && current.until > now ? current.until : 0);
+  await writeJSON(kv, "exhausted:" + provider, { until }, Math.ceil((until - now) / 1000));
 }
 
 function providerLimit(provider) {
@@ -129,40 +136,57 @@ function providerLimit(provider) {
 }
 
 function providerWindow(provider) {
+  return provider === "weather" ? WEATHER_WINDOW_MS : VISUAL_WINDOW_MS;
+}
+
+function providerExhaust(provider) {
   return provider === "weather" ? WEATHER_EXHAUST_MS : VISUAL_EXHAUST_MS;
 }
 
-async function peekUsage(kv, provider) {
+function monthlyLimit(provider) {
+  return provider === "weather" ? WEATHER_MONTH_LIMIT : VISUAL_MONTH_LIMIT;
+}
+
+async function peekCounter(kv, key, limit) {
   const now = Date.now();
-  const limit = providerLimit(provider);
-  const data = await readJSON(kv, "usage:" + provider);
-  const blocked = await exhaustedSeconds(kv, provider);
-  if (!data || data.reset <= now) {
-    return { used: blocked > 0 ? limit : 0, limit, resetSeconds: blocked };
+  const data = await readJSON(kv, key);
+  if (!data || data.reset <= now) return { used: 0, limit, resetSeconds: 0 };
+  const used = Math.min(data.count, limit);
+  return { used, limit, resetSeconds: used >= limit ? Math.ceil((data.reset - now) / 1000) : 0 };
+}
+
+async function peekAll(kv, provider) {
+  return {
+    short: await peekCounter(kv, "usage:" + provider, providerLimit(provider)),
+    monthly: await peekCounter(kv, "monthly:" + provider, monthlyLimit(provider)),
+  };
+}
+
+async function recordCounter(kv, key, limit, windowMs, exhaustMs, provider) {
+  const now = Date.now();
+  let data = await readJSON(kv, key);
+  if (!data || data.reset <= now) data = { count: 0, reset: now + windowMs };
+  data.count += 1;
+  if (data.count >= limit) {
+    data.reset = now + exhaustMs;
+    await markExhausted(kv, provider, exhaustMs);
   }
-  const used = blocked > 0 ? limit : Math.min(data.count, limit);
-  const resetSeconds = Math.max(blocked, used >= limit ? Math.ceil((data.reset - now) / 1000) : 0);
-  return { used, limit, resetSeconds };
+  await writeJSON(kv, key, data, Math.ceil((data.reset - now) / 1000) + 5);
 }
 
 async function recordUsage(kv, provider) {
-  const now = Date.now();
-  const limit = providerLimit(provider);
-  let data = await readJSON(kv, "usage:" + provider);
-  if (!data || data.reset <= now) data = { count: 0, reset: now + providerWindow(provider) };
-  data.count += 1;
-  await writeJSON(kv, "usage:" + provider, data, Math.ceil((data.reset - now) / 1000) + 5);
-  if (data.count >= limit) {
-    await markExhausted(kv, provider, Math.max(1000, data.reset - now));
-  }
-  return data.count;
+  await recordCounter(kv, "usage:" + provider, providerLimit(provider), providerWindow(provider), providerExhaust(provider), provider);
+  await recordCounter(kv, "monthly:" + provider, monthlyLimit(provider), MONTH_MS, MONTH_MS, provider);
 }
 
-function usageHeaders(usage) {
+function usageHeaders(all) {
   return {
-    "X-Provider-Used": String(usage.used),
-    "X-Provider-Limit": String(usage.limit),
-    "X-Provider-Reset-Seconds": String(usage.resetSeconds),
+    "X-Provider-Used": String(all.short.used),
+    "X-Provider-Limit": String(all.short.limit),
+    "X-Provider-Reset-Seconds": String(all.short.resetSeconds),
+    "X-Monthly-Used": String(all.monthly.used),
+    "X-Monthly-Limit": String(all.monthly.limit),
+    "X-Monthly-Reset-Seconds": String(all.monthly.resetSeconds),
   };
 }
 
@@ -236,13 +260,17 @@ async function handleStatus(request, env) {
   const limitState = await peekRateLimit(env.APP_KV, ip);
   const weatherExhausted = await exhaustedSeconds(env.APP_KV, "weather");
   const visualExhausted = await exhaustedSeconds(env.APP_KV, "visual");
-  const weatherUsage = await peekUsage(env.APP_KV, "weather");
-  const visualUsage = await peekUsage(env.APP_KV, "visual");
+  const weatherAll = await peekAll(env.APP_KV, "weather");
+  const visualAll = await peekAll(env.APP_KV, "visual");
   return jsonResponse(
     {
       usage: {
-        weather: weatherUsage,
-        visual: visualUsage,
+        weather: weatherAll.short,
+        visual: visualAll.short,
+        monthly: {
+          weather: weatherAll.monthly,
+          visual: visualAll.monthly,
+        },
       },
       rateLimit: {
         shortRemaining: limitState.shortRemaining,
@@ -276,7 +304,7 @@ async function handleProxy(request, env, provider) {
   const exhaustDuration = provider === "weather" ? WEATHER_EXHAUST_MS : VISUAL_EXHAUST_MS;
   const remainingExhaust = await exhaustedSeconds(env.APP_KV, provider);
   if (remainingExhaust > 0) {
-    const blockedUsage = await peekUsage(env.APP_KV, provider);
+    const blockedUsage = await peekAll(env.APP_KV, provider);
     return jsonResponse(
       { error: "provider_exhausted", provider, retryAfterSeconds: remainingExhaust },
       503,
@@ -301,7 +329,7 @@ async function handleProxy(request, env, provider) {
   const key = cacheKey(provider, coords.lat, coords.lon);
   const cached = await env.APP_KV.get(key);
   if (cached) {
-    const cachedUsage = await peekUsage(env.APP_KV, provider);
+    const cachedUsage = await peekAll(env.APP_KV, provider);
     return textResponse(
       cached,
       200,
@@ -314,11 +342,11 @@ async function handleProxy(request, env, provider) {
   try {
     upstreamResponse = await fetch(upstreamUrl(provider, coords.lat, coords.lon, apiKey));
   } catch (err) {
-    const failedUsage = await peekUsage(env.APP_KV, provider);
+    const failedUsage = await peekAll(env.APP_KV, provider);
     return jsonResponse({ error: "upstream_unreachable" }, 502, Object.assign(rateHeaders(limitState), usageHeaders(failedUsage)));
   }
   await recordUsage(env.APP_KV, provider);
-  const usage = await peekUsage(env.APP_KV, provider);
+  const usage = await peekAll(env.APP_KV, provider);
   const metaHeaders = Object.assign(rateHeaders(limitState), usageHeaders(usage));
 
   let bodyText;
