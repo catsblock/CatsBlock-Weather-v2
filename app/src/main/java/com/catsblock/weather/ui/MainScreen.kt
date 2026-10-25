@@ -645,6 +645,7 @@ private fun WeatherDetails(
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     alert?.let { AlertCard(it) }
+                    if (bundle.alerts.isNotEmpty()) GovAlertCard(bundle.alerts, bundle.utcOffsetSeconds)
                     if (settings.showPrecipitation && bundle.rain.isNotEmpty()) PrecipitationCard(bundle)
                     HoursCard(next36, chipDays, today, fahrenheit, chartScroll)
                     if (hubAlerts.isNotEmpty()) HubAlertCard(hubAlerts, { hubSheet = true })
