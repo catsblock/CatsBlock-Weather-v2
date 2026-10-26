@@ -37,6 +37,7 @@ class SettingsStore(private val context: Context) {
         val snowAlerts = booleanPreferencesKey("snow_alerts")
         val snowLead = intPreferencesKey("snow_lead_minutes")
         val updateAlerts = booleanPreferencesKey("update_alerts")
+        val quietHours = booleanPreferencesKey("quiet_hours")
         val saved = stringPreferencesKey("saved_cities")
         val current = stringPreferencesKey("current_city")
     }
@@ -62,7 +63,8 @@ class SettingsStore(private val context: Context) {
             eclipseLeadMinutes = it[Keys.eclipseLead]?.takeIf { value -> value in EclipseLeadOptions } ?: 60,
             snowAlerts = it[Keys.snowAlerts] ?: true,
             snowLeadMinutes = it[Keys.snowLead]?.takeIf { value -> value in SnowLeadOptions } ?: 60,
-            updateAlerts = it[Keys.updateAlerts] ?: true
+            updateAlerts = it[Keys.updateAlerts] ?: true,
+            quietHours = it[Keys.quietHours] ?: true
         )
     }
 
@@ -157,6 +159,10 @@ class SettingsStore(private val context: Context) {
 
     suspend fun setUpdateAlerts(value: Boolean) {
         context.dataStore.edit { it[Keys.updateAlerts] = value }
+    }
+
+    suspend fun setQuietHours(value: Boolean) {
+        context.dataStore.edit { it[Keys.quietHours] = value }
     }
 
     suspend fun saveCities(cities: List<City>) {
