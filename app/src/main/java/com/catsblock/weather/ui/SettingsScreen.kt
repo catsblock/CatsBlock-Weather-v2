@@ -583,6 +583,13 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
                 }
                 GroupDivider()
                 SwitchRow(
+                    tr("Never update weather from 0:30 to 6:00"),
+                    tr("Automatic updates are paused overnight, from 0:30 to 6:00."),
+                    settings.quietHours,
+                    vm::setQuietHours
+                )
+                GroupDivider()
+                SwitchRow(
                     tr("Weather sounds"),
                     tr("Play ambient sounds that match the current weather."),
                     settings.sounds,
