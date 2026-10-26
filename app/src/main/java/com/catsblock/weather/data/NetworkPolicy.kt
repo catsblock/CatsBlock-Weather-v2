@@ -18,6 +18,13 @@ object NetworkPolicy {
             caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)
     }
 
+    fun quietHoursActive(settings: AppSettings): Boolean {
+        if (!settings.quietHours) return false
+        val now = java.util.Calendar.getInstance()
+        val minutes = now.get(java.util.Calendar.HOUR_OF_DAY) * 60 + now.get(java.util.Calendar.MINUTE)
+        return minutes in 30 until 360
+    }
+
     fun foregroundAllowed(context: Context, settings: AppSettings): Boolean =
         settings.mobileData || onWifi(context)
 }
