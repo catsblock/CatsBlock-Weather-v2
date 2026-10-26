@@ -376,6 +376,7 @@ class WeatherViewModel(private val app: Application) : AndroidViewModel(app) {
         val hasData = weather.value is WeatherState.Success
         if (!silent || !hasData) weather.value = WeatherState.Loading
         val current = store.settings.first()
+        if (silent && hasData && NetworkPolicy.quietHoursActive(current)) return
         if (!NetworkPolicy.foregroundAllowed(app, current)) {
             if (!silent || !hasData) {
                 weather.value = WeatherState.Error("Mobile data updates are disabled. Connect to Wi-Fi or enable them in Settings.")
@@ -459,6 +460,10 @@ class WeatherViewModel(private val app: Application) : AndroidViewModel(app) {
 
     fun setBackgroundUpdates(value: Boolean) {
         viewModelScope.launch { store.setBackgroundUpdates(value) }
+    }
+
+    fun setQuietHours(value: Boolean) {
+        viewModelScope.launch { store.setQuietHours(value) }
     }
 
     fun setBackgroundInterval(minutes: Int) {
