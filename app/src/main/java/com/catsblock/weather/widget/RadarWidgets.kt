@@ -56,6 +56,7 @@ abstract class BaseRadarWidget(private val wide: Boolean) : AppWidgetProvider() 
     }
 
     private fun renderAsync(context: Context, manager: AppWidgetManager, ids: IntArray) {
+        RadarWidgetUpdater.showLoadingNow(context.applicationContext, manager, ids, wide)
         val pending = goAsync()
         val app = context.applicationContext
         CoroutineScope(Dispatchers.IO).launch {
@@ -74,8 +75,6 @@ class RadarWideWidget : BaseRadarWidget(true)
 
 object RadarWidgetUpdater {
 
-    private val loaded: MutableSet<Int> = java.util.concurrent.ConcurrentHashMap.newKeySet()
-
     private val providers: List<Pair<Class<*>, Boolean>> = listOf(
         RadarSmallWidget::class.java to false,
         RadarWideWidget::class.java to true
@@ -87,16 +86,42 @@ object RadarWidgetUpdater {
         return providers.any { (provider, _) -> manager.getAppWidgetIds(ComponentName(app, provider)).isNotEmpty() }
     }
 
+    fun showLoadingNow(context: Context, manager: AppWidgetManager, ids: IntArray, wide: Boolean) {
+        val density = context.resources.displayMetrics.density
+        val click = openApp(context)
+        val dark = runCatching {
+            val theme = kotlinx.coroutines.runBlocking { SettingsStore(context).settings.first() }
+            I18n.lang = theme.language
+            MapStyle.isDark(context, theme.theme)
+        }.getOrDefault(false)
+        ids.forEach { id ->
+            runCatching {
+                val (widthDp, heightDp) = sizeOf(context, manager, id, wide)
+                val bitmap = RadarWidgetRenderer.placeholder(
+                    (widthDp * density).roundToInt(),
+                    (heightDp * density).roundToInt(),
+                    tr("Loading radar…"),
+                    density,
+                    dark
+                )
+                val views = RemoteViews(context.packageName, R.layout.widget_image)
+                views.setImageViewBitmap(R.id.widget_image, bitmap)
+                views.setOnClickPendingIntent(R.id.widget_image, click)
+                manager.updateAppWidget(id, views)
+            }
+        }
+    }
+
     suspend fun refresh(context: Context) {
         val app = context.applicationContext
         val manager = AppWidgetManager.getInstance(app)
         providers.forEach { (provider, wide) ->
             val ids = manager.getAppWidgetIds(ComponentName(app, provider))
-            if (ids.isNotEmpty()) render(app, manager, ids, wide)
+            if (ids.isNotEmpty()) render(app, manager, ids, wide, false)
         }
     }
 
-    suspend fun render(context: Context, manager: AppWidgetManager, ids: IntArray, wide: Boolean) {
+    suspend fun render(context: Context, manager: AppWidgetManager, ids: IntArray, wide: Boolean, showLoading: Boolean = true) {
         withContext(Dispatchers.IO) {
             val store = SettingsStore(context)
             val settings = store.settings.first()
@@ -109,7 +134,7 @@ object RadarWidgetUpdater {
                 val (widthDp, heightDp) = sizeOf(context, manager, id, wide)
                 val widthPx = (widthDp * density).roundToInt()
                 val heightPx = (heightDp * density).roundToInt()
-                if (city != null && loaded.add(id)) {
+                if (city != null && showLoading) {
                     val loading = RadarWidgetRenderer.placeholder(widthPx, heightPx, tr("Loading radar…"), density, dark)
                     val loadingViews = RemoteViews(context.packageName, R.layout.widget_image)
                     loadingViews.setImageViewBitmap(R.id.widget_image, loading)
@@ -184,6 +209,7 @@ class RadarWidgetWorker(context: Context, params: WorkerParameters) : CoroutineW
         val app = applicationContext
         val settings = SettingsStore(app).settings.first()
         if (!NetworkPolicy.foregroundAllowed(app, settings)) return Result.success()
+        if (NetworkPolicy.quietHoursActive(settings)) return Result.success()
         return try {
             RadarWidgetUpdater.refresh(app)
             Result.success()
