@@ -36,12 +36,12 @@ float noise3(float3 x) {
 float fbm3(float3 p) {
     float amp = 0.5;
     float sum = 0.0;
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0; i < 2; i++) {
         sum += amp * noise3(p);
         p = p * 2.03 + float3(1.7, 9.2, 3.1);
         amp *= 0.5;
     }
-    return sum / 0.875;
+    return sum / 0.75;
 }
 
 float3 toLinear(float3 c) {
@@ -143,14 +143,14 @@ float3 scene(float2 uv, float2 fragCoord) {
         float ht = 1.7;
         float t0 = hb / rd.y;
         float t1 = ht / rd.y;
-        float dt = (t1 - t0) / 12.0;
+        float dt = (t1 - t0) / 6.0;
         float jit = hash21(fragCoord);
         float dist = clamp((t0 - 1.0) / 20.0, 0.0, 1.0);
         float3 amb = zenith * 0.55 + horizon * 0.25;
         float3 gold = toLinear(float3(255.0, 196.0, 110.0) / 255.0);
         float3 rimC = toLinear(float3(255.0, 140.0, 50.0) / 255.0);
         float sunPow = 1.1 + 0.3 * sin(3.14159 * tod);
-        for (int i = 0; i < 12; i++) {
+        for (int i = 0; i < 6; i++) {
             if (transmit < 0.03) {
                 break;
             }
@@ -159,7 +159,7 @@ float3 scene(float2 uv, float2 fragCoord) {
             float hgt = (p.y - hb) / (ht - hb);
             float d = dens(p, hgt, dist, cirA, altA, genA);
             if (d > 0.005) {
-                float ld = dens(p + sd * 0.28, hgt, dist, cirA, altA, genA);
+                float ld = clamp(d * 1.5 * (1.0 - 0.5 * hgt) + 0.15 * (1.0 - tod), 0.0, 1.0);
                 float beer = exp(-ld * 2.4);
                 float powder = 1.0 - exp(-d * 4.0);
                 float silver = pow(max(dot(rd, sd), 0.0), 6.0) * exp(-ld * 5.0);
