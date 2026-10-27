@@ -21,7 +21,7 @@ import java.io.File
 import java.time.LocalTime
 
 private const val IMAGE_BASE =
-    "https://raw.githubusercontent.com/catsblock/CatsBlock-Weather-v2/main/weather/image/"
+    "https://raw.githubusercontent.com/catsblock/CatsBlock-Weather-v2/main/assets/backgrounds/"
 
 private enum class SkyPhase { Day, Sunrise, Sunset, Night }
 
