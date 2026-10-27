@@ -10,6 +10,7 @@ import androidx.compose.ui.Modifier
 import com.catsblock.weather.data.Condition
 import com.catsblock.weather.data.WeatherDecisionEngine
 import com.catsblock.weather.ui.glass.rainIntensity
+import com.catsblock.weather.ui.glass.snowIntensity
 import java.time.LocalTime
 
 private const val WIND_REFERENCE_KMH = 50.0
@@ -45,6 +46,7 @@ fun AtmosphereSky(
     val tod = WeatherDecisionEngine.timeOfDay(minutes)
     val cover = if (cloudPercent >= 0) cloudPercent / 100f else WeatherDecisionEngine.coverFor(kind)
     val rain = rainIntensity(kind)
+    val snow = snowIntensity(kind)
     val storm = if (kind == Condition.Storm) 1f else 0f
     val wind = (windKmh / WIND_REFERENCE_KMH).toFloat().coerceIn(0f, 1f)
     val alto = WeatherDecisionEngine.altocumulusChance(cover, dayOfYear)
@@ -54,6 +56,7 @@ fun AtmosphereSky(
         state.cover = cover
         state.rain = rain
         state.storm = storm
+        state.snow = snow
         state.wind = wind
         state.altoChance = alto
         state.seed = seed
