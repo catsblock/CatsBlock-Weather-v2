@@ -1,6 +1,7 @@
 package com.catsblock.weather.ui
 
 import com.catsblock.weather.i18n.tr
+import com.catsblock.weather.data.UserKeys
 import com.catsblock.weather.data.WeatherSource
 import com.catsblock.weather.work.BackgroundUpdates
 import com.catsblock.weather.data.PressureUnit
@@ -87,6 +88,10 @@ class WeatherViewModel(private val app: Application) : AndroidViewModel(app) {
     val weather = MutableStateFlow<WeatherState>(WeatherState.Idle)
     val summaries = MutableStateFlow<Map<String, CitySummary>>(emptyMap())
     val settings = store.settings.stateIn(viewModelScope, SharingStarted.Eagerly, AppSettings())
+
+    init {
+        viewModelScope.launch { settings.collect { UserKeys.update(it.apiKeys) } }
+    }
     val savedCities = store.savedCities.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     val queryText = MutableStateFlow("")
@@ -376,7 +381,6 @@ class WeatherViewModel(private val app: Application) : AndroidViewModel(app) {
         val hasData = weather.value is WeatherState.Success
         if (!silent || !hasData) weather.value = WeatherState.Loading
         val current = store.settings.first()
-        if (silent && hasData && NetworkPolicy.quietHoursActive(current)) return
         if (!NetworkPolicy.foregroundAllowed(app, current)) {
             if (!silent || !hasData) {
                 weather.value = WeatherState.Error("Mobile data updates are disabled. Connect to Wi-Fi or enable them in Settings.")
@@ -446,6 +450,15 @@ class WeatherViewModel(private val app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { store.setShowPrecipitation(value) }
     }
 
+    fun setApiKey(source: WeatherSource, value: String) {
+        viewModelScope.launch {
+            store.setApiKey(source, value)
+            UserKeys.update(settings.value.apiKeys.toMutableMap().also { map ->
+                if (value.isBlank()) map.remove(source) else map[source] = value.trim()
+            })
+        }
+    }
+
     fun setWeatherSource(value: WeatherSource) {
         viewModelScope.launch { store.setWeatherSource(value) }
     }
@@ -460,10 +473,6 @@ class WeatherViewModel(private val app: Application) : AndroidViewModel(app) {
 
     fun setBackgroundUpdates(value: Boolean) {
         viewModelScope.launch { store.setBackgroundUpdates(value) }
-    }
-
-    fun setQuietHours(value: Boolean) {
-        viewModelScope.launch { store.setQuietHours(value) }
     }
 
     fun setBackgroundInterval(minutes: Int) {
