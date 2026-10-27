@@ -147,6 +147,7 @@ private sealed interface Sheet {
     data object Humidity : Sheet
     data object Pressure : Sheet
     data object Visibility : Sheet
+    data object Cloud : Sheet
     data object Moon : Sheet
 }
 
@@ -306,7 +307,10 @@ fun MainScreen(vm: WeatherViewModel) {
                     kind,
                     isDay,
                     Modifier.fillMaxSize().blur((progress * 30f).dp, BlurredEdgeTreatment.Unbounded),
-                    bundle?.current?.now?.toLocalTime()
+                    bundle?.current?.now?.toLocalTime(),
+                    bundle?.current?.cloud ?: -1,
+                    bundle?.current?.windSpeed ?: 0.0,
+                    bundle?.current?.now?.dayOfYear ?: 0
                 )
             }
             Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = progress * 0.32f)))
@@ -401,9 +405,6 @@ fun MainScreen(vm: WeatherViewModel) {
             ParticleOverlay(
                 when {
                     bundle == null -> ParticleWeather.None
-                    kind == Condition.Storm -> ParticleWeather.Storm
-                    kind == Condition.Rain -> ParticleWeather.HeavyRain
-                    kind == Condition.Drizzle -> ParticleWeather.Rain
                     kind in snowKinds -> ParticleWeather.Snow
                     else -> ParticleWeather.None
                 },
@@ -671,6 +672,7 @@ private fun WeatherDetails(
                             "Humidity" -> Sheet.Humidity
                             "Pressure" -> Sheet.Pressure
                             "Visibility" -> Sheet.Visibility
+                            "Cloud" -> Sheet.Cloud
                             else -> Sheet.Moon
                         }
                     }
@@ -705,7 +707,18 @@ private fun WeatherDetails(
         MoonCalendarSheet(city, bundle.utcOffsetSeconds, cur.now, onLiveMoon) { sheet = null }
     }
 
-    sheet?.takeIf { it !is Sheet.DaySheet && it !is Sheet.Moon }?.let { current ->
+    if (sheet is Sheet.Cloud) {
+        CardDetailHistoryScreen(
+            title = tr("Cloud cover"),
+            days = remember(bundle) { cloudHistory(bundle.hours, today) },
+            today = today,
+            bandLabel = ::cloudBandLabel,
+            advice = ::cloudAdvice,
+            onBack = { sheet = null }
+        )
+    }
+
+    sheet?.takeIf { it !is Sheet.DaySheet && it !is Sheet.Moon && it !is Sheet.Cloud }?.let { current ->
         val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         ModalBottomSheet(onDismissRequest = { sheet = null }, sheetState = sheetState) {
             Column(
@@ -715,6 +728,7 @@ private fun WeatherDetails(
                 when (current) {
                     is Sheet.DaySheet -> Unit
                     Sheet.Moon -> Unit
+                    Sheet.Cloud -> Unit
                     Sheet.Days -> {
                         Text(tr("Next 7 days"), style = MaterialTheme.typography.titleLarge)
                         Spacer(Modifier.height(12.dp))
