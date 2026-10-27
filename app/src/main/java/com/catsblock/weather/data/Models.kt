@@ -215,6 +215,7 @@ enum class ThemeMode { System, Light, Dark }
 data class AppSettings(
     val fahrenheit: Boolean = false,
     val weatherSource: WeatherSource = WeatherSource.OpenMeteo,
+    val apiKeys: Map<WeatherSource, String> = emptyMap(),
     val windUnit: WindUnit = WindUnit.Kmh,
     val pressureUnit: PressureUnit = PressureUnit.Hpa,
     val backgroundUpdates: Boolean = true,
@@ -232,8 +233,7 @@ data class AppSettings(
     val eclipseLeadMinutes: Int = 60,
     val snowAlerts: Boolean = true,
     val snowLeadMinutes: Int = 60,
-    val updateAlerts: Boolean = true,
-    val quietHours: Boolean = true
+    val updateAlerts: Boolean = true
 )
 
 data class Continent(val title: String, val cities: List<City>)
