@@ -52,7 +52,7 @@ import androidx.compose.ui.window.DialogProperties
 import com.catsblock.weather.i18n.tr
 import java.time.LocalDate
 
-data class HistoryDay(val date: LocalDate, val low: Int, val high: Int, val avg: Int)
+data class HistoryDay(val date: LocalDate, val low: Int, val high: Int, val avg: Int, val hourly: List<Int>)
 
 private val ScreenBackground = Brush.verticalGradient(listOf(Color(0xFF0A0F17), Color(0xFF151C28)))
 private val SurfaceColor = Color(0xFF1B212C)
@@ -189,6 +189,17 @@ fun CardDetailHistoryScreen(
                         }
                     }
                 }
+            }
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(28.dp))
+                    .background(SurfaceColor)
+                    .padding(20.dp)
+            ) {
+                Text(tr("24-hour cloud cover"), color = MutedText, fontSize = 14.sp)
+                Spacer(Modifier.height(8.dp))
+                HourlyCloudChart(day.hourly, day.date)
             }
             Column(
                 Modifier
