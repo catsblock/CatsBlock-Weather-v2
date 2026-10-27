@@ -400,5 +400,8 @@ fun CardsDashboard(
             onClick = { onOpen("Visibility") }
         )
     }
+    if (cur.cloud >= 0) {
+        CloudCoverCard(cur.cloud, bundle.hours, cur.now, Modifier.fillMaxWidth()) { onOpen("Cloud") }
+    }
     if (city != null) MoonCard(city, bundle.utcOffsetSeconds, cur.now) { onOpen("Moon") }
 }
