@@ -65,7 +65,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.catsblock.weather.data.Condition
 import com.catsblock.weather.i18n.tr
-import com.catsblock.weather.i18n.trx
 import com.catsblock.weather.kit.BackgroundKit
 import com.catsblock.weather.kit.IconKit
 import com.catsblock.weather.kit.Slot
@@ -76,13 +75,13 @@ import java.io.File
 private fun Slot.title(): String {
     val base = kind.label(day)
     if (!paired || kind.label(true) != kind.label(false)) return base
-    return base + " · " + trx(if (day) "Day" else "Night")
+    return base + " · " + tr(if (day) "Day" else "Night")
 }
 
 private fun soundTitle(kind: Condition): String = kind.label(kind != Condition.Clear)
 
 private fun rejected(context: Context) {
-    Toast.makeText(context, trx("Could not use that file."), Toast.LENGTH_SHORT).show()
+    Toast.makeText(context, tr("Could not use that file."), Toast.LENGTH_SHORT).show()
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -103,7 +102,7 @@ private fun KitScaffold(
                 },
                 actions = {
                     if (canReset) {
-                        IconButton(onClick = onReset) { Icon(Icons.Rounded.RestartAlt, trx("Reset all")) }
+                        IconButton(onClick = onReset) { Icon(Icons.Rounded.RestartAlt, tr("Reset all")) }
                     }
                 }
             )
@@ -116,10 +115,10 @@ private fun KitScaffold(
 private fun ConfirmReset(message: String, onConfirm: () -> Unit, onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(trx("Reset all")) },
+        title = { Text(tr("Reset all")) },
         text = { Text(message) },
-        confirmButton = { TextButton(onClick = onConfirm) { Text(trx("Reset")) } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(trx("Cancel")) } }
+        confirmButton = { TextButton(onClick = onConfirm) { Text(tr("Reset")) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(tr("Cancel")) } }
     )
 }
 
@@ -216,7 +215,7 @@ private fun EditorSheet(
             }
             Spacer(Modifier.height(8.dp))
             TextButton(onClick = onReset, enabled = canReset, modifier = Modifier.fillMaxWidth()) {
-                Text(trx("Reset to default"))
+                Text(tr("Reset to default"))
             }
         }
     }
@@ -262,7 +261,7 @@ private fun SoundPreview(file: File?) {
         ) {
             Icon(if (playing) Icons.Rounded.Stop else Icons.Rounded.PlayArrow, null, Modifier.size(18.dp))
             Spacer(Modifier.size(8.dp))
-            Text(trx(if (playing) "Stop" else "Preview"))
+            Text(tr(if (playing) "Stop" else "Preview"))
         }
         Spacer(Modifier.height(8.dp))
     }
@@ -278,9 +277,9 @@ private fun IconEditor(vm: WeatherViewModel, slot: Slot, onDismiss: () -> Unit) 
     }
     EditorSheet(
         title = slot.title(),
-        status = trx(if (custom) "Custom" else "Default"),
-        hint = trx("Pick an image to replace this icon in the app and the widgets."),
-        pickLabel = trx("Choose image"),
+        status = tr(if (custom) "Custom" else "Default"),
+        hint = tr("Pick an image to replace this icon in the app and the widgets."),
+        pickLabel = tr("Choose image"),
         pickIcon = Icons.Rounded.Image,
         canReset = custom,
         onPick = { picker.launch(arrayOf("image/*")) },
@@ -301,9 +300,9 @@ private fun BackgroundEditor(vm: WeatherViewModel, slot: Slot, onDismiss: () -> 
     }
     EditorSheet(
         title = slot.title(),
-        status = trx(if (custom) "Custom" else "Default"),
-        hint = trx("Pick an image or GIF to use as this background."),
-        pickLabel = trx("Choose image or GIF"),
+        status = tr(if (custom) "Custom" else "Default"),
+        hint = tr("Pick an image or GIF to use as this background."),
+        pickLabel = tr("Choose image or GIF"),
         pickIcon = Icons.Rounded.Image,
         canReset = custom,
         onPick = { picker.launch(arrayOf("image/*")) },
@@ -326,9 +325,9 @@ private fun SoundEditor(vm: WeatherViewModel, kind: Condition, onDismiss: () -> 
     }
     EditorSheet(
         title = soundTitle(kind),
-        status = trx(if (file != null) "Custom" else "Default"),
-        hint = trx("Pick an MP3 to play for this weather."),
-        pickLabel = trx("Choose MP3"),
+        status = tr(if (file != null) "Custom" else "Default"),
+        hint = tr("Pick an MP3 to play for this weather."),
+        pickLabel = tr("Choose MP3"),
         pickIcon = Icons.Rounded.MusicNote,
         canReset = file != null,
         onPick = { picker.launch(arrayOf("audio/*")) },
@@ -348,7 +347,7 @@ fun IconKitScreen(vm: WeatherViewModel) {
     var confirm by remember { mutableStateOf(false) }
     val anyCustom = remember(version) { iconSlots.any { IconKit.hasCustom(context, it) } }
 
-    KitScaffold(trx("Weather Icon Kit"), vm::back, anyCustom, { confirm = true }) { padding ->
+    KitScaffold(tr("Weather Icon Kit"), vm::back, anyCustom, { confirm = true }) { padding ->
         LazyVerticalGrid(
             columns = GridCells.Adaptive(104.dp),
             contentPadding = PaddingValues(
@@ -362,7 +361,7 @@ fun IconKitScreen(vm: WeatherViewModel) {
             modifier = Modifier.fillMaxSize()
         ) {
             item(span = { GridItemSpan(maxLineSpan) }) {
-                SectionHeader(null, trx("Tap an icon to replace it. Changes apply to the app and the widgets."))
+                SectionHeader(null, tr("Tap an icon to replace it. Changes apply to the app and the widgets."))
             }
             items(iconSlots, key = { it.key }) { slot ->
                 val custom = remember(version) { IconKit.hasCustom(context, slot) }
@@ -377,7 +376,7 @@ fun IconKitScreen(vm: WeatherViewModel) {
 
     if (confirm) {
         ConfirmReset(
-            trx("All custom icons will be removed."),
+            tr("All custom icons will be removed."),
             { confirm = false; vm.resetAllIcons() },
             { confirm = false }
         )
@@ -396,7 +395,7 @@ fun BackgroundKitScreen(vm: WeatherViewModel) {
             Condition.entries.any { BackgroundKit.sound(context, it) != null }
     }
 
-    KitScaffold(trx("Weather Background Kit"), vm::back, anyCustom, { confirm = true }) { padding ->
+    KitScaffold(tr("Weather Background Kit"), vm::back, anyCustom, { confirm = true }) { padding ->
         LazyVerticalGrid(
             columns = GridCells.Adaptive(104.dp),
             contentPadding = PaddingValues(
@@ -410,7 +409,7 @@ fun BackgroundKitScreen(vm: WeatherViewModel) {
             modifier = Modifier.fillMaxSize()
         ) {
             item(span = { GridItemSpan(maxLineSpan) }) {
-                SectionHeader(trx("Backgrounds"), trx("Pick an image or an animated GIF for each weather."))
+                SectionHeader(tr("Backgrounds"), tr("Pick an image or an animated GIF for each weather."))
             }
             items(backgroundSlots, key = { "bg_" + it.key }) { slot ->
                 val custom = remember(version) { BackgroundKit.hasVisual(context, slot) }
@@ -421,7 +420,7 @@ fun BackgroundKitScreen(vm: WeatherViewModel) {
                 }
             }
             item(span = { GridItemSpan(maxLineSpan) }) {
-                SectionHeader(trx("Sounds"), trx("Pick an MP3 to play as the ambient sound for each weather."))
+                SectionHeader(tr("Sounds"), tr("Pick an MP3 to play as the ambient sound for each weather."))
             }
             items(Condition.entries, key = { "snd_" + it.name }) { kind ->
                 val custom = remember(version) { BackgroundKit.sound(context, kind) != null }
@@ -441,7 +440,7 @@ fun BackgroundKitScreen(vm: WeatherViewModel) {
 
     if (confirm) {
         ConfirmReset(
-            trx("All custom backgrounds and sounds will be removed."),
+            tr("All custom backgrounds and sounds will be removed."),
             { confirm = false; vm.resetAllBackgrounds() },
             { confirm = false }
         )
