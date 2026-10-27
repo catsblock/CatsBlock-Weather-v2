@@ -495,6 +495,10 @@ class WeatherViewModel(private val app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { store.setSounds(value) }
     }
 
+    fun setDisableShaders(value: Boolean) {
+        viewModelScope.launch { store.setDisableShaders(value) }
+    }
+
     fun setRainAlerts(value: Boolean) {
         viewModelScope.launch { store.setRainAlerts(value) }
     }
