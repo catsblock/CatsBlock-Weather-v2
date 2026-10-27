@@ -236,7 +236,8 @@ data class AppSettings(
     val eclipseLeadMinutes: Int = 60,
     val snowAlerts: Boolean = true,
     val snowLeadMinutes: Int = 60,
-    val updateAlerts: Boolean = true
+    val updateAlerts: Boolean = true,
+    val disableShaders: Boolean = false
 )
 
 data class Continent(val title: String, val cities: List<City>)
