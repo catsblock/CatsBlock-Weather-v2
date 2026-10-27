@@ -411,6 +411,13 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
                     settings.sounds,
                     vm::setSounds
                 )
+                GroupDivider()
+                SwitchRow(
+                    tr("Disable shaders"),
+                    tr("Turn off the real-time shader graphics, including realistic clouds and rain on glass, to save battery and improve performance."),
+                    settings.disableShaders,
+                    vm::setDisableShaders
+                )
             }
 
             GroupLabel(tr("Customization"))
