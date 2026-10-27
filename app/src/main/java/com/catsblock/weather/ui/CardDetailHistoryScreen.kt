@@ -1,256 +1,218 @@
 package com.catsblock.weather.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.ArrowBack
-import androidx.compose.material.icons.rounded.ChevronLeft
-import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Shield
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.key
-import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import com.catsblock.weather.R
-import com.catsblock.weather.atmosphere.WeatherHistoryRecord
-import com.catsblock.weather.atmosphere.WeatherMetric
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import com.catsblock.weather.i18n.tr
 import java.time.LocalDate
-import java.time.format.DateTimeFormatter
-import java.util.Locale
-import kotlin.math.roundToInt
 
-private data class DailyMetricSummary(
-    val date: LocalDate,
-    val average: Double?,
-    val peak: Double?,
-    val sampleCount: Int
-)
+data class HistoryDay(val date: LocalDate, val low: Int, val high: Int, val avg: Int)
+
+private val ScreenBackground = Brush.verticalGradient(listOf(Color(0xFF0A0F17), Color(0xFF151C28)))
+private val SurfaceColor = Color(0xFF1B212C)
+private val TrackColor = Color(0x1FFFFFFF)
+private val PillTop = Color(0xFFE3EEF8)
+private val PillBottom = Color(0xFF7F9FC0)
+private val MutedText = Color(0x99FFFFFF)
+private val DisabledIcon = Color(0x44FFFFFF)
+
+private fun Modifier.pill(selected: Boolean, low: Int, high: Int, avg: Int): Modifier = drawWithCache {
+    val w = size.width
+    val h = size.height
+    val segTop = (h * (1f - high / 100f)).coerceAtMost(h - w)
+    val segBottom = (h * (1f - low / 100f)).coerceAtLeast(segTop + w)
+    val radius = CornerRadius(w / 2f, w / 2f)
+    val brush = Brush.verticalGradient(listOf(PillTop, PillBottom), segTop, segBottom)
+    val dot = Offset(w / 2f, (h * (1f - avg / 100f)).coerceIn(segTop + w / 2f, segBottom - w / 2f))
+    val dotRadius = w * 0.22f
+    val trackSize = Size(w, h)
+    val segSize = Size(w, segBottom - segTop)
+    val segOrigin = Offset(0f, segTop)
+    val alpha = if (selected) 1f else 0.5f
+    onDrawBehind {
+        drawRoundRect(TrackColor, size = trackSize, cornerRadius = radius)
+        drawRoundRect(brush, topLeft = segOrigin, size = segSize, cornerRadius = radius, alpha = alpha)
+        if (selected) drawCircle(Color.White, dotRadius, dot)
+    }
+}
+
+@Composable
+private fun CircleButton(icon: ImageVector, description: String, enabled: Boolean, onClick: () -> Unit) {
+    Box(
+        Modifier
+            .size(40.dp)
+            .clip(CircleShape)
+            .background(SurfaceColor)
+            .clickable(enabled = enabled, onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(icon, description, Modifier.size(22.dp), tint = if (enabled) Color.White else DisabledIcon)
+    }
+}
 
 @Composable
 fun CardDetailHistoryScreen(
-    metric: WeatherMetric,
-    records: List<WeatherHistoryRecord>,
-    initialDate: LocalDate,
+    title: String,
+    days: List<HistoryDay>,
+    today: LocalDate,
+    bandLabel: (Int) -> String,
+    advice: (Int) -> String,
     onBack: () -> Unit
 ) {
-    var selectedDate by remember(metric, initialDate) { mutableStateOf(initialDate) }
-    val today = initialDate
-    val week = remember(metric, records, selectedDate) {
-        (-6..0).map { offset ->
-            val date = selectedDate.plusDays(offset.toLong())
-            val values = records.filter { it.timestamp.toLocalDate() == date }.map { it.value(metric) }
-            DailyMetricSummary(
-                date = date,
-                average = values.takeIf { it.isNotEmpty() }?.average(),
-                peak = values.maxOrNull(),
-                sampleCount = values.size
-            )
-        }
+    if (days.isEmpty()) {
+        LaunchedEffect(Unit) { onBack() }
+        return
     }
-    val selectedRecords = remember(metric, records, selectedDate) {
-        records.filter { it.timestamp.toLocalDate() == selectedDate }
-    }
-    val selectedPeak = selectedRecords.maxByOrNull { it.value(metric) }
-    val dateText = remember(selectedDate) {
-        selectedDate.format(DateTimeFormatter.ofPattern("EEEE, MMM d", Locale.getDefault()))
-    }
-    val availableValues = week.mapNotNull { it.average }
-    val minValue = availableValues.minOrNull() ?: 0.0
-    val maxValue = availableValues.maxOrNull() ?: 1.0
-    val span = (maxValue - minValue).takeIf { it > 0.0001 } ?: 1.0
-
-    Column(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+    var index by remember { mutableIntStateOf(0) }
+    val safeIndex = index.coerceIn(0, days.lastIndex)
+    val day = days[safeIndex]
+    val weekLow = days.minOf { it.avg }
+    val weekHigh = days.maxOf { it.avg }
+    Dialog(
+        onDismissRequest = onBack,
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onBack) {
-                Icon(Icons.Rounded.ArrowBack, contentDescription = stringResource(R.string.back))
-            }
-            Spacer(Modifier.width(4.dp))
-            Column(Modifier.weight(1f)) {
-                Text(stringResource(metric.titleRes), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-                Text(stringResource(R.string.history_screen_subtitle), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
-
-        Card(
-            shape = RoundedCornerShape(24.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)
+        Column(
+            Modifier
+                .fillMaxSize()
+                .background(ScreenBackground)
+                .statusBarsPadding()
+                .navigationBarsPadding()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                CircleButton(Icons.AutoMirrored.Rounded.ArrowBack, tr("Back"), true, onBack)
+                Spacer(Modifier.width(14.dp))
+                Text(title, color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
+            }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                CircleButton(
+                    Icons.AutoMirrored.Rounded.KeyboardArrowLeft,
+                    tr("Previous day"),
+                    safeIndex > 0
+                ) { index = safeIndex - 1 }
+                Text(
+                    "${dayLabel(day.date, today)}, ${dateLabel(day.date)}",
+                    modifier = Modifier.weight(1f),
+                    color = Color.White,
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.Medium,
+                    textAlign = TextAlign.Center
+                )
+                CircleButton(
+                    Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                    tr("Next day"),
+                    safeIndex < days.lastIndex
+                ) { index = safeIndex + 1 }
+            }
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(28.dp))
+                    .background(SurfaceColor)
+                    .padding(20.dp)
             ) {
-                IconButton(onClick = { selectedDate = selectedDate.minusDays(1) }) {
-                    Icon(Icons.Rounded.ChevronLeft, contentDescription = stringResource(R.string.previous_day))
-                }
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(dateText, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                    Text(
-                        stringResource(R.string.history_observation_count, selectedRecords.size),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                IconButton(onClick = { if (selectedDate < today) selectedDate = selectedDate.plusDays(1) }, enabled = selectedDate < today) {
-                    Icon(Icons.Rounded.ChevronRight, contentDescription = stringResource(R.string.next_day))
-                }
-            }
-        }
-
-        Card(
-            shape = RoundedCornerShape(28.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
-        ) {
-            Column(Modifier.fillMaxWidth().padding(18.dp)) {
-                Text(stringResource(R.string.history_weekly_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Text("$weekLow%–$weekHigh%", color = Color.White, fontSize = 30.sp, fontWeight = FontWeight.Light)
+                Text(tr("Range this week"), color = MutedText, fontSize = 14.sp)
                 Spacer(Modifier.height(16.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth().height(164.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.Bottom
-                ) {
-                    week.forEach { day ->
-                        key(day.date) {
-                            val normalized = day.average?.let { ((it - minValue) / span).toFloat().coerceIn(0f, 1f) } ?: 0f
-                            val barHeight = if (day.average == null) 8.dp else (30f + normalized * 92f).dp
-                            Column(
-                                modifier = Modifier.weight(1f).height(164.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.Bottom
-                            ) {
-                                if (day.peak != null) {
-                                    Text(
-                                        formatMetric(day.peak, metric),
-                                        style = MaterialTheme.typography.labelSmall,
-                                        textAlign = TextAlign.Center,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        maxLines = 1
-                                    )
-                                    Spacer(Modifier.height(5.dp))
-                                } else {
-                                    Spacer(Modifier.height(18.dp))
-                                }
-                                Box(
-                                    Modifier
-                                        .width(20.dp)
-                                        .height(barHeight)
-                                        .background(
-                                            if (day.date == selectedDate) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondaryContainer,
-                                            RoundedCornerShape(50)
-                                        )
-                                )
-                                Spacer(Modifier.height(8.dp))
-                                Text(
-                                    day.date.format(DateTimeFormatter.ofPattern("EE", Locale.getDefault())),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = if (day.date == selectedDate) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    days.forEachIndexed { i, entry ->
+                        Column(
+                            Modifier
+                                .weight(1f)
+                                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
+                                    index = i
+                                },
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Box(
+                                Modifier
+                                    .width(26.dp)
+                                    .height(132.dp)
+                                    .pill(i == safeIndex, entry.low, entry.high, entry.avg)
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                weekdayLabel(entry.date.atStartOfDay()),
+                                color = if (i == safeIndex) Color.White else MutedText,
+                                fontSize = 12.sp,
+                                fontWeight = if (i == safeIndex) FontWeight.SemiBold else FontWeight.Normal
+                            )
                         }
                     }
                 }
-                if (selectedRecords.isEmpty()) {
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        stringResource(R.string.history_no_observations),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
             }
-        }
-
-        Card(
-            shape = RoundedCornerShape(28.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
-        ) {
-            Column(Modifier.fillMaxWidth().padding(20.dp)) {
-                Text(stringResource(R.string.history_peak_title), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onPrimaryContainer)
-                Spacer(Modifier.height(8.dp))
-                Row(verticalAlignment = Alignment.Bottom) {
-                    Text(
-                        selectedPeak?.let { formatPrimaryValue(it.value(metric), metric) } ?: stringResource(R.string.history_no_value),
-                        style = MaterialTheme.typography.headlineLarge,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(stringResource(metric.unitRes), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(bottom = 6.dp), color = MaterialTheme.colorScheme.onPrimaryContainer)
-                }
-                Text(
-                    selectedPeak?.timestamp?.format(DateTimeFormatter.ofPattern("HH:mm", Locale.getDefault()))
-                        ?.let { stringResource(R.string.history_peak_time, it) }
-                        ?: stringResource(R.string.history_peak_empty),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer
-                )
-                if (metric == WeatherMetric.CloudCover && selectedPeak?.cloudCoverEstimated == true) {
-                    Spacer(Modifier.height(6.dp))
-                    Text(stringResource(R.string.history_estimated_data), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimaryContainer)
-                }
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(28.dp))
+                    .background(SurfaceColor)
+                    .padding(20.dp)
+            ) {
+                Text(tr("Peak cloud cover"), color = MutedText, fontSize = 14.sp)
+                Text("${day.high}%", color = Color.White, fontSize = 56.sp, fontWeight = FontWeight.Light)
+                Text(bandLabel(day.high), color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Medium)
             }
-        }
-
-        Surface(
-            shape = RoundedCornerShape(24.dp),
-            color = MaterialTheme.colorScheme.surfaceContainerHigh
-        ) {
             Row(
-                modifier = Modifier.fillMaxWidth().padding(18.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(28.dp))
+                    .background(SurfaceColor)
+                    .padding(20.dp),
                 verticalAlignment = Alignment.Top
             ) {
-                Icon(Icons.Rounded.Shield, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(26.dp))
-                Column {
-                    Text(stringResource(R.string.history_technical_guidance), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                    Spacer(Modifier.height(5.dp))
-                    Text(stringResource(metric.guidanceRes), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
+                Icon(Icons.Rounded.Shield, null, Modifier.size(24.dp), tint = Color(0xFF9FC4E8))
+                Spacer(Modifier.width(14.dp))
+                Text(advice(day.high), color = Color.White, fontSize = 15.sp, lineHeight = 22.sp)
             }
         }
     }
-}
-
-@Composable
-private fun formatMetric(value: Double, metric: WeatherMetric): String = when (metric) {
-    WeatherMetric.CloudCover, WeatherMetric.Humidity -> "${value.roundToInt()}${stringResource(R.string.percent_symbol)}"
-    WeatherMetric.Pressure -> value.roundToInt().toString()
-    WeatherMetric.Temperature -> value.roundToInt().toString()
-    WeatherMetric.Wind -> value.roundToInt().toString()
-    WeatherMetric.Precipitation -> "%.1f".format(Locale.getDefault(), value)
-    WeatherMetric.UvIndex -> "%.1f".format(Locale.getDefault(), value)
-}
-
-private fun formatPrimaryValue(value: Double, metric: WeatherMetric): String = when (metric) {
-    WeatherMetric.CloudCover, WeatherMetric.Humidity, WeatherMetric.Pressure, WeatherMetric.Temperature, WeatherMetric.Wind -> value.roundToInt().toString()
-    WeatherMetric.Precipitation, WeatherMetric.UvIndex -> "%.1f".format(Locale.getDefault(), value)
 }
