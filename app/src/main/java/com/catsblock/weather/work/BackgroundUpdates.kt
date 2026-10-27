@@ -22,6 +22,7 @@ import com.catsblock.weather.data.NetworkPolicy
 import com.catsblock.weather.update.AppUpdates
 import com.catsblock.weather.data.SettingsStore
 import com.catsblock.weather.data.WeatherBus
+import com.catsblock.weather.data.UserKeys
 import com.catsblock.weather.data.WeatherRepository
 import com.catsblock.weather.widget.WidgetUpdater
 import kotlinx.coroutines.CancellationException
@@ -75,8 +76,8 @@ class WeatherWorker(context: Context, params: WorkerParameters) : CoroutineWorke
         val app = applicationContext
         val store = SettingsStore(app)
         val settings = store.settings.first()
+        UserKeys.update(settings.apiKeys)
         if (!NetworkPolicy.foregroundAllowed(app, settings)) return Result.success()
-        if (!inputData.getBoolean(BackgroundUpdates.KEY_MANUAL, false) && NetworkPolicy.quietHoursActive(settings)) return Result.success()
         runCatching { AppUpdates.check(app) }
         val city = store.currentCity.first() ?: return Result.success()
         return try {
