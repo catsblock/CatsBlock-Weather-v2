@@ -101,7 +101,8 @@ internal class OpenWeatherProvider(private val get: suspend (String) -> String) 
                     uv = o.optDouble("uvi", 0.0),
                     aqi = null,
                     pressure = o.optDouble("pressure", 1013.0),
-                    visibility = o.optDouble("visibility", 10000.0)
+                    visibility = o.optDouble("visibility", 10000.0),
+                    cloud = if (o.has("clouds")) o.optInt("clouds", -1) else -1
                 )
             }
         }
@@ -124,7 +125,8 @@ internal class OpenWeatherProvider(private val get: suspend (String) -> String) 
             uv = cur.optDouble("uvi", 0.0),
             aqi = null,
             pressure = cur.optDouble("pressure", 1013.0),
-            visibility = cur.optDouble("visibility", 10000.0)
+            visibility = cur.optDouble("visibility", 10000.0),
+            cloud = if (cur.has("clouds")) cur.optInt("clouds", -1) else -1
         )
 
         return WeatherBundle(
