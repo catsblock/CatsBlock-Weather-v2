@@ -23,7 +23,7 @@ import com.catsblock.weather.data.SettingsStore
 import com.catsblock.weather.data.WeatherBundle
 import com.catsblock.weather.data.isWet
 import com.catsblock.weather.i18n.I18n
-import com.catsblock.weather.i18n.trx
+import com.catsblock.weather.i18n.tr
 import kotlinx.coroutines.flow.first
 import java.time.LocalDateTime
 import java.time.ZoneOffset
@@ -105,7 +105,7 @@ object RainAlerts {
     fun ensureChannel(context: Context) {
         val manager = context.getSystemService(NotificationManager::class.java) ?: return
         manager.createNotificationChannel(
-            NotificationChannel(CHANNEL, trx("Rain alerts"), NotificationManager.IMPORTANCE_HIGH)
+            NotificationChannel(CHANNEL, tr("Rain alerts"), NotificationManager.IMPORTANCE_HIGH)
         )
     }
 
@@ -145,8 +145,8 @@ object RainAlerts {
 
     internal fun duration(minutes: Int): String {
         val rounded = ((minutes + 2) / 5 * 5).coerceAtLeast(5)
-        val hours = trx("h")
-        val mins = trx("min")
+        val hours = tr("h")
+        val mins = tr("min")
         return when {
             rounded < 60 -> "$rounded $mins"
             rounded % 60 == 0 -> "${rounded / 60} $hours"
@@ -177,7 +177,7 @@ object RainAlerts {
         val city = p.getString(KEY_NAME, "").orEmpty()
         val body = String.format(
             settings.language.locale,
-            trx("Rain is expected in %1\$s in about %2\$s."),
+            tr("Rain is expected in %1\$s in about %2\$s."),
             city,
             duration(minutes)
         )
@@ -192,7 +192,7 @@ object RainAlerts {
         )
         val notification = NotificationCompat.Builder(app, CHANNEL)
             .setSmallIcon(R.drawable.ic_stat_rain)
-            .setContentTitle(trx("Rain is on the way"))
+            .setContentTitle(tr("Rain is on the way"))
             .setContentText(body)
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
