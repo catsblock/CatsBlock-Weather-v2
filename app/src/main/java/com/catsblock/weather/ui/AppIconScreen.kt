@@ -48,7 +48,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.catsblock.weather.i18n.tr
-import com.catsblock.weather.i18n.trx
 import com.catsblock.weather.kit.AppIconKit
 import kotlinx.coroutines.launch
 
@@ -66,7 +65,7 @@ fun AppIconScreen(vm: WeatherViewModel) {
         if (uri != null) {
             scope.launch {
                 if (!AppIconKit.import(context, uri)) {
-                    Toast.makeText(context, trx("Could not use that file."), Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, tr("Could not use that file."), Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -75,7 +74,7 @@ fun AppIconScreen(vm: WeatherViewModel) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(trx("App icon changer")) },
+                title = { Text(tr("App icon changer")) },
                 navigationIcon = {
                     IconButton(onClick = vm::back) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, tr("Back")) }
                 }
@@ -110,13 +109,13 @@ fun AppIconScreen(vm: WeatherViewModel) {
             }
             Spacer(Modifier.height(16.dp))
             Text(
-                trx(if (file != null) "Custom" else "Default"),
+                tr(if (file != null) "Custom" else "Default"),
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.primary
             )
             Spacer(Modifier.height(8.dp))
             Text(
-                trx("Pick an image to use as the app icon. It is added to the home screen as a shortcut, and the original icon stays in the app drawer."),
+                tr("Pick an image to use as the app icon. It is added to the home screen as a shortcut, and the original icon stays in the app drawer."),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center
@@ -125,7 +124,7 @@ fun AppIconScreen(vm: WeatherViewModel) {
             Button(onClick = { picker.launch(arrayOf("image/*")) }, modifier = Modifier.fillMaxWidth()) {
                 Icon(Icons.Rounded.Image, null, Modifier.size(18.dp))
                 Spacer(Modifier.size(8.dp))
-                Text(trx("Choose image"))
+                Text(tr("Choose image"))
             }
             if (file != null) {
                 Spacer(Modifier.height(8.dp))
@@ -134,7 +133,7 @@ fun AppIconScreen(vm: WeatherViewModel) {
                         if (!AppIconKit.apply(context)) {
                             Toast.makeText(
                                 context,
-                                trx("Could not add the icon to the home screen."),
+                                tr("Could not add the icon to the home screen."),
                                 Toast.LENGTH_SHORT
                             ).show()
                         }
@@ -144,13 +143,13 @@ fun AppIconScreen(vm: WeatherViewModel) {
                 ) {
                     Icon(Icons.Rounded.AppShortcut, null, Modifier.size(18.dp))
                     Spacer(Modifier.size(8.dp))
-                    Text(trx("Add to home screen"))
+                    Text(tr("Add to home screen"))
                 }
             }
             if (!supported) {
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    trx("Your launcher does not support adding icons to the home screen."),
+                    tr("Your launcher does not support adding icons to the home screen."),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error,
                     textAlign = TextAlign.Center
@@ -162,7 +161,7 @@ fun AppIconScreen(vm: WeatherViewModel) {
                 enabled = file != null || AppIconKit.hasShortcut(context),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text(trx("Reset to default"))
+                Text(tr("Reset to default"))
             }
         }
     }
@@ -170,15 +169,15 @@ fun AppIconScreen(vm: WeatherViewModel) {
     if (confirm) {
         AlertDialog(
             onDismissRequest = { confirm = false },
-            title = { Text(trx("Reset all")) },
-            text = { Text(trx("The custom app icon will be removed.")) },
+            title = { Text(tr("Reset all")) },
+            text = { Text(tr("The custom app icon will be removed.")) },
             confirmButton = {
                 TextButton(onClick = {
                     confirm = false
                     scope.launch { AppIconKit.reset(context) }
-                }) { Text(trx("Reset")) }
+                }) { Text(tr("Reset")) }
             },
-            dismissButton = { TextButton(onClick = { confirm = false }) { Text(trx("Cancel")) } }
+            dismissButton = { TextButton(onClick = { confirm = false }) { Text(tr("Cancel")) } }
         )
     }
 }
