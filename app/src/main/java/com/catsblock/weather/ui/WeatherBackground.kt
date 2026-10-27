@@ -1,5 +1,7 @@
 package com.catsblock.weather.ui
 
+import android.annotation.SuppressLint
+import android.os.Build
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -17,6 +19,7 @@ import coil.compose.AsyncImage
 import com.catsblock.weather.data.Condition
 import com.catsblock.weather.kit.BackgroundKit
 import com.catsblock.weather.media.MediaCache
+import com.catsblock.weather.ui.atmosphere.AtmosphereSky
 import java.io.File
 import java.time.LocalTime
 
@@ -87,26 +90,33 @@ private fun backgroundGradient(kind: Condition, isDay: Boolean): List<Color> {
     }
 }
 
+@SuppressLint("NewApi")
 @Composable
 fun WeatherBackground(
     kind: Condition,
     isDay: Boolean,
     modifier: Modifier = Modifier,
-    time: LocalTime? = null
+    time: LocalTime? = null,
+    cloud: Int = -1,
+    windKmh: Double = 0.0,
+    dayOfYear: Int = 0
 ) {
     val context = LocalContext.current
     val version by BackgroundKit.version.collectAsState()
     val custom = remember(kind, isDay, version) { BackgroundKit.visual(context, kind, isDay) }
     val phase = skyPhase(time, isDay)
+    val procedural = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && isDay && custom == null
     val imageUrl = defaultImageUrl(kind, phase)
-    val downloaded by produceState<File?>(null, imageUrl, custom) {
+    val downloaded by produceState<File?>(null, imageUrl, custom, procedural) {
         value = null
-        if (custom == null) value = MediaCache.fetch(context, listOf(imageUrl))
+        if (custom == null && !procedural) value = MediaCache.fetch(context, listOf(imageUrl))
     }
     val file = custom ?: downloaded
     Box(modifier) {
         Box(Modifier.fillMaxSize().background(Brush.verticalGradient(backgroundGradient(kind, isDay))))
-        if (file != null) {
+        if (procedural) {
+            AtmosphereSky(kind, cloud, windKmh, time, dayOfYear, Modifier.fillMaxSize())
+        } else if (file != null) {
             AsyncImage(
                 model = file,
                 contentDescription = null,
