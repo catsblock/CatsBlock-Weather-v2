@@ -23,6 +23,7 @@ object I18n {
 
 fun tr(en: String): String {
     val l = I18n.lang
+    formal(en)?.let { return it[l.ordinal] }
     if (l == AppLanguage.English) return en
     return T[en]?.getOrNull(l.ordinal - 1) ?: extra(en) ?: en
 }
