@@ -582,4 +582,4 @@ private val cloudStrings: Map<String, Array<out String>> = mapOf(
 )
 
 private val table: Map<String, Array<out String>> =
-    commonStrings + forecastStrings + featureStrings + policyStrings + cloudStrings + policyTable
+    commonStrings + forecastStrings + featureStrings + policyStrings + cloudStrings + policyTable + shaderTable
