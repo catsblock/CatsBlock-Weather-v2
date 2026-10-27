@@ -10,6 +10,7 @@ import com.catsblock.weather.ui.atmosphere.glassRain
 import kotlin.random.Random
 
 val LocalRainIntensity = compositionLocalOf { 0f }
+val LocalSnowIntensity = compositionLocalOf { 0f }
 
 fun rainIntensity(kind: Condition): Float = when (kind) {
     Condition.Drizzle -> 0.35f
@@ -20,9 +21,16 @@ fun rainIntensity(kind: Condition): Float = when (kind) {
     else -> 0f
 }
 
+fun snowIntensity(kind: Condition): Float = when (kind) {
+    Condition.Snow -> 0.5f
+    Condition.HeavySnow -> 0.85f
+    Condition.Blizzard -> 1f
+    else -> 0f
+}
+
 @Composable
-fun Modifier.rainDrops(intensity: Float): Modifier {
-    if (intensity <= 0f || Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return this
+fun Modifier.rainDrops(intensity: Float, snow: Float = 0f): Modifier {
+    if ((intensity <= 0f && snow <= 0f) || Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return this
     val seed = remember { Random.nextFloat() * 40f }
-    return this.glassRain(intensity, seed)
+    return this.glassRain(intensity, seed, snow)
 }
