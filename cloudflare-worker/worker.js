@@ -324,7 +324,8 @@ async function handleProxy(request, env, provider) {
     return jsonResponse({ error: "invalid_coordinates" }, 400);
   }
 
-  const apiKey = provider === "weather" ? env.WEATHER_API_KEY : provider === "openweather" ? env.OPENWEATHER_API_KEY : env.VISUAL_API_KEY;
+  const userKey = (request.headers.get("X-Api-Key") || "").trim();
+  const apiKey = userKey || (provider === "weather" ? env.WEATHER_API_KEY : provider === "openweather" ? env.OPENWEATHER_API_KEY : env.VISUAL_API_KEY);
   if (!apiKey) {
     return jsonResponse({ error: "provider_unconfigured" }, 500);
   }
