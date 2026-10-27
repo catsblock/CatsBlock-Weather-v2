@@ -225,6 +225,7 @@ data class AppSettings(
     val showLifeIndex: Boolean = true,
     val showPrecipitation: Boolean = true,
     val mobileData: Boolean = true,
+    val quietHours: Boolean = true,
     val sounds: Boolean = true,
     val language: AppLanguage = AppLanguage.English,
     val rainAlerts: Boolean = true,
