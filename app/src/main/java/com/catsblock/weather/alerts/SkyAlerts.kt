@@ -23,7 +23,7 @@ import com.catsblock.weather.data.City
 import com.catsblock.weather.data.SettingsStore
 import com.catsblock.weather.data.WeatherBundle
 import com.catsblock.weather.i18n.I18n
-import com.catsblock.weather.i18n.trx
+import com.catsblock.weather.i18n.tr
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
@@ -152,18 +152,18 @@ object EclipseAlerts : LeadAlert(
     requestCode = 8,
     tolerance = 60 * 60_000L
 ) {
-    override fun channelName() = trx("Eclipse alerts")
+    override fun channelName() = tr("Eclipse alerts")
     override fun enabled(settings: AppSettings) = settings.eclipseAlerts
     override fun leadMinutes(settings: AppSettings) = settings.eclipseLeadMinutes
 
     override fun title(kind: Int) =
-        if (kind == EclipseType.Solar.ordinal) trx("Solar eclipse ahead") else trx("Lunar eclipse ahead")
+        if (kind == EclipseType.Solar.ordinal) tr("Solar eclipse ahead") else tr("Lunar eclipse ahead")
 
     override fun body(kind: Int, city: String, minutes: Int): String {
         val template = if (kind == EclipseType.Solar.ordinal) {
-            trx("A solar eclipse will be visible in %1\$s in about %2\$s.")
+            tr("A solar eclipse will be visible in %1\$s in about %2\$s.")
         } else {
-            trx("A lunar eclipse will be visible in %1\$s in about %2\$s.")
+            tr("A lunar eclipse will be visible in %1\$s in about %2\$s.")
         }
         return String.format(I18n.lang.locale, template, city, RainAlerts.duration(minutes))
     }
@@ -189,14 +189,14 @@ object SnowAlerts : LeadAlert(
     requestCode = 9,
     tolerance = 30 * 60_000L
 ) {
-    override fun channelName() = trx("Snow alerts")
+    override fun channelName() = tr("Snow alerts")
     override fun enabled(settings: AppSettings) = settings.snowAlerts
     override fun leadMinutes(settings: AppSettings) = settings.snowLeadMinutes
 
-    override fun title(kind: Int) = trx("Snow is on the way")
+    override fun title(kind: Int) = tr("Snow is on the way")
 
     override fun body(kind: Int, city: String, minutes: Int): String =
-        String.format(I18n.lang.locale, trx("Snow is expected in %1\$s in about %2\$s."), city, RainAlerts.duration(minutes))
+        String.format(I18n.lang.locale, tr("Snow is expected in %1\$s in about %2\$s."), city, RainAlerts.duration(minutes))
 
     override fun newRequest(delayMs: Long): OneTimeWorkRequest =
         delayedRequest(OneTimeWorkRequestBuilder<SnowAlertWorker>(), delayMs)
