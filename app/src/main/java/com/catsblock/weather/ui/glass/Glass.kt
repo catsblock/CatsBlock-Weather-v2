@@ -95,3 +95,4 @@ fun Modifier.frostedGlassCard(
         ),
         shape
     )
+    .rainDrops(LocalRainIntensity.current)
