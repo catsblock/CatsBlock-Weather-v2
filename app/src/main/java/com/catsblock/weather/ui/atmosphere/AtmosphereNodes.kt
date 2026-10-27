@@ -75,7 +75,7 @@ private class AtmosphereNode(var state: AtmosphereState) : Modifier.Node(), Draw
     }
 
     override fun onAttach() {
-        val created = RuntimeShader(AtmosphereAgsl.SOURCE)
+        val created = runCatching { RuntimeShader(AtmosphereAgsl.SOURCE) }.getOrNull() ?: return
         shader = created
         brush = ShaderBrush(created)
         layer = requireGraphicsContext().createGraphicsLayer().apply {
@@ -141,7 +141,7 @@ private class GlassRainNode(var intensity: Float, var seed: Float) : Modifier.No
     private var time = 0f
 
     override fun onAttach() {
-        val created = RuntimeShader(AtmosphereAgsl.GLASS)
+        val created = runCatching { RuntimeShader(AtmosphereAgsl.GLASS) }.getOrNull() ?: return
         shader = created
         brush = ShaderBrush(created)
         coroutineScope.launch {
