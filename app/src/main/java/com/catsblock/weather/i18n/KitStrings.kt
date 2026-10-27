@@ -2,6 +2,7 @@ package com.catsblock.weather.i18n
 
 fun trx(en: String): String {
     val l = I18n.lang
+    formal(en)?.let { return it[l.ordinal] }
     if (l == AppLanguage.English) return en
     return X[en]?.getOrNull(l.ordinal - 1) ?: extra(en) ?: en
 }
