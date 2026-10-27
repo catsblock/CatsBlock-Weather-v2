@@ -127,6 +127,8 @@ import com.catsblock.weather.ui.glass.EntranceCounter
 import com.catsblock.weather.ui.glass.LocalEntrance
 import com.catsblock.weather.ui.glass.LocalHazeState
 import com.catsblock.weather.ui.glass.LocalRainIntensity
+import com.catsblock.weather.ui.glass.LocalSnowIntensity
+import com.catsblock.weather.ui.glass.snowIntensity
 import com.catsblock.weather.ui.glass.rainIntensity
 import com.catsblock.weather.ui.glass.hazeBackdropSource
 import com.catsblock.weather.ui.particles.ParticleOverlay
@@ -644,7 +646,8 @@ private fun WeatherDetails(
         CompositionLocalProvider(
             LocalGlass provides true,
             LocalEntrance provides entrance,
-            LocalRainIntensity provides rainIntensity(cur.kind)
+            LocalRainIntensity provides rainIntensity(cur.kind),
+            LocalSnowIntensity provides snowIntensity(cur.kind)
         ) {
             MaterialTheme(colorScheme = glassScheme, typography = MaterialTheme.typography, shapes = MaterialTheme.shapes) {
                 Column(
