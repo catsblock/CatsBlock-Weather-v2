@@ -487,6 +487,10 @@ class WeatherViewModel(private val app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { store.setMobileData(value) }
     }
 
+    fun setQuietHours(value: Boolean) {
+        viewModelScope.launch { store.setQuietHours(value) }
+    }
+
     fun setSounds(value: Boolean) {
         viewModelScope.launch { store.setSounds(value) }
     }
