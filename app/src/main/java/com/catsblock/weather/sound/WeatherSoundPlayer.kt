@@ -17,7 +17,7 @@ import kotlinx.coroutines.withContext
 
 private const val WIND_BASE = "https://actions.google.com/sounds/v1/weather/"
 private const val RAIN_URL =
-    "https://raw.githubusercontent.com/catsblock/CatsBlock-Weather-v2/main/sounds/rain-sound.mp3"
+    "https://raw.githubusercontent.com/catsblock/CatsBlock-Weather-v2/main/assets/sounds/rain-sound.mp3"
 private const val CUSTOM_VOLUME = 0.8f
 
 private data class Track(val urls: List<String>, val volume: Float)
