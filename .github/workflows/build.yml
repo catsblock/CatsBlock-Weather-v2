@@ -63,7 +63,7 @@ jobs:
           DEBIAN_FRONTEND: noninteractive
           NEEDRESTART_MODE: a
         run: |
-          ICON="Image/Appicon/Icon.jpg"
+          ICON="assets/appicon/Icon.jpg"
           if [ ! -f "$ICON" ]; then
             echo "::warning::$ICON was not found; keeping the bundled vector icon."
             exit 0
