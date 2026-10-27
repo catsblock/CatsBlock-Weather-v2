@@ -29,12 +29,24 @@ private val compassDe = arrayOf(
     "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"
 )
 
+private val compassKo = arrayOf(
+    "북", "북북동", "북동", "동북동", "동", "동남동", "남동", "남남동",
+    "남", "남남서", "남서", "서남서", "서", "서북서", "북서", "북북서"
+)
+
+private val compassId = arrayOf(
+    "U", "UUTL", "TL", "TTL", "T", "TTG", "TG", "STG",
+    "S", "SBD", "BD", "BBD", "B", "BBL", "BL", "UBL"
+)
+
 private fun compass(): Array<String> = when (I18n.lang) {
     AppLanguage.English -> compassEn
     AppLanguage.PtBR, AppLanguage.PtPT -> compassPt
-    AppLanguage.Spanish, AppLanguage.French -> compassEs
+    AppLanguage.Spanish, AppLanguage.French, AppLanguage.Italian -> compassEs
     AppLanguage.Russian -> compassRu
     AppLanguage.German -> compassDe
+    AppLanguage.Korean -> compassKo
+    AppLanguage.Indonesian -> compassId
 }
 
 fun compassLabel(deg: Double): String {
