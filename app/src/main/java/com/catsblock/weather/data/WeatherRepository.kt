@@ -214,7 +214,10 @@ class WeatherRepository {
         )
     }
 
-    suspend fun fetch(city: City, source: WeatherSource = WeatherSource.OpenMeteo): WeatherBundle {
+    suspend fun fetch(city: City, source: WeatherSource = WeatherSource.OpenMeteo): WeatherBundle =
+        WeatherDecisionEngine.apply(fetchRaw(city, source))
+
+    private suspend fun fetchRaw(city: City, source: WeatherSource): WeatherBundle {
         if (source == WeatherSource.OpenMeteo) return fetchOpenMeteo(city)
         val base = SecretKeys.baseUrl()
         if (base.isEmpty()) return fetchOpenMeteo(city)
@@ -302,7 +305,7 @@ class WeatherRepository {
                     "latitude" to lat,
                     "longitude" to lon,
                     "current" to "temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,is_day,wind_speed_10m,wind_direction_10m",
-                    "hourly" to "temperature_2m,apparent_temperature,relative_humidity_2m,precipitation,weather_code,wind_speed_10m,wind_direction_10m,uv_index,is_day,pressure_msl,visibility",
+                    "hourly" to "temperature_2m,apparent_temperature,relative_humidity_2m,precipitation,weather_code,wind_speed_10m,wind_direction_10m,uv_index,is_day,pressure_msl,visibility,cloud_cover",
                     "minutely_15" to "precipitation",
                     "forecast_minutely_15" to "48",
                     "daily" to "weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,sunrise,sunset,uv_index_max",
@@ -356,6 +359,7 @@ class WeatherRepository {
         val isDay = hourly.getJSONArray("is_day")
         val pressureArr = hourly.getJSONArray("pressure_msl")
         val visArr = hourly.getJSONArray("visibility")
+        val cloudArr = hourly.optJSONArray("cloud_cover")
 
         val hours = (0 until times.length()).map { i ->
             val time = LocalDateTime.parse(times.getString(i))
@@ -372,7 +376,8 @@ class WeatherRepository {
                 uv = uv.optDouble(i, 0.0),
                 aqi = aqiMap[time.toString()],
                 pressure = pressureArr.optDouble(i, 1013.0),
-                visibility = visArr.optDouble(i, 10000.0)
+                visibility = visArr.optDouble(i, 10000.0),
+                cloud = if (cloudArr != null && !cloudArr.isNull(i)) cloudArr.optInt(i, -1) else -1
             )
         }
 
@@ -421,7 +426,8 @@ class WeatherRepository {
             uv = hourNow?.uv ?: 0.0,
             aqi = aqiMap[nowKey],
             pressure = hourNow?.pressure ?: 1013.0,
-            visibility = hourNow?.visibility ?: 10000.0
+            visibility = hourNow?.visibility ?: 10000.0,
+            cloud = hourNow?.cloud ?: -1
         )
 
         WeatherBundle(
