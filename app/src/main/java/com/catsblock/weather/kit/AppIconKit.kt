@@ -15,7 +15,7 @@ import androidx.core.content.pm.ShortcutManagerCompat
 import androidx.core.graphics.drawable.IconCompat
 import com.catsblock.weather.MainActivity
 import com.catsblock.weather.R
-import com.catsblock.weather.i18n.trx
+import com.catsblock.weather.i18n.tr
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -71,7 +71,7 @@ object AppIconKit {
     private fun disablePrevious(context: Context) {
         val previous = prefs(context).getString("shortcut_id", null) ?: return
         runCatching {
-            ShortcutManagerCompat.disableShortcuts(context, listOf(previous), trx("This icon was removed"))
+            ShortcutManagerCompat.disableShortcuts(context, listOf(previous), tr("This icon was removed"))
             ShortcutManagerCompat.removeDynamicShortcuts(context, listOf(previous))
         }
         prefs(context).edit().remove("shortcut_id").apply()
