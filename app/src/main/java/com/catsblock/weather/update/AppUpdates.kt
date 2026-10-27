@@ -28,7 +28,7 @@ import com.catsblock.weather.MainActivity
 import com.catsblock.weather.R
 import com.catsblock.weather.data.SettingsStore
 import com.catsblock.weather.i18n.I18n
-import com.catsblock.weather.i18n.trx
+import com.catsblock.weather.i18n.tr
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -64,7 +64,7 @@ object AppUpdates {
     fun ensureChannel(context: Context) {
         val manager = context.getSystemService(NotificationManager::class.java) ?: return
         manager.createNotificationChannel(
-            NotificationChannel(CHANNEL, trx("App updates"), NotificationManager.IMPORTANCE_HIGH)
+            NotificationChannel(CHANNEL, tr("App updates"), NotificationManager.IMPORTANCE_HIGH)
         )
     }
 
@@ -118,7 +118,7 @@ object AppUpdates {
         I18n.lang = settings.language
         ensureChannel(app)
 
-        val body = String.format(settings.language.locale, trx("Version %1\$s is ready to download."), info.versionName)
+        val body = String.format(settings.language.locale, tr("Version %1\$s is ready to download."), info.versionName)
         val open = PendingIntent.getActivity(
             app,
             10,
@@ -141,14 +141,14 @@ object AppUpdates {
         )
         val notification = NotificationCompat.Builder(app, CHANNEL)
             .setSmallIcon(R.drawable.ic_stat_update)
-            .setContentTitle(trx("New app update"))
+            .setContentTitle(tr("New app update"))
             .setContentText(body)
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setContentIntent(open)
             .setAutoCancel(true)
-            .addAction(0, trx("Later"), later)
-            .addAction(0, trx("Update"), update)
+            .addAction(0, tr("Later"), later)
+            .addAction(0, tr("Update"), update)
             .build()
         manager.notify(NOTIFICATION_ID, notification)
         prefs.edit { putInt(KEY_NOTIFIED, info.build) }
@@ -217,14 +217,14 @@ class UpdateReceiver : BroadcastReceiver() {
                         )
                         val text = String.format(
                             I18n.lang.locale,
-                            trx("Tap to install version %1\$s."),
+                            tr("Tap to install version %1\$s."),
                             name
                         )
                         manager.notify(
                             AppUpdates.RESULT_ID,
                             NotificationCompat.Builder(app, AppUpdates.channelId())
                                 .setSmallIcon(R.drawable.ic_stat_update)
-                                .setContentTitle(trx("Update ready"))
+                                .setContentTitle(tr("Update ready"))
                                 .setContentText(text)
                                 .setPriority(NotificationCompat.PRIORITY_HIGH)
                                 .setContentIntent(pending)
@@ -237,8 +237,8 @@ class UpdateReceiver : BroadcastReceiver() {
                         AppUpdates.RESULT_ID,
                         NotificationCompat.Builder(app, AppUpdates.channelId())
                             .setSmallIcon(R.drawable.ic_stat_update)
-                            .setContentTitle(trx("Update failed"))
-                            .setContentText(trx("The update could not be installed. Try again from Settings."))
+                            .setContentTitle(tr("Update failed"))
+                            .setContentText(tr("The update could not be installed. Try again from Settings."))
                             .setPriority(NotificationCompat.PRIORITY_HIGH)
                             .setAutoCancel(true)
                             .build()
@@ -256,7 +256,7 @@ class UpdateDownloadWorker(context: Context, params: WorkerParameters) : Corouti
     private fun progressNotification(name: String, progress: Int) =
         NotificationCompat.Builder(applicationContext, AppUpdates.channelId())
             .setSmallIcon(R.drawable.ic_stat_update)
-            .setContentTitle(trx("Downloading update..."))
+            .setContentTitle(tr("Downloading update..."))
             .setContentText(name)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
@@ -309,11 +309,11 @@ class UpdateDownloadWorker(context: Context, params: WorkerParameters) : Corouti
                 AppUpdates.RESULT_ID,
                 NotificationCompat.Builder(app, AppUpdates.channelId())
                     .setSmallIcon(R.drawable.ic_stat_update)
-                    .setContentTitle(trx("Allow installing updates"))
-                    .setContentText(trx("Allow this app to install updates, then tap Update again."))
+                    .setContentTitle(tr("Allow installing updates"))
+                    .setContentText(tr("Allow this app to install updates, then tap Update again."))
                     .setPriority(NotificationCompat.PRIORITY_HIGH)
                     .setContentIntent(pending)
-                    .addAction(0, trx("Update"), retry)
+                    .addAction(0, tr("Update"), retry)
                     .setAutoCancel(true)
                     .build()
             )
@@ -334,8 +334,8 @@ class UpdateDownloadWorker(context: Context, params: WorkerParameters) : Corouti
                 AppUpdates.RESULT_ID,
                 NotificationCompat.Builder(app, AppUpdates.channelId())
                     .setSmallIcon(R.drawable.ic_stat_update)
-                    .setContentTitle(trx("Update failed"))
-                    .setContentText(trx("The update could not be installed. Try again from Settings."))
+                    .setContentTitle(tr("Update failed"))
+                    .setContentText(tr("The update could not be installed. Try again from Settings."))
                     .setPriority(NotificationCompat.PRIORITY_HIGH)
                     .setAutoCancel(true)
                     .build()
