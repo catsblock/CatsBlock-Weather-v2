@@ -566,6 +566,8 @@ private val cloudStrings: Map<String, Array<out String>> = mapOf(
     row("Predominantly cloudy", "Predominantemente nublado", "Predominantemente nublado", "Mayormente nublado", "Majoritairement nuageux", "Преимущественно облачно", "Überwiegend bewölkt", "Prevalentemente nuvoloso", "대체로 흐림", "Sebagian besar berawan"),
     row("Overcast", "Encoberto", "Encoberto", "Cubierto", "Couvert", "Пасмурно", "Bedeckt", "Coperto", "완전히 흐림", "Mendung"),
     row("Range this week", "Faixa esta semana", "Intervalo esta semana", "Rango esta semana", "Plage cette semaine", "Диапазон за неделю", "Spanne diese Woche", "Intervallo questa settimana", "이번 주 범위", "Rentang minggu ini"),
+    row("Next 24 hours", "Próximas 24 horas", "Próximas 24 horas", "Próximas 24 horas", "Prochaines 24 heures", "Следующие 24 часа", "Nächste 24 Stunden", "Prossime 24 ore", "향후 24시간", "24 jam ke depan"),
+    row("24-hour cloud cover", "Nebulosidade em 24 horas", "Nebulosidade em 24 horas", "Nubosidad en 24 horas", "Couverture nuageuse sur 24 heures", "Облачность за 24 часа", "Bewölkung über 24 Stunden", "Nuvolosità nelle 24 ore", "24시간 구름양", "Tutupan awan 24 jam"),
     row("Peak cloud cover", "Pico de nebulosidade", "Pico de nebulosidade", "Máxima nubosidad", "Pic de couverture nuageuse", "Максимальная облачность", "Höchste Bewölkung", "Picco di nuvolosità", "최대 구름양", "Puncak tutupan awan"),
     row("Previous day", "Dia anterior", "Dia anterior", "Día anterior", "Jour précédent", "Предыдущий день", "Vorheriger Tag", "Giorno precedente", "이전 날", "Hari sebelumnya"),
     row("Next day", "Próximo dia", "Dia seguinte", "Día siguiente", "Jour suivant", "Следующий день", "Nächster Tag", "Giorno successivo", "다음 날", "Hari berikutnya"),
