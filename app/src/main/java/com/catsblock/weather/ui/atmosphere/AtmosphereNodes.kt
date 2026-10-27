@@ -38,6 +38,8 @@ class AtmosphereState {
     @Volatile var altoChance: Float = 0f
     @Volatile var seed: Float = 0f
     @Volatile var sunTint: Int = 0
+    @Volatile var night: Float = 0f
+    @Volatile var moonT: Float = 0.5f
 }
 
 private const val RENDER_SCALE = 0.5f
@@ -123,6 +125,8 @@ private class AtmosphereNode(var state: AtmosphereState) : Modifier.Node(), Draw
         s.setFloatUniform("altoChance", st.altoChance)
         s.setFloatUniform("seed", st.seed)
         s.setColorUniform("sunTint", st.sunTint)
+        s.setFloatUniform("night", st.night)
+        s.setFloatUniform("moonT", st.moonT)
         l.record(this, layoutDirection, IntSize(w, h), recordBlock)
         scale(1f / RENDER_SCALE, 1f / RENDER_SCALE, Offset.Zero, compositeBlock)
     }
