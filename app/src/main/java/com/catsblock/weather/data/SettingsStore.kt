@@ -37,7 +37,6 @@ class SettingsStore(private val context: Context) {
         val snowAlerts = booleanPreferencesKey("snow_alerts")
         val snowLead = intPreferencesKey("snow_lead_minutes")
         val updateAlerts = booleanPreferencesKey("update_alerts")
-        val quietHours = booleanPreferencesKey("quiet_hours")
         val saved = stringPreferencesKey("saved_cities")
         val current = stringPreferencesKey("current_city")
     }
@@ -45,6 +44,7 @@ class SettingsStore(private val context: Context) {
     val settings: Flow<AppSettings> = context.dataStore.data.map {
         AppSettings(
             fahrenheit = it[Keys.fahrenheit] ?: false,
+            apiKeys = readKeys(it),
             weatherSource = runCatching { WeatherSource.valueOf(it[Keys.weatherSource] ?: "") }.getOrDefault(WeatherSource.OpenMeteo),
             windUnit = runCatching { WindUnit.valueOf(it[Keys.windUnit] ?: "") }.getOrDefault(WindUnit.Kmh),
             pressureUnit = runCatching { PressureUnit.valueOf(it[Keys.pressureUnit] ?: "") }.getOrDefault(PressureUnit.Hpa),
@@ -63,8 +63,7 @@ class SettingsStore(private val context: Context) {
             eclipseLeadMinutes = it[Keys.eclipseLead]?.takeIf { value -> value in EclipseLeadOptions } ?: 60,
             snowAlerts = it[Keys.snowAlerts] ?: true,
             snowLeadMinutes = it[Keys.snowLead]?.takeIf { value -> value in SnowLeadOptions } ?: 60,
-            updateAlerts = it[Keys.updateAlerts] ?: true,
-            quietHours = it[Keys.quietHours] ?: true
+            updateAlerts = it[Keys.updateAlerts] ?: true
         )
     }
 
@@ -83,6 +82,17 @@ class SettingsStore(private val context: Context) {
 
     suspend fun setFahrenheit(value: Boolean) {
         context.dataStore.edit { it[Keys.fahrenheit] = value }
+    }
+
+    private fun readKeys(prefs: androidx.datastore.preferences.core.Preferences): Map<WeatherSource, String> =
+        WeatherSource.entries.mapNotNull { source ->
+            prefs[stringPreferencesKey("api_key_" + source.name)]
+                ?.takeIf { value -> value.isNotBlank() }
+                ?.let { value -> source to value }
+        }.toMap()
+
+    suspend fun setApiKey(source: WeatherSource, value: String) {
+        context.dataStore.edit { it[stringPreferencesKey("api_key_" + source.name)] = value.trim() }
     }
 
     suspend fun setWeatherSource(value: WeatherSource) {
@@ -159,10 +169,6 @@ class SettingsStore(private val context: Context) {
 
     suspend fun setUpdateAlerts(value: Boolean) {
         context.dataStore.edit { it[Keys.updateAlerts] = value }
-    }
-
-    suspend fun setQuietHours(value: Boolean) {
-        context.dataStore.edit { it[Keys.quietHours] = value }
     }
 
     suspend fun saveCities(cities: List<City>) {
