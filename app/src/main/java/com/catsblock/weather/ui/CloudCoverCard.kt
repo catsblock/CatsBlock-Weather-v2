@@ -39,8 +39,6 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 import kotlin.math.roundToInt
 
-private const val CHART_END_HOUR = 20
-
 fun cloudBandLabel(percent: Int): String = tr(
     when (cloudBand(percent)) {
         CloudBand.Clear -> "Clear sky"
@@ -72,17 +70,14 @@ fun cloudHistory(hours: List<Hour>, today: LocalDate, limit: Int = 7): List<Hist
                 date = date,
                 low = list.minOf { it.cloud },
                 high = list.maxOf { it.cloud },
-                avg = list.map { it.cloud }.average().roundToInt()
+                avg = list.map { it.cloud }.average().roundToInt(),
+                hourly = List(24) { hour -> list.firstOrNull { it.time.hour == hour }?.cloud ?: -1 }
             )
         }
 
-private fun chartEnd(now: LocalDateTime): LocalDateTime =
-    if (now.hour < CHART_END_HOUR) now.toLocalDate().atTime(CHART_END_HOUR, 0)
-    else now.toLocalDate().plusDays(1).atTime(CHART_END_HOUR, 0)
-
 private fun cloudSeries(hours: List<Hour>, now: LocalDateTime): FloatArray {
     val start = now.withMinute(0).withSecond(0).withNano(0)
-    val end = chartEnd(now)
+    val end = start.plusHours(24)
     return hours
         .filter { it.cloud >= 0 && !it.time.isBefore(start) && !it.time.isAfter(end) }
         .map { it.cloud.toFloat() }
@@ -134,7 +129,6 @@ fun CloudCoverCard(
     onClick: () -> Unit
 ) {
     val series = remember(hours, now) { cloudSeries(hours, now) }
-    val end = remember(now) { chartEnd(now) }
     GlassCard(modifier.height(176.dp), onClick, Modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             CardHeader(Icons.Rounded.Cloud, tr("Cloud cover"))
@@ -180,7 +174,7 @@ fun CloudCoverCard(
                             )
                     )
                     Text(
-                        "${tr("Until")} ${clockLabel(end)}",
+                        tr("Next 24 hours"),
                         modifier = Modifier.padding(top = 4.dp),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
