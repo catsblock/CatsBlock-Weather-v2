@@ -16,12 +16,17 @@ import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.node.DrawModifierNode
 import androidx.compose.ui.node.ModifierNodeElement
+import androidx.compose.ui.input.pointer.PointerEvent
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.node.PointerInputModifierNode
 import androidx.compose.ui.node.invalidateDraw
 import androidx.compose.ui.node.requireGraphicsContext
 import androidx.compose.ui.platform.InspectorInfo
 import androidx.compose.ui.unit.IntSize
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlin.math.sqrt
 
 class AtmosphereState {
     @Volatile var tod: Float = 0.5f
@@ -29,6 +34,7 @@ class AtmosphereState {
     @Volatile var rain: Float = 0f
     @Volatile var storm: Float = 0f
     @Volatile var wind: Float = 0f
+    @Volatile var snow: Float = 0f
     @Volatile var altoChance: Float = 0f
     @Volatile var seed: Float = 0f
     @Volatile var sunTint: Int = 0
@@ -41,7 +47,7 @@ private const val CLOCK_WRAP_MS = 100_000_000L
 fun Modifier.atmosphere(state: AtmosphereState): Modifier = this.then(AtmosphereElement(state))
 
 @RequiresApi(Build.VERSION_CODES.TIRAMISU)
-fun Modifier.glassRain(intensity: Float, seed: Float): Modifier = this.then(GlassRainElement(intensity, seed))
+fun Modifier.glassRain(intensity: Float, seed: Float, snow: Float = 0f): Modifier = this.then(GlassRainElement(intensity, seed, snow))
 
 @RequiresApi(Build.VERSION_CODES.TIRAMISU)
 private class AtmosphereElement(val state: AtmosphereState) : ModifierNodeElement<AtmosphereNode>() {
@@ -113,6 +119,7 @@ private class AtmosphereNode(var state: AtmosphereState) : Modifier.Node(), Draw
         s.setFloatUniform("rain", st.rain)
         s.setFloatUniform("storm", st.storm)
         s.setFloatUniform("wind", st.wind)
+        s.setFloatUniform("snow", st.snow)
         s.setFloatUniform("altoChance", st.altoChance)
         s.setFloatUniform("seed", st.seed)
         s.setColorUniform("sunTint", st.sunTint)
@@ -122,33 +129,77 @@ private class AtmosphereNode(var state: AtmosphereState) : Modifier.Node(), Draw
 }
 
 @RequiresApi(Build.VERSION_CODES.TIRAMISU)
-private data class GlassRainElement(val intensity: Float, val seed: Float) : ModifierNodeElement<GlassRainNode>() {
-    override fun create(): GlassRainNode = GlassRainNode(intensity, seed)
+private data class GlassRainElement(val intensity: Float, val seed: Float, val snow: Float) : ModifierNodeElement<GlassRainNode>() {
+    override fun create(): GlassRainNode = GlassRainNode(intensity, seed, snow)
     override fun update(node: GlassRainNode) {
-        node.intensity = intensity
-        node.seed = seed
+        node.configure(intensity, seed, snow)
     }
     override fun InspectorInfo.inspectableProperties() {
         name = "glassRain"
     }
 }
 
+private const val TRAIL_POINTS = 10
+private const val TRAIL_FADE = 2.6f
+private const val DROP_LIFE = 8f
+private const val TAP_TRAVEL = 48f
+private const val TAP_TIME = 0.6f
+private const val TRAIL_STEP = 8f
+
 @RequiresApi(Build.VERSION_CODES.TIRAMISU)
-private class GlassRainNode(var intensity: Float, var seed: Float) : Modifier.Node(), DrawModifierNode {
+private class GlassRainNode(
+    var intensity: Float,
+    var seed: Float,
+    var snow: Float
+) : Modifier.Node(), DrawModifierNode, PointerInputModifierNode {
 
     private var shader: RuntimeShader? = null
     private var brush: ShaderBrush? = null
+    private var snowMode = false
     private var time = 0f
 
-    override fun onAttach() {
-        val created = runCatching { RuntimeShader(AtmosphereAgsl.GLASS) }.getOrNull() ?: return
+    private val trail = FloatArray(TRAIL_POINTS * 3)
+    private val trailUniform = FloatArray(TRAIL_POINTS * 4)
+    private var head = 0
+    private var pressed = false
+    private var downX = 0f
+    private var downY = 0f
+    private var downTime = 0f
+    private var travel = 0f
+    private var lastX = 0f
+    private var lastY = 0f
+    private var dropX = 0f
+    private var dropY = 0f
+    private var dropBirth = -1000f
+
+    init {
+        for (i in 0 until TRAIL_POINTS) trail[i * 3 + 2] = -1000f
+    }
+
+    fun configure(newIntensity: Float, newSeed: Float, newSnow: Float) {
+        intensity = newIntensity
+        seed = newSeed
+        val modeChanged = (newSnow > 0f) != (snow > 0f)
+        snow = newSnow
+        if (isAttached && modeChanged) buildShader()
+        if (isAttached) invalidateDraw()
+    }
+
+    private fun buildShader() {
+        snowMode = snow > 0f
+        val source = if (snowMode) AtmosphereAgsl.GLASS_SNOW else AtmosphereAgsl.GLASS
+        val created = runCatching { RuntimeShader(source) }.getOrNull()
         shader = created
-        brush = ShaderBrush(created)
+        brush = created?.let { ShaderBrush(it) }
+    }
+
+    override fun onAttach() {
+        buildShader()
         coroutineScope.launch {
             while (isActive) {
                 withFrameNanos { nanos ->
                     time = ((nanos / 1_000_000L) % CLOCK_WRAP_MS) / 1000f
-                    invalidateDraw()
+                    if (shader != null) invalidateDraw()
                 }
             }
         }
@@ -159,14 +210,74 @@ private class GlassRainNode(var intensity: Float, var seed: Float) : Modifier.No
         shader = null
     }
 
+    private fun addPoint(x: Float, y: Float) {
+        head = (head + 1) % TRAIL_POINTS
+        trail[head * 3] = x
+        trail[head * 3 + 1] = y
+        trail[head * 3 + 2] = time
+        lastX = x
+        lastY = y
+    }
+
+    override fun onPointerEvent(pointerEvent: PointerEvent, pass: PointerEventPass, bounds: IntSize) {
+        if (pass != PointerEventPass.Initial) return
+        val change = pointerEvent.changes.firstOrNull() ?: return
+        val x = change.position.x
+        val y = change.position.y
+        when (pointerEvent.type) {
+            PointerEventType.Press -> {
+                pressed = true
+                downX = x
+                downY = y
+                downTime = time
+                travel = 0f
+                addPoint(x, y)
+            }
+            PointerEventType.Move -> if (pressed) {
+                val dx = x - lastX
+                val dy = y - lastY
+                val dist = sqrt(dx * dx + dy * dy)
+                travel += dist
+                if (dist > TRAIL_STEP) addPoint(x, y)
+            }
+            PointerEventType.Release -> {
+                if (pressed && travel < TAP_TRAVEL && time - downTime < TAP_TIME) {
+                    dropX = downX
+                    dropY = downY
+                    dropBirth = time
+                }
+                pressed = false
+            }
+            else -> Unit
+        }
+        invalidateDraw()
+    }
+
+    override fun onCancelPointerInput() {
+        pressed = false
+    }
+
     override fun ContentDrawScope.draw() {
         drawContent()
         val s = shader ?: return
         val b = brush ?: return
+        if (pressed) trail[head * 3 + 2] = time
+        for (i in 0 until TRAIL_POINTS) {
+            val age = time - trail[i * 3 + 2]
+            val k = (1f - age / TRAIL_FADE).coerceIn(0f, 1f)
+            trailUniform[i * 4] = trail[i * 3]
+            trailUniform[i * 4 + 1] = trail[i * 3 + 1]
+            trailUniform[i * 4 + 2] = k * k * (3f - 2f * k)
+            trailUniform[i * 4 + 3] = 0f
+        }
+        val dropAge = time - dropBirth
+        val dropValid = if (dropAge in 0f..DROP_LIFE) 1f else 0f
         s.setFloatUniform("resolution", size.width, size.height)
         s.setFloatUniform("time", time)
-        s.setFloatUniform("rain", intensity)
         s.setFloatUniform("seed", seed)
+        if (snowMode) s.setFloatUniform("snow", snow) else s.setFloatUniform("rain", intensity)
+        s.setFloatUniform("tp", trailUniform)
+        s.setFloatUniform("dropState", dropX, dropY, dropAge, dropValid)
         drawRect(b, size = size)
     }
 }
