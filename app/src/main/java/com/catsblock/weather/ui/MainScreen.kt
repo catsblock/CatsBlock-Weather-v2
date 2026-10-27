@@ -407,6 +407,9 @@ fun MainScreen(vm: WeatherViewModel) {
             ParticleOverlay(
                 when {
                     bundle == null -> ParticleWeather.None
+                    kind == Condition.Storm -> ParticleWeather.Storm
+                    kind == Condition.Rain || kind == Condition.Hail -> ParticleWeather.HeavyRain
+                    kind == Condition.Drizzle -> ParticleWeather.Rain
                     kind in snowKinds -> ParticleWeather.Snow
                     else -> ParticleWeather.None
                 },
