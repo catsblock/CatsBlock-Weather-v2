@@ -1,7 +1,7 @@
 package com.catsblock.weather.ui
 
 import com.catsblock.weather.data.WeatherSource
-import com.catsblock.weather.i18n.trx
+import com.catsblock.weather.i18n.tr
 import com.catsblock.weather.data.WindUnit
 import com.catsblock.weather.data.PressureUnit
 import androidx.compose.runtime.compositionLocalOf
@@ -16,7 +16,6 @@ import coil.compose.AsyncImage
 import com.catsblock.weather.data.Condition
 import com.catsblock.weather.i18n.AppLanguage
 import com.catsblock.weather.i18n.I18n
-import com.catsblock.weather.i18n.tr
 import com.catsblock.weather.kit.IconKit
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -117,7 +116,7 @@ fun formatWait(totalSeconds: Long): String {
     }
 }
 
-fun intervalLabel(minutes: Int): String = trx(
+fun intervalLabel(minutes: Int): String = tr(
     when (minutes) {
         30 -> "30 minutes"
         60 -> "1 hour"
