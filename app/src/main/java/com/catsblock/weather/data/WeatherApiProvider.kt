@@ -95,7 +95,8 @@ internal class WeatherApiProvider(private val get: suspend (String) -> String) {
                     uv = o.optDouble("uv", 0.0),
                     aqi = null,
                     pressure = o.optDouble("pressure_mb", 1013.0),
-                    visibility = o.optDouble("vis_km", 10.0) * 1000.0
+                    visibility = o.optDouble("vis_km", 10.0) * 1000.0,
+                    cloud = if (o.has("cloud")) o.optInt("cloud", -1) else -1
                 )
             }
         }
@@ -117,7 +118,8 @@ internal class WeatherApiProvider(private val get: suspend (String) -> String) {
             uv = cur.optDouble("uv", 0.0),
             aqi = null,
             pressure = cur.optDouble("pressure_mb", 1013.0),
-            visibility = cur.optDouble("vis_km", 10.0) * 1000.0
+            visibility = cur.optDouble("vis_km", 10.0) * 1000.0,
+            cloud = if (cur.has("cloud")) cur.optInt("cloud", -1) else -1
         )
 
         return WeatherBundle(
