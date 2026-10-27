@@ -37,12 +37,12 @@ float noise3(float3 x) {
 float fbm3(float3 p) {
     float amp = 0.5;
     float sum = 0.0;
-    for (int i = 0; i < 2; i++) {
+    for (int i = 0; i < 3; i++) {
         sum += amp * noise3(p);
         p = p * 2.03 + float3(1.7, 9.2, 3.1);
         amp *= 0.5;
     }
-    return sum / 0.75;
+    return sum / 0.875;
 }
 
 float3 toLinear(float3 c) {
@@ -55,44 +55,50 @@ float3 toSrgb(float3 c) {
 """
 
     private const val SKY = """
-float3 ramp5(float3 c0, float3 c1, float3 c2, float3 c3, float3 c4, float h) {
-    float3 c = mix(c0, c1, smoothstep(0.0, 0.12, h));
-    c = mix(c, c2, smoothstep(0.12, 0.34, h));
-    c = mix(c, c3, smoothstep(0.34, 0.66, h));
-    c = mix(c, c4, smoothstep(0.66, 1.0, h));
-    return c;
+float3 cctLinear(float kelvin) {
+    float t = clamp(kelvin, 1000.0, 12000.0) / 100.0;
+    float over = max(t - 60.0, 0.001);
+    float rHi = clamp(1.2929362 * pow(over, -0.1332048), 0.0, 1.0);
+    float r = mix(rHi, 1.0, step(t, 66.0));
+    float gLo = clamp(0.3900816 * log(t) - 0.6318414, 0.0, 1.0);
+    float gHi = clamp(1.1298909 * pow(over, -0.0755148), 0.0, 1.0);
+    float g = mix(gHi, gLo, step(t, 66.0));
+    float bMid = clamp(0.5432068 * log(max(t - 10.0, 1.0)) - 1.1962541, 0.0, 1.0);
+    float b = mix(bMid, 1.0, step(66.0, t));
+    return toLinear(float3(r, g, b));
+}
+
+float sunKelvin() {
+    float morning = mix(3500.0, 5000.0, smoothstep(0.0, 0.45, tod));
+    float afternoon = mix(3000.0, 2000.0, smoothstep(0.58, 1.0, tod));
+    return mix(morning, afternoon, smoothstep(0.45, 0.58, tod));
 }
 
 float3 skyColor(float h) {
-    float3 m = ramp5(
-        toLinear(float3(235.0, 204.0, 130.0) / 255.0),
-        toLinear(float3(214.0, 186.0, 180.0) / 255.0),
-        toLinear(float3(176.0, 176.0, 186.0) / 255.0),
-        toLinear(float3(140.0, 163.0, 191.0) / 255.0),
-        toLinear(float3(108.0, 141.0, 180.0) / 255.0), h);
-    float3 n = ramp5(
-        toLinear(float3(190.0, 212.0, 228.0) / 255.0),
-        toLinear(float3(160.0, 194.0, 222.0) / 255.0),
-        toLinear(float3(120.0, 168.0, 210.0) / 255.0),
-        toLinear(float3(96.0, 152.0, 204.0) / 255.0),
-        toLinear(float3(74.0, 126.0, 186.0) / 255.0), h);
-    float3 a = ramp5(
-        toLinear(float3(168.0, 84.0, 50.0) / 255.0),
-        toLinear(float3(199.0, 112.0, 52.0) / 255.0),
-        toLinear(float3(176.0, 138.0, 92.0) / 255.0),
-        toLinear(float3(104.0, 118.0, 134.0) / 255.0),
-        toLinear(float3(58.0, 76.0, 96.0) / 255.0), h);
-    float3 first = mix(m, n, smoothstep(0.0, 0.5, tod));
-    float3 second = mix(n, a, smoothstep(0.5, 1.0, tod));
-    return mix(first, second, step(0.5, tod));
+    float3 beta = float3(0.174, 0.405, 0.993);
+    float cosz = mix(0.06, 1.0, pow(h, 0.85));
+    float3 scatter = 1.0 - exp(-beta / cosz);
+    float3 illum = mix(cctLinear(sunKelvin()), float3(1.0), 0.45);
+    return illum * scatter * 1.9;
 }
 """
 
     private const val CLOUDS = """
+float hg(float c, float g) {
+    float g2 = g * g;
+    return (1.0 - g2) / (12.566371 * pow(max(1.0 + g2 - 2.0 * g * c, 0.001), 1.5));
+}
+
+float miePhase(float c) {
+    return mix(hg(c, 0.78), hg(c, -0.22), 0.28);
+}
+
 float dens(float3 p, float hgt, float dist, float cirA, float altA, float genA) {
     float3 q = p * 0.6 + float3(time * 0.010 * (0.6 + wind), 0.0, time * 0.003 + seed);
-    float2 w = float2(noise3(q * 0.5), noise3(q * 0.5 + float3(17.3, 3.1, 9.7))) - 0.5;
-    q.xz += w * 1.3;
+    float2 w1 = float2(noise3(q * 0.5), noise3(q * 0.5 + float3(17.3, 3.1, 9.7))) - 0.5;
+    q.xz += w1 * 1.3;
+    float2 w2 = float2(noise3(q * 1.3 + 4.1), noise3(q * 1.3 + float3(8.2, 1.7, 5.3))) - 0.5;
+    q.xz += w2 * 0.5;
     float sw = 0.16 + 0.34 * dist;
     float d = 0.0;
     if (cirA > 0.01) {
@@ -124,7 +130,8 @@ float3 scene(float2 uv, float2 fragCoord) {
     float h = clamp((0.9 - uv.y) / 0.9, 0.0, 1.0);
     float2 sunUV = float2(mix(0.2, 0.8, tod), 0.84 - 0.62 * sin(3.14159 * tod));
     float3 sd = normalize(float3((sunUV.x - 0.5) * aspect * 1.25, (0.9 - sunUV.y) * 1.3, 1.0));
-    float3 sunL = toLinear(float3(sunTint.rgb));
+    float sunGain = 0.8 + 0.5 * dot(toLinear(float3(sunTint.rgb)), float3(0.2126, 0.7152, 0.0722));
+    float3 sunL = cctLinear(sunKelvin()) * sunGain;
     float3 sky = skyColor(h);
     float3 zenith = skyColor(1.0);
     float3 horizon = skyColor(0.0);
@@ -148,9 +155,7 @@ float3 scene(float2 uv, float2 fragCoord) {
         float jit = hash21(fragCoord);
         float dist = clamp((t0 - 1.0) / 20.0, 0.0, 1.0);
         float3 amb = zenith * 0.55 + horizon * 0.25;
-        float3 gold = toLinear(float3(255.0, 196.0, 110.0) / 255.0);
-        float3 rimC = toLinear(float3(255.0, 140.0, 50.0) / 255.0);
-        float sunPow = 1.1 + 0.3 * sin(3.14159 * tod);
+        float phase = miePhase(dot(rd, sd));
         for (int i = 0; i < 6; i++) {
             if (transmit < 0.03) {
                 break;
@@ -159,17 +164,19 @@ float3 scene(float2 uv, float2 fragCoord) {
             float3 p = rd * t;
             float hgt = (p.y - hb) / (ht - hb);
             float d = dens(p, hgt, dist, cirA, altA, genA);
-            if (d > 0.005) {
-                float ld = clamp(d * 1.5 * (1.0 - 0.5 * hgt) + 0.15 * (1.0 - tod), 0.0, 1.0);
-                float beer = exp(-ld * 2.4);
-                float powder = 1.0 - exp(-d * 4.0);
-                float silver = pow(max(dot(rd, sd), 0.0), 6.0) * exp(-ld * 5.0);
-                float rim = exp(-ld * 6.0) * (1.0 - beer);
-                float3 lit = sunL * sunPow * (1.0 - 0.6 * genA) * (beer * (0.55 + 0.6 * powder) + silver * 1.6) + amb;
-                lit += gold * (1.0 - hgt) * (1.0 - tod) * 0.45;
-                lit += rimC * rim * tod * 1.1;
+            if (d > 0.01) {
+                float tau = 0.0;
+                float3 lp = p;
+                for (int j = 0; j < 2; j++) {
+                    lp += sd * 0.17;
+                    tau += dens(lp, (lp.y - hb) / (ht - hb), dist, cirA, altA, genA);
+                }
+                float beer = max(exp(-tau * 2.6), 0.55 * exp(-tau * 0.55));
+                float powder = 1.0 - exp(-d * 3.5);
+                float3 direct = sunL * beer * (0.28 + 1.9 * phase) * (0.55 + 0.45 * powder) * (1.0 - 0.6 * genA);
+                float3 fill = amb * mix(0.55, 1.0, hgt);
                 float a = 1.0 - exp(-d * dt * 0.9);
-                acc += transmit * a * lit;
+                acc += transmit * a * (direct + fill);
                 transmit *= 1.0 - a;
             }
         }
@@ -208,14 +215,23 @@ half4 main(float2 fragCoord) {
     float2 uv = fragCoord / resolution;
     float spec = 0.0;
     float shade = 0.0;
+    float3 col;
     if (rain > 0.02) {
         float4 a = dropLayer(uvd, 5.0, 0.0);
         float4 b = dropLayer(uvd, 11.0, 1.0);
-        uv += float2((a.x + b.x) * resolution.y / resolution.x, a.y + b.y);
+        float2 off = float2((a.x + b.x) * resolution.y / resolution.x, a.y + b.y);
         spec = a.z + b.z;
         shade = a.w + b.w;
+        if (dot(off, off) > 0.00000001) {
+            float3 c1 = scene(uv + off * 0.94, fragCoord);
+            float3 c2 = scene(uv + off * 1.06, fragCoord);
+            col = float3(c1.r, 0.5 * (c1.g + c2.g), c2.b);
+        } else {
+            col = scene(uv, fragCoord);
+        }
+    } else {
+        col = scene(uv, fragCoord);
     }
-    float3 col = scene(uv, fragCoord);
     col = col * (1.0 - shade * 0.55) + spec * float3(1.0, 0.98, 0.94) * 0.9;
     if (snow > 0.02) {
         float fl = snowLayer(uvd, 9.0, 0.35, 0.0) + 0.8 * snowLayer(uvd, 16.0, 0.55, 1.0) + 0.6 * snowLayer(uvd, 28.0, 0.8, 2.0);
@@ -244,6 +260,36 @@ float wipeAt(float2 fc) {
     return m;
 }
 
+float2 capillary(float2 d, float age, float k, float c, float damp, float width, float amp) {
+    float rho = length(d);
+    float front = c * age;
+    float u = (rho - front) / width;
+    float env = exp(-u * u);
+    float ph = (rho - front) * k;
+    float decay = exp(-damp * age) / sqrt(rho + 0.04);
+    float dh = env * (-sin(ph) * k - 2.0 * u / width * cos(ph));
+    float2 dir = d / max(rho, 0.0001);
+    return dir * dh * amp * decay;
+}
+
+float2 rippleShade(float2 g) {
+    float s = dot(g, float2(-0.6, -0.8));
+    return float2(clamp(s * 1.2, 0.0, 1.0), clamp(-s, 0.0, 1.0));
+}
+
+float2 rippleAt(float2 fc) {
+    float R = resolution.y;
+    float2 g = float2(0.0);
+    for (int i = 0; i < 10; i++) {
+        float k = tp[i].z;
+        if (k > 0.01) {
+            float age = (1.0 - k) * 2.2 + 0.05;
+            g += capillary((fc - tp[i].xy) / R, age, 95.0, 0.20, 1.6, 0.05, 0.0035) * k;
+        }
+    }
+    return rippleShade(g);
+}
+
 float4 touchDrop(float2 fc) {
     if (dropState.w < 0.5) {
         return float4(0.0);
@@ -251,49 +297,48 @@ float4 touchDrop(float2 fc) {
     float R = resolution.y;
     float t = dropState.z;
     float rr = 0.028;
-    float slide = smoothstep(0.0, 1.0, clamp((t - 0.35) / 5.5, 0.0, 1.0));
-    float fall = R * 0.5 * slide;
-    float moving = step(0.35, t) * (1.0 - smoothstep(4.8, 5.8, t));
-    float wob = sin(t * 3.0) * R * 0.004 * moving;
+    float pr = clamp((t - 0.5) / 5.0, 0.0, 1.0);
+    float v = stickSlip(pr, 0.37);
+    float v2 = stickSlip(min(pr + 0.004, 1.0), 0.37);
+    float vel = clamp((v2 - v) / 0.004 / 12.0, 0.0, 1.0) * step(0.5, t);
     float2 o = dropState.xy;
-    float2 c = o + float2(wob, fall);
+    float2 c = o + float2(R * 0.004 * sin(v * 18.0), R * 0.5 * v);
     float2 q = (fc - c) / R;
-    float stretch = 1.0 + 0.9 * moving;
-    float2 qe = float2(q.x, q.y / stretch);
-    float d = length(qe) - rr;
-    float2 tailC = float2(0.0, -rr * (1.2 + 0.8 * moving));
-    float d2 = length(q - tailC) - rr * 0.45;
-    d = smoothMin(d, d2, rr * 0.6);
-    float grow = smoothstep(0.0, 0.2, t);
-    float life = grow * (1.0 - smoothstep(6.0, 8.0, t));
-    float inside = (1.0 - smoothstep(-0.0015, 0.0015, d)) * life;
-    float depth = clamp(-d / rr, 0.0, 1.0);
-    float3 nrm = normalize(float3(qe / rr, sqrt(max(1.0 - dot(qe, qe) / (rr * rr), 0.02))));
-    float3 lightDir = normalize(float3(-0.45, -0.55, 0.7));
-    float3 halfVec = normalize(lightDir + float3(0.0, 0.0, 1.0));
-    float specular = pow(max(dot(nrm, halfVec), 0.0), 40.0) * inside;
-    float caustic = pow(1.0 - depth, 3.0) * smoothstep(-0.2, 0.6, qe.y / rr) * 0.4 * inside;
-    float rim = (1.0 - depth) * (1.0 - depth) * 0.5 * inside;
-    float ty = clamp((fc.y - o.y) / max(fall, 1.0), 0.0, 1.0);
-    float tx = o.x + sin(ty * 3.0 * t) * R * 0.004 * moving;
-    float inTrail = step(o.y, fc.y) * step(fc.y, c.y - rr * R) * moving;
-    float trail = (1.0 - smoothstep(0.0, rr * R * 0.22, abs(fc.x - tx))) * inTrail * life;
-    return float4(specular + caustic, rim + trail * 0.18, trail, inside);
+    float3 s = dropSdf(q, rr, vel);
+    float life = smoothstep(0.0, 0.25, t) * (1.0 - smoothstep(6.0, 8.0, t));
+    float inside = (1.0 - smoothstep(-0.0015, 0.0015, s.x)) * life;
+    float4 body = lensDrop(s.yz, inside, rr);
+    float k = pr * 6.0;
+    float th = slipThreshold(0.37);
+    float beadLight = 0.0;
+    float beadDark = 0.0;
+    for (int i = 0; i < 5; i++) {
+        float fi = float(i);
+        float born = smoothstep(fi + th, fi + th + 0.12, k);
+        float2 bc = float2(o.x + R * 0.004 * sin(fi / 6.0 * 18.0), o.y + R * 0.5 * fi / 6.0);
+        float rb = rr * (0.34 - 0.05 * fi);
+        float2 qb = (fc - bc) / R / rb;
+        float db = (length(qb) - 1.0) * rb;
+        float ib = (1.0 - smoothstep(-0.0015, 0.0015, db)) * born * life;
+        float4 lb = lensDrop(qb, ib, rb);
+        beadLight += lb.z;
+        beadDark += lb.w;
+    }
+    float ty = clamp((fc.y - o.y) / max(R * 0.5 * v, 1.0), 0.0, 1.0);
+    float neck = 0.35 + 0.65 * pow(abs(cos(ty * 18.8496)), 2.0);
+    float tx = o.x + R * 0.004 * sin(ty * v * 18.0);
+    float inTrail = step(o.y, fc.y) * step(fc.y, c.y - rr * R * 0.8) * step(0.5, t);
+    float trail = (1.0 - smoothstep(0.0, rr * R * 0.12 * neck, abs(fc.x - tx))) * inTrail * life;
+    float2 d = (fc - o) / R;
+    float2 g = capillary(d, t, 80.0, 0.24, 1.5, 0.05, 0.0045) + capillary(d, t, 140.0, 0.34, 2.2, 0.035, 0.0022);
+    float2 rip = rippleShade(g);
+    float light = body.z + beadLight + rip.x * 0.6;
+    float dark = body.w + beadDark + trail * 0.18 + rip.y * 0.5;
+    return float4(light, dark, trail, inside);
 }
 """
 
     private const val HELP = """
-float hash21(float2 p) {
-    p = fract(p * float2(123.34, 456.21));
-    p += dot(p, p + 45.32);
-    return fract(p.x * p.y);
-}
-
-float smoothMin(float a, float b, float k) {
-    float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
-    return mix(b, a, h) - k * h * (1.0 - h);
-}
-
 float vnoise(float2 p) {
     float2 i = floor(p);
     float2 f = fract(p);
@@ -314,8 +359,9 @@ half4 main(float2 fragCoord) {
     float wipe = wipeAt(fragCoord);
     float keep = 1.0 - wipe * 0.92;
     float4 td = touchDrop(fragCoord);
-    float spec = (a.z + b.z) * keep + td.x;
-    float shade = (a.w + b.w) * keep + td.y;
+    float2 rp = rippleAt(fragCoord);
+    float spec = (a.z + b.z) * keep + td.x + rp.x * 0.55;
+    float shade = (a.w + b.w) * keep + td.y + rp.y * 0.5;
     float lensTint = clamp(length(a.xy + b.xy) * 18.0, 0.0, 1.0) * 0.10 * keep;
     float lightA = clamp(spec * 0.9 + lensTint + wipe * 0.035, 0.0, 0.8);
     float darkA = clamp(shade * 0.4 + wipe * 0.04, 0.0, 0.5);
@@ -353,10 +399,11 @@ half4 main(float2 fc) {
     float pile = (1.0 - smoothstep(h - 0.006, h, bd)) * (1.0 - wipe * 0.8);
     float lit = smoothstep(h * 0.2, h, bd);
     float4 td = touchDrop(fc);
+    float2 rp = rippleAt(fc);
     float a = fa + sp * 0.8 + pile * (0.5 + 0.2 * lit);
     float3 col = mix(float3(0.82, 0.9, 1.0), float3(1.0), clamp(pile * 0.6 + sp, 0.0, 1.0));
-    float lightA = clamp(a + td.x * 0.9, 0.0, 0.9);
-    float darkA = clamp(td.y * 0.4, 0.0, 0.5);
+    float lightA = clamp(a + td.x * 0.9 + rp.x * 0.4, 0.0, 0.9);
+    float darkA = clamp(td.y * 0.4 + rp.y * 0.2, 0.0, 0.5);
     float alpha = lightA + darkA * (1.0 - lightA);
     return half4(float4(col * lightA, alpha));
 }
@@ -374,5 +421,5 @@ uniform float2 resolution;
 uniform float time;
 uniform float snow;
 uniform float seed;
-""" + HELP + TOUCH + SNOW_MAIN
+""" + DropLib.BASE + HELP + TOUCH + SNOW_MAIN
 }
