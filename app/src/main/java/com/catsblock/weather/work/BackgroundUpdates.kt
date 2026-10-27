@@ -78,6 +78,7 @@ class WeatherWorker(context: Context, params: WorkerParameters) : CoroutineWorke
         val settings = store.settings.first()
         UserKeys.update(settings.apiKeys)
         if (!NetworkPolicy.foregroundAllowed(app, settings)) return Result.success()
+        if (NetworkPolicy.quietHoursActive(settings)) return Result.success()
         runCatching { AppUpdates.check(app) }
         val city = store.currentCity.first() ?: return Result.success()
         return try {
