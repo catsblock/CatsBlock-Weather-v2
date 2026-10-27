@@ -1,5 +1,6 @@
 package com.catsblock.weather.data
 
+import com.catsblock.weather.WeatherApp
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -33,7 +34,7 @@ class WeatherRepository {
     val usageStatus: StateFlow<UsageStatus> = _usageStatus.asStateFlow()
 
     private suspend fun get(url: String): String = withContext(Dispatchers.IO) {
-        val builder = Request.Builder().url(url)
+        val builder = Request.Builder().url(url).header("X-Device-Id", DeviceId.get(WeatherApp.instance))
         UserKeys.forPath(runCatching { java.net.URI(url).path }.getOrNull().orEmpty())?.let { builder.header("X-Api-Key", it) }
         client.newCall(builder.build()).execute().use { response ->
             if (!response.isSuccessful) throw IOException("HTTP ${response.code}")
@@ -79,7 +80,7 @@ class WeatherRepository {
     }
 
     private suspend fun workerGet(url: String): String = withContext(Dispatchers.IO) {
-        client.newCall(Request.Builder().url(url).build()).execute().use { response ->
+        client.newCall(Request.Builder().url(url).header("X-Device-Id", DeviceId.get(WeatherApp.instance)).build()).execute().use { response ->
             val prev = _usageStatus.value
             val shortRemaining = response.header("X-RateLimit-Remaining-10m")?.toIntOrNull() ?: prev.shortRemaining
             val shortLimit = response.header("X-RateLimit-Limit-10m")?.toIntOrNull() ?: prev.shortLimit
