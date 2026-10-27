@@ -33,7 +33,9 @@ class WeatherRepository {
     val usageStatus: StateFlow<UsageStatus> = _usageStatus.asStateFlow()
 
     private suspend fun get(url: String): String = withContext(Dispatchers.IO) {
-        client.newCall(Request.Builder().url(url).build()).execute().use { response ->
+        val builder = Request.Builder().url(url)
+        UserKeys.forPath(runCatching { java.net.URI(url).path }.getOrNull().orEmpty())?.let { builder.header("X-Api-Key", it) }
+        client.newCall(builder.build()).execute().use { response ->
             if (!response.isSuccessful) throw IOException("HTTP ${response.code}")
             response.body?.string() ?: throw IOException("Empty response")
         }
