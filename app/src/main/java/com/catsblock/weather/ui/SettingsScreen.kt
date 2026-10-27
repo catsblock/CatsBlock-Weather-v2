@@ -71,6 +71,7 @@ import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
@@ -151,6 +152,8 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
     }
     var leadDialog by remember { mutableStateOf<String?>(null) }
     var intervalDialog by remember { mutableStateOf(false) }
+    var keyDialog by remember { mutableStateOf<WeatherSource?>(null) }
+    var keyInput by remember { mutableStateOf("") }
     var notificationsOn by remember { mutableStateOf(notificationsAllowed(ctx)) }
     var openSettingsOnDeny by remember { mutableStateOf(false) }
     val owner = LocalLifecycleOwner.current
@@ -302,6 +305,47 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
         )
     }
 
+    keyDialog?.let { source ->
+        AlertDialog(
+            onDismissRequest = { keyDialog = null },
+            title = { Text(sourceTitle(source)) },
+            text = {
+                Column {
+                    Text(
+                        tr(keyNote(source)),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = keyInput,
+                        onValueChange = { keyInput = it },
+                        singleLine = true,
+                        label = { Text(tr("API key")) },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    vm.setApiKey(source, keyInput)
+                    keyDialog = null
+                }) { Text(tr("Save")) }
+            },
+            dismissButton = {
+                Row {
+                    if (!settings.apiKeys[source].isNullOrBlank()) {
+                        TextButton(onClick = {
+                            vm.setApiKey(source, "")
+                            keyDialog = null
+                        }) { Text(tr("Remove")) }
+                    }
+                    TextButton(onClick = { keyDialog = null }) { Text(tr("Cancel")) }
+                }
+            }
+        )
+    }
+
     Scaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
@@ -322,36 +366,91 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
                 .navigationBarsPadding()
                 .padding(horizontal = 16.dp, vertical = 8.dp)
         ) {
-            CategoryTitle(tr("Personalization"))
+            CategoryTitle(tr("Appearance"))
 
-            GroupLabel(tr("Weather data source"))
+            GroupLabel(tr("Theme"))
             Group {
-                WeatherSource.entries.forEachIndexed { index, source ->
-                    if (index > 0) GroupDivider()
-                    val available = SecretKeys.available(source)
-                    ListItem(
-                        modifier = Modifier.clickable(enabled = available) { vm.setWeatherSource(source) },
-                        leadingContent = {
-                            RadioButton(selected = settings.weatherSource == source, onClick = null, enabled = available)
-                        },
-                        headlineContent = { Text(sourceTitle(source)) },
-                        supportingContent = { Text(sourceNote(source, available)) },
-                        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-                    )
+                Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
+                    SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                        ThemeMode.entries.forEachIndexed { index, mode ->
+                            SegmentedButton(
+                                selected = settings.theme == mode,
+                                onClick = { vm.setTheme(mode) },
+                                shape = SegmentedButtonDefaults.itemShape(index, ThemeMode.entries.size)
+                            ) { Text(tr(mode.name)) }
+                        }
+                    }
                 }
             }
 
-            UsageStatusBar(
-                status = usageStatus,
-                source = settings.weatherSource,
-                modifier = Modifier.fillMaxWidth().padding(top = 12.dp)
-            )
+            GroupLabel(tr("Layout"))
+            Group {
+                SwitchRow(
+                    tr("Compact current conditions"),
+                    tr("Use a shorter header so more cards fit on the screen."),
+                    settings.compactHero,
+                    vm::setCompactHero
+                )
+                GroupDivider()
+                SwitchRow(
+                    tr("Precipitation card"),
+                    tr("Show minute-by-minute rain when rain is expected within an hour."),
+                    settings.showPrecipitation,
+                    vm::setShowPrecipitation
+                )
+                GroupDivider()
+                SwitchRow(
+                    tr("Life index card"),
+                    tr("Show daily activity suggestions at the bottom of the forecast."),
+                    settings.showLifeIndex,
+                    vm::setShowLifeIndex
+                )
+                GroupDivider()
+                SwitchRow(
+                    tr("Weather sounds"),
+                    tr("Play ambient sounds that match the current weather."),
+                    settings.sounds,
+                    vm::setSounds
+                )
+            }
 
-            MonthlyUsageBar(
-                status = usageStatus,
-                source = settings.weatherSource,
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
-            )
+            GroupLabel(trx("Customization"))
+            Group {
+                NavRow(
+                    Icons.Rounded.Palette,
+                    trx("Weather Icon Kit"),
+                    trx("Replace the weather icons used in the app and widgets."),
+                    vm::openIconKit
+                )
+                GroupDivider()
+                NavRow(
+                    Icons.Rounded.Wallpaper,
+                    trx("Weather Background Kit"),
+                    trx("Choose your own backgrounds (images or GIFs) and sounds (MP3) for each weather."),
+                    vm::openBackgroundKit
+                )
+                GroupDivider()
+                NavRow(
+                    Icons.Rounded.AppShortcut,
+                    trx("App icon changer"),
+                    trx("Use any image as your app icon on the home screen, or restore the default."),
+                    vm::openAppIcon
+                )
+            }
+
+            CategoryTitle(tr("Region and units"))
+
+            GroupLabel(tr("App language"))
+            Group {
+                ListItem(
+                    modifier = Modifier.clickable { langDialog = true },
+                    leadingContent = { Icon(Icons.Rounded.Language, null, tint = MaterialTheme.colorScheme.primary) },
+                    headlineContent = { Text(tr("App language")) },
+                    supportingContent = { Text(settings.language.label) },
+                    trailingContent = { Icon(Icons.Rounded.ChevronRight, null) },
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                )
+            }
 
             GroupLabel(tr("Units"))
             Group {
@@ -401,82 +500,86 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
                 }
             }
 
-            GroupLabel(tr("Theme"))
+            CategoryTitle(tr("Weather data"))
+
+
+            GroupLabel(tr("Data provider"))
             Group {
-                Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
-                    SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                        ThemeMode.entries.forEachIndexed { index, mode ->
-                            SegmentedButton(
-                                selected = settings.theme == mode,
-                                onClick = { vm.setTheme(mode) },
-                                shape = SegmentedButtonDefaults.itemShape(index, ThemeMode.entries.size)
-                            ) { Text(tr(mode.name)) }
-                        }
-                    }
+                WeatherSource.entries.forEachIndexed { index, source ->
+                    if (index > 0) GroupDivider()
+                    val available = SecretKeys.available(source)
+                    ListItem(
+                        modifier = Modifier.clickable(enabled = available) { vm.setWeatherSource(source) },
+                        leadingContent = {
+                            RadioButton(selected = settings.weatherSource == source, onClick = null, enabled = available)
+                        },
+                        headlineContent = { Text(sourceTitle(source)) },
+                        supportingContent = { Text(sourceNote(source, available)) },
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                    )
                 }
             }
 
-            GroupLabel(tr("Layout"))
+            UsageStatusBar(
+                status = usageStatus,
+                source = settings.weatherSource,
+                modifier = Modifier.fillMaxWidth().padding(top = 12.dp)
+            )
+
+            MonthlyUsageBar(
+                status = usageStatus,
+                source = settings.weatherSource,
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+            )
+
+            GroupLabel(tr("Personal access keys"))
             Group {
-                SwitchRow(
-                    tr("Compact current conditions"),
-                    tr("Use a shorter header so more cards fit on the screen."),
-                    settings.compactHero,
-                    vm::setCompactHero
-                )
-                GroupDivider()
-                SwitchRow(
-                    tr("Precipitation card"),
-                    tr("Show minute-by-minute rain when rain is expected within an hour."),
-                    settings.showPrecipitation,
-                    vm::setShowPrecipitation
-                )
-                GroupDivider()
-                SwitchRow(
-                    tr("Life index card"),
-                    tr("Show daily activity suggestions at the bottom of the forecast."),
-                    settings.showLifeIndex,
-                    vm::setShowLifeIndex
-                )
+                WeatherSource.entries.filter { it != WeatherSource.OpenMeteo }.forEachIndexed { index, source ->
+                    if (index > 0) GroupDivider()
+                    ListItem(
+                        modifier = Modifier.clickable(enabled = SecretKeys.available(source)) {
+                            keyInput = settings.apiKeys[source].orEmpty()
+                            keyDialog = source
+                        },
+                        headlineContent = { Text(sourceTitle(source)) },
+                        supportingContent = {
+                            Text(if (settings.apiKeys[source].isNullOrBlank()) tr("Not set") else tr("Configured"))
+                        },
+                        trailingContent = { Icon(Icons.Rounded.ChevronRight, null) },
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                    )
+                }
             }
 
-            GroupLabel(tr("App language"))
+            GroupLabel(tr("Refresh"))
             Group {
-                ListItem(
-                    modifier = Modifier.clickable { langDialog = true },
-                    leadingContent = { Icon(Icons.Rounded.Language, null, tint = MaterialTheme.colorScheme.primary) },
-                    headlineContent = { Text(tr("App language")) },
-                    supportingContent = { Text(settings.language.label) },
-                    trailingContent = { Icon(Icons.Rounded.ChevronRight, null) },
-                    colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-                )
-            }
-
-            GroupLabel(trx("Customization"))
-            Group {
-                NavRow(
-                    Icons.Rounded.Palette,
-                    trx("Weather Icon Kit"),
-                    trx("Replace the weather icons used in the app and widgets."),
-                    vm::openIconKit
+                SwitchRow(
+                    tr("Mobile data updates"),
+                    tr("Allow weather updates over mobile data. When off, updates only run on Wi-Fi."),
+                    settings.mobileData,
+                    vm::setMobileData
                 )
                 GroupDivider()
-                NavRow(
-                    Icons.Rounded.Wallpaper,
-                    trx("Weather Background Kit"),
-                    trx("Choose your own backgrounds (images or GIFs) and sounds (MP3) for each weather."),
-                    vm::openBackgroundKit
+                SwitchRow(
+                    tr("Update weather in background"),
+                    tr("Refresh the weather automatically, even when the app is closed."),
+                    settings.backgroundUpdates,
+                    vm::setBackgroundUpdates
                 )
-                GroupDivider()
-                NavRow(
-                    Icons.Rounded.AppShortcut,
-                    trx("App icon changer"),
-                    trx("Use any image as your app icon on the home screen, or restore the default."),
-                    vm::openAppIcon
-                )
+                if (settings.backgroundUpdates) {
+                    GroupDivider()
+                    ListItem(
+                        modifier = Modifier.clickable { intervalDialog = true },
+                        headlineContent = { Text(tr("Update interval")) },
+                        supportingContent = { Text(intervalLabel(settings.backgroundIntervalMinutes)) },
+                        trailingContent = { Icon(Icons.Rounded.ChevronRight, null) },
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                    )
+                }
             }
 
-            GroupLabel(trx("Notifications"))
+            CategoryTitle(trx("Notifications"))
+
             Group {
                 SwitchRow(
                     trx("Rain alerts"),
@@ -556,47 +659,6 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
                 }
             }
 
-            GroupLabel(tr("Updates and sounds"))
-            Group {
-                SwitchRow(
-                    tr("Mobile data updates"),
-                    tr("Allow weather updates over mobile data. When off, updates only run on Wi-Fi."),
-                    settings.mobileData,
-                    vm::setMobileData
-                )
-                GroupDivider()
-                SwitchRow(
-                    tr("Update weather in background"),
-                    tr("Refresh the weather automatically, even when the app is closed."),
-                    settings.backgroundUpdates,
-                    vm::setBackgroundUpdates
-                )
-                if (settings.backgroundUpdates) {
-                    GroupDivider()
-                    ListItem(
-                        modifier = Modifier.clickable { intervalDialog = true },
-                        headlineContent = { Text(tr("Update interval")) },
-                        supportingContent = { Text(intervalLabel(settings.backgroundIntervalMinutes)) },
-                        trailingContent = { Icon(Icons.Rounded.ChevronRight, null) },
-                        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-                    )
-                }
-                GroupDivider()
-                SwitchRow(
-                    tr("Never update weather from 0:30 to 6:00"),
-                    tr("Automatic updates are paused overnight, from 0:30 to 6:00."),
-                    settings.quietHours,
-                    vm::setQuietHours
-                )
-                GroupDivider()
-                SwitchRow(
-                    tr("Weather sounds"),
-                    tr("Play ambient sounds that match the current weather."),
-                    settings.sounds,
-                    vm::setSounds
-                )
-            }
-
             CategoryTitle(tr("About & Legal"))
             UpdateCard(up)
             Spacer(Modifier.height(12.dp))
@@ -647,6 +709,13 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
             Spacer(Modifier.height(16.dp))
         }
     }
+}
+
+private fun keyNote(source: WeatherSource): String = when (source) {
+    WeatherSource.WeatherApi -> "WeatherAPI key note"
+    WeatherSource.OpenWeather -> "OpenWeather key note"
+    WeatherSource.VisualCrossing -> "Visual Crossing key note"
+    else -> "Open-Meteo key note"
 }
 
 @Composable
