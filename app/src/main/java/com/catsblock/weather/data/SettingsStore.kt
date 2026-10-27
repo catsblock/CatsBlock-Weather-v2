@@ -28,6 +28,7 @@ class SettingsStore(private val context: Context) {
         val showLifeIndex = booleanPreferencesKey("show_life_index")
         val showPrecipitation = booleanPreferencesKey("show_precipitation")
         val mobileData = booleanPreferencesKey("mobile_data")
+        val quietHours = booleanPreferencesKey("quiet_hours")
         val sounds = booleanPreferencesKey("sounds")
         val language = stringPreferencesKey("language")
         val rainAlerts = booleanPreferencesKey("rain_alerts")
@@ -55,6 +56,7 @@ class SettingsStore(private val context: Context) {
             showLifeIndex = it[Keys.showLifeIndex] ?: true,
             showPrecipitation = it[Keys.showPrecipitation] ?: true,
             mobileData = it[Keys.mobileData] ?: true,
+            quietHours = it[Keys.quietHours] ?: true,
             sounds = it[Keys.sounds] ?: true,
             language = AppLanguage.from(it[Keys.language]),
             rainAlerts = it[Keys.rainAlerts] ?: true,
@@ -133,6 +135,10 @@ class SettingsStore(private val context: Context) {
 
     suspend fun setMobileData(value: Boolean) {
         context.dataStore.edit { it[Keys.mobileData] = value }
+    }
+
+    suspend fun setQuietHours(value: Boolean) {
+        context.dataStore.edit { it[Keys.quietHours] = value }
     }
 
     suspend fun setSounds(value: Boolean) {
