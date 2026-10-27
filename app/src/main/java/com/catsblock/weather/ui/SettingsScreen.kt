@@ -116,7 +116,6 @@ import com.catsblock.weather.data.SettingsStore
 import com.catsblock.weather.i18n.AppLanguage
 import com.catsblock.weather.i18n.leadFull
 import com.catsblock.weather.i18n.tr
-import com.catsblock.weather.i18n.trx
 import com.catsblock.weather.update.UpdateInfo
 import com.catsblock.weather.update.UpdateState
 import com.catsblock.weather.update.UpdateViewModel
@@ -246,7 +245,7 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
         }
         AlertDialog(
             onDismissRequest = { leadDialog = null },
-            title = { Text(trx("Alert time")) },
+            title = { Text(tr("Alert time")) },
             text = {
                 Column(Modifier.verticalScroll(rememberScrollState())) {
                     options.forEach { minutes ->
@@ -414,26 +413,26 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
                 )
             }
 
-            GroupLabel(trx("Customization"))
+            GroupLabel(tr("Customization"))
             Group {
                 NavRow(
                     Icons.Rounded.Palette,
-                    trx("Weather Icon Kit"),
-                    trx("Replace the weather icons used in the app and widgets."),
+                    tr("Weather Icon Kit"),
+                    tr("Replace the weather icons used in the app and widgets."),
                     vm::openIconKit
                 )
                 GroupDivider()
                 NavRow(
                     Icons.Rounded.Wallpaper,
-                    trx("Weather Background Kit"),
-                    trx("Choose your own backgrounds (images or GIFs) and sounds (MP3) for each weather."),
+                    tr("Weather Background Kit"),
+                    tr("Choose your own backgrounds (images or GIFs) and sounds (MP3) for each weather."),
                     vm::openBackgroundKit
                 )
                 GroupDivider()
                 NavRow(
                     Icons.Rounded.AppShortcut,
-                    trx("App icon changer"),
-                    trx("Use any image as your app icon on the home screen, or restore the default."),
+                    tr("App icon changer"),
+                    tr("Use any image as your app icon on the home screen, or restore the default."),
                     vm::openAppIcon
                 )
             }
@@ -575,15 +574,22 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
                         trailingContent = { Icon(Icons.Rounded.ChevronRight, null) },
                         colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                     )
+                    GroupDivider()
+                    SwitchRow(
+                        tr("Never update weather from 0:30 to 6:00"),
+                        tr("Automatic updates are paused overnight, from 0:30 to 6:00."),
+                        settings.quietHours,
+                        vm::setQuietHours
+                    )
                 }
             }
 
-            CategoryTitle(trx("Notifications"))
+            CategoryTitle(tr("Notifications"))
 
             Group {
                 SwitchRow(
-                    trx("Rain alerts"),
-                    trx("Get notified before rain arrives."),
+                    tr("Rain alerts"),
+                    tr("Get notified before rain arrives."),
                     settings.rainAlerts
                 ) { enabled ->
                     vm.setRainAlerts(enabled)
@@ -593,7 +599,7 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
                     GroupDivider()
                     ListItem(
                         modifier = Modifier.clickable { leadDialog = "rain" },
-                        headlineContent = { Text(trx("Alert time")) },
+                        headlineContent = { Text(tr("Alert time")) },
                         supportingContent = { Text(leadFull(settings.rainLeadMinutes)) },
                         trailingContent = { Icon(Icons.Rounded.ChevronRight, null) },
                         colors = ListItemDefaults.colors(containerColor = Color.Transparent)
@@ -601,8 +607,8 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
                 }
                 GroupDivider()
                 SwitchRow(
-                    trx("Snow alerts"),
-                    trx("Get notified before snow arrives."),
+                    tr("Snow alerts"),
+                    tr("Get notified before snow arrives."),
                     settings.snowAlerts
                 ) { enabled ->
                     vm.setSnowAlerts(enabled)
@@ -612,7 +618,7 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
                     GroupDivider()
                     ListItem(
                         modifier = Modifier.clickable { leadDialog = "snow" },
-                        headlineContent = { Text(trx("Alert time")) },
+                        headlineContent = { Text(tr("Alert time")) },
                         supportingContent = { Text(leadFull(settings.snowLeadMinutes)) },
                         trailingContent = { Icon(Icons.Rounded.ChevronRight, null) },
                         colors = ListItemDefaults.colors(containerColor = Color.Transparent)
@@ -620,8 +626,8 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
                 }
                 GroupDivider()
                 SwitchRow(
-                    trx("Be notified when there is a lunar eclipse or a solar eclipse"),
-                    trx("Only eclipses you can see from your city are announced."),
+                    tr("Be notified when there is a lunar eclipse or a solar eclipse"),
+                    tr("Only eclipses you can see from your city are announced."),
                     settings.eclipseAlerts
                 ) { enabled ->
                     vm.setEclipseAlerts(enabled)
@@ -631,7 +637,7 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
                     GroupDivider()
                     ListItem(
                         modifier = Modifier.clickable { leadDialog = "eclipse" },
-                        headlineContent = { Text(trx("Alert time")) },
+                        headlineContent = { Text(tr("Alert time")) },
                         supportingContent = { Text(leadFull(settings.eclipseLeadMinutes)) },
                         trailingContent = { Icon(Icons.Rounded.ChevronRight, null) },
                         colors = ListItemDefaults.colors(containerColor = Color.Transparent)
@@ -639,8 +645,8 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
                 }
                 GroupDivider()
                 SwitchRow(
-                    trx("Notify when there is a new app update"),
-                    trx("Get notified with the new version, and update straight from the notification."),
+                    tr("Notify when there is a new app update"),
+                    tr("Get notified with the new version, and update straight from the notification."),
                     settings.updateAlerts
                 ) { enabled ->
                     vm.setUpdateAlerts(enabled)
@@ -649,10 +655,10 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
                 if ((settings.rainAlerts || settings.snowAlerts || settings.eclipseAlerts || settings.updateAlerts) && !notificationsOn) {
                     GroupDivider()
                     ListItem(
-                        headlineContent = { Text(trx("Notifications are turned off")) },
-                        supportingContent = { Text(trx("Allow notifications so alerts can reach you.")) },
+                        headlineContent = { Text(tr("Notifications are turned off")) },
+                        supportingContent = { Text(tr("Allow notifications so alerts can reach you.")) },
                         trailingContent = {
-                            TextButton(onClick = { askNotifications(true) }) { Text(trx("Allow")) }
+                            TextButton(onClick = { askNotifications(true) }) { Text(tr("Allow")) }
                         },
                         colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                     )
