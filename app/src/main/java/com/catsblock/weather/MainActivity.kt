@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -51,6 +52,7 @@ import com.catsblock.weather.i18n.AppLanguage
 import com.catsblock.weather.i18n.I18n
 import com.catsblock.weather.i18n.tr
 import com.catsblock.weather.ui.AppIconScreen
+import com.catsblock.weather.ui.atmosphere.LocalShadersDisabled
 import com.catsblock.weather.ui.BackgroundKitScreen
 import com.catsblock.weather.ui.CityPickerScreen
 import com.catsblock.weather.ui.IconKitScreen
@@ -78,7 +80,9 @@ class MainActivity : ComponentActivity() {
             val settings by vm.settings.collectAsStateWithLifecycle()
             WeatherTheme(settings.theme) {
                 I18n.lang = settings.language
-                key(settings.language) { AppRoot(vm) }
+                CompositionLocalProvider(LocalShadersDisabled provides settings.disableShaders) {
+                    key(settings.language) { AppRoot(vm) }
+                }
             }
         }
     }
