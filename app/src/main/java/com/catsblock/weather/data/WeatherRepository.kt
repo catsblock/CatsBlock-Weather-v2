@@ -21,6 +21,8 @@ import java.time.temporal.ChronoUnit
 import java.util.concurrent.TimeUnit
 import kotlin.math.max
 
+internal class WorkerHttpException(val code: Int) : IOException("Worker HTTP $code")
+
 internal class WorkerLimitException(val waitSeconds: Long, val exhausted: Boolean) : IOException("Worker limit reached")
 
 class WeatherRepository {
@@ -80,7 +82,11 @@ class WeatherRepository {
     }
 
     private suspend fun workerGet(url: String): String = withContext(Dispatchers.IO) {
-        client.newCall(Request.Builder().url(url).build()).execute().use { response ->
+        val builder = Request.Builder().url(url)
+        val path = runCatching { java.net.URI(url).path }.getOrNull().orEmpty()
+        UserKeys.forPath(path)?.let { builder.header("X-Api-Key", it) }
+        SecretKeys.appToken().takeIf { it.isNotEmpty() }?.let { builder.header("X-App-Token", it) }
+        client.newCall(builder.build()).execute().use { response ->
             val prev = _usageStatus.value
             val shortRemaining = response.header("X-RateLimit-Remaining-10m")?.toIntOrNull() ?: prev.shortRemaining
             val shortLimit = response.header("X-RateLimit-Limit-10m")?.toIntOrNull() ?: prev.shortLimit
@@ -103,7 +109,7 @@ class WeatherRepository {
                 if (response.code == 429 || response.code == 503 || wait > 0) {
                     throw WorkerLimitException(wait, exhaustedSeconds > 0)
                 }
-                throw IOException("HTTP ${response.code}")
+                throw WorkerHttpException(response.code)
             }
             response.body?.string() ?: throw IOException("Empty response")
         }
@@ -227,6 +233,7 @@ class WeatherRepository {
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
+            _usageStatus.value = _usageStatus.value.copy(usingFallback = true)
             fetchOpenMeteo(city)
         }
     }
@@ -244,8 +251,10 @@ class WeatherRepository {
             throw e
         } catch (e: WorkerLimitException) {
             throw e
+        } catch (e: WorkerHttpException) {
+            throw e
         } catch (e: Exception) {
-            throw IOException("Provider request failed")
+            throw IOException("Provider response could not be parsed", e)
         }
         val aqi = air.await()
         bundle.copy(
