@@ -5,7 +5,6 @@ import androidx.annotation.RequiresApi
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
-import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import com.catsblock.weather.data.Condition
@@ -16,9 +15,9 @@ import java.time.LocalTime
 import kotlin.math.cos
 import kotlin.math.sin
 
-val LocalShadersDisabled = compositionLocalOf { false }
-
 private const val WIND_REFERENCE_KMH = 50.0
+private const val STANDARD_PRESSURE_HPA = 1013.0
+private const val PRESSURE_SPAN_HPA = 30.0
 
 private fun channel(from: Int, to: Int, t: Float): Int = (from + (to - from) * t).toInt().coerceIn(0, 255)
 
@@ -45,20 +44,37 @@ fun AtmosphereSky(
     time: LocalTime?,
     dayOfYear: Int,
     modifier: Modifier = Modifier,
-    windDirDeg: Double = 0.0
+    windDirDeg: Double = 0.0,
+    pressureHpa: Double = Double.NaN,
+    precipMm: Double = -1.0
 ) {
+    if (!ShaderGate.enabled()) {
+        Box(modifier)
+        return
+    }
     val state = remember { AtmosphereState() }
     val minutes = time?.let { it.hour * 60 + it.minute } ?: 720
     val tod = WeatherDecisionEngine.timeOfDay(minutes)
     val cover = if (cloudPercent >= 0) cloudPercent / 100f else WeatherDecisionEngine.coverFor(kind)
-    val rain = rainIntensity(kind)
+    val coded = rainIntensity(kind)
+    val rain = when {
+        coded <= 0f -> 0f
+        precipMm < 0.0 -> coded
+        precipMm < 0.05 -> 0f
+        else -> (0.2f + precipMm.toFloat() / 6f).coerceIn(0.2f, 1f)
+    }
     val snow = snowIntensity(kind)
-    val storm = if (kind == Condition.Storm) 1f else 0f
+    val storm = if (kind == Condition.Storm && rain > 0f) 1f else 0f
     val wind = (windKmh / WIND_REFERENCE_KMH).toFloat().coerceIn(0f, 1f)
     val windFrom = if (windDirDeg.isFinite()) windDirDeg else 0.0
     val windRadians = Math.toRadians(windFrom + 180.0)
     val windX = sin(windRadians).toFloat() * wind
     val windZ = cos(windRadians).toFloat() * wind
+    val pressure = if (pressureHpa.isFinite()) {
+        ((pressureHpa - STANDARD_PRESSURE_HPA) / PRESSURE_SPAN_HPA).toFloat().coerceIn(-1f, 1f)
+    } else {
+        0f
+    }
     val alto = WeatherDecisionEngine.altocumulusChance(cover, dayOfYear)
     val seed = (dayOfYear % 97).toFloat()
     SideEffect {
@@ -73,10 +89,7 @@ fun AtmosphereSky(
         state.altoChance = alto
         state.seed = seed
         state.sunTint = sunTintFor(tod)
+        state.pressure = pressure
     }
-    if (LocalShadersDisabled.current) {
-        Box(modifier)
-    } else {
-        Box(modifier.atmosphere(state))
-    }
+    Box(modifier.atmosphere(state))
 }
