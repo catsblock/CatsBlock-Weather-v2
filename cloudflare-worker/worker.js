@@ -23,7 +23,6 @@ const MONTH_MS = 30 * 24 * 60 * 60 * 1000;
 const WEATHER_MONTH_LIMIT = 590;
 const VISUAL_MONTH_LIMIT = 260;
 
-const DEVICE_ID_PATTERN = /^[a-f0-9]{64}$/;
 const USER_KEY_PATTERN = /^[A-Za-z0-9_-]{16,64}$/;
 const COORD_PATTERN = /^-?\d{1,3}(\.\d{1,10})?$/;
 
@@ -113,21 +112,12 @@ function clientIp(request) {
   return ip.length > 0 && ip.length <= 64 ? ip : "";
 }
 
-function deviceId(request) {
-  const id = (request.headers.get("X-Device-Id") || "").trim().toLowerCase();
-  return DEVICE_ID_PATTERN.test(id) ? id : "";
-}
-
 async function identify(request, env) {
   const ip = clientIp(request);
-  const device = deviceId(request);
   if (!ip) return { error: "client_unidentified" };
-  if (!device) return { error: "device_unidentified" };
   const salt = env.RATE_SALT || "catsblock-weather";
-  return {
-    clientKey: "c:" + (await hmacHex(salt, "device|" + ip + "|" + device)),
-    ipKey: "ip:" + (await hmacHex(salt, "ip|" + ip)),
-  };
+  const hashed = await hmacHex(salt, "ip|" + ip);
+  return { clientKey: "c:" + hashed, ipKey: "ip:" + hashed };
 }
 
 function authorized(request, env) {
