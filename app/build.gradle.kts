@@ -32,6 +32,7 @@ android {
         versionCode = buildNum
         versionName = "1.0.$buildNum"
         buildConfigField("String", "CLOUDFLARE_WEBSITE", quoted(secret("CLOUDFLARE_WEBSITE").trimEnd('/')))
+        buildConfigField("String", "APP_TOKEN", quoted(secret("APP_TOKEN")))
     }
 
     signingConfigs {
