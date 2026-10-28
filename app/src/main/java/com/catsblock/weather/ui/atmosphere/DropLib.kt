@@ -26,17 +26,19 @@ float stickSlip(float pr, float n) {
 }
 
 float3 dropSdf(float2 q, float r, float vel) {
-    float aspect = 1.0 + 0.5 * vel;
-    float ry = r * sqrt(aspect);
-    float rx = r * inversesqrt(aspect);
-    float rear = clamp(-q.y / ry, 0.0, 1.0);
-    rx *= 1.0 - 0.30 * vel * rear;
-    float2 qn = float2(q.x / rx, q.y / ry);
-    float d = (length(qn) - 1.0) * min(rx, ry);
-    float2 tail = float2(0.0, -ry * (1.15 + 0.5 * vel));
-    float dt = length(q - tail) - r * 0.42 * vel + r * 3.0 * (1.0 - smoothstep(0.0, 0.08, vel));
-    d = smoothMin(d, dt, r * 0.6 * vel + 0.0001);
-    return float3(d, qn);
+    float rt = r * (0.20 + 0.34 * vel);
+    float2 tail = float2(0.0, -(r + rt) * (0.55 + 0.45 * vel));
+    float away = 1.0 - smoothstep(0.0, 0.08, vel);
+    float d1 = length(q) - r;
+    float d2 = length(q - tail) - rt + r * 3.0 * away;
+    float k = r * (0.15 + 0.45 * vel);
+    float h = clamp(0.5 + 0.5 * (d2 - d1) / k, 0.0, 1.0);
+    float d = mix(d2, d1, h) - k * h * (1.0 - h);
+    float2 g1 = q / max(length(q), 0.0001);
+    float2 g2 = (q - tail) / max(length(q - tail), 0.0001);
+    float2 outDir = normalize(mix(g2, g1, h) + float2(0.0001, 0.0));
+    float rho = 1.0 - clamp(-d / r, 0.0, 1.0);
+    return float3(d, outDir * rho);
 }
 
 float4 lensDrop(float2 qn, float inside, float rr) {
