@@ -4,6 +4,11 @@ import android.os.Build
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.core.FiniteAnimationSpec
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.shape.RoundedCornerShape as Rounded
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -37,10 +42,8 @@ import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.material3.ColorScheme
-import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -130,7 +133,6 @@ private fun Modifier.pill(
     }
 }
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun NavButton(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
@@ -138,17 +140,24 @@ private fun NavButton(
     enabled: Boolean,
     onClick: () -> Unit
 ) {
+    val source = remember { MutableInteractionSource() }
+    val pressed by source.collectIsPressedAsState()
+    val corner by animateDpAsState(
+        targetValue = if (pressed) 14.dp else 24.dp,
+        animationSpec = spring(dampingRatio = 0.55f, stiffness = 500f),
+        label = "nav-button-shape"
+    )
     FilledTonalIconButton(
         onClick = onClick,
         enabled = enabled,
         modifier = Modifier.size(48.dp),
-        shapes = IconButtonDefaults.shapes()
+        shape = Rounded(corner),
+        interactionSource = source
     ) {
         Icon(icon, contentDescription = description, modifier = Modifier.size(24.dp))
     }
 }
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun CardDetailHistoryScreen(
     title: String,
@@ -200,7 +209,7 @@ fun CardDetailHistoryScreen(
         previousIndex = safeIndex
         index = target.coerceIn(0, days.lastIndex)
     }
-    val springSpec: FiniteAnimationSpec<Float> = MaterialTheme.motionScheme.defaultSpatialSpec()
+    val springSpec: FiniteAnimationSpec<Float> = spring(dampingRatio = 0.65f, stiffness = 380f)
 
     Dialog(
         onDismissRequest = onBack,
