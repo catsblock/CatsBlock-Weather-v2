@@ -9,6 +9,8 @@ internal object SecretKeys {
         return if (value.startsWith("https://")) value else ""
     }
 
+    fun appToken(): String = BuildConfig.APP_TOKEN.trim()
+
     fun available(source: WeatherSource): Boolean = when (source) {
         WeatherSource.OpenMeteo -> true
         WeatherSource.WeatherApi, WeatherSource.VisualCrossing, WeatherSource.OpenWeather -> baseUrl().isNotEmpty()
