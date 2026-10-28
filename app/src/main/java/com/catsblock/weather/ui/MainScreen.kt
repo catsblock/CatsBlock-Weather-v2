@@ -312,7 +312,8 @@ fun MainScreen(vm: WeatherViewModel) {
                     bundle?.current?.now?.toLocalTime(),
                     bundle?.current?.cloud ?: -1,
                     bundle?.current?.windSpeed ?: 0.0,
-                    bundle?.current?.now?.dayOfYear ?: 0
+                    bundle?.current?.now?.dayOfYear ?: 0,
+                    bundle?.current?.windDir ?: 0.0
                 )
             }
             Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = progress * 0.32f)))
