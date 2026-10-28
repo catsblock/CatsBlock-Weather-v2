@@ -1,5 +1,6 @@
 package com.catsblock.weather.ui
 
+import com.catsblock.weather.ui.components.ExpressiveProgressBar
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -10,7 +11,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -92,9 +92,9 @@ private fun UsageCard(
                     Text("$percent%", color = barColor, style = MaterialTheme.typography.labelMedium)
                 }
                 Spacer()
-                LinearProgressIndicator(
+                ExpressiveProgressBar(
                     progress = { fraction },
-                    modifier = Modifier.fillMaxWidth().height(4.dp),
+                    modifier = Modifier.fillMaxWidth().height(10.dp),
                     color = barColor,
                     trackColor = MaterialTheme.colorScheme.surface
                 )
