@@ -3,7 +3,9 @@ package com.catsblock.weather.ui
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.MaterialExpressiveTheme
+import androidx.compose.material3.MotionScheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
@@ -18,6 +20,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.catsblock.weather.data.ThemeMode
+import com.catsblock.weather.ui.typography.GoogleSansFlex
 
 private val LightFallback = lightColorScheme(
     primary = Color(0xFF1565C0),
@@ -69,49 +72,34 @@ private val DarkFallback = darkColorScheme(
     surfaceContainerHigh = Color(0xFF1C2A40)
 )
 
-private val AppTypography = Typography(
-    headlineMedium = TextStyle(
-        fontWeight = FontWeight.Bold,
-        fontSize = 28.sp,
-        lineHeight = 34.sp,
-        letterSpacing = (-0.5).sp
-    ),
-    headlineSmall = TextStyle(
-        fontWeight = FontWeight.SemiBold,
-        fontSize = 24.sp,
-        lineHeight = 30.sp
-    ),
-    titleLarge = TextStyle(
-        fontWeight = FontWeight.SemiBold,
-        fontSize = 22.sp,
-        lineHeight = 28.sp
-    ),
-    titleMedium = TextStyle(
-        fontWeight = FontWeight.SemiBold,
-        fontSize = 16.sp,
-        lineHeight = 22.sp,
-        letterSpacing = 0.1.sp
-    ),
-    titleSmall = TextStyle(
-        fontWeight = FontWeight.Medium,
-        fontSize = 14.sp,
-        lineHeight = 20.sp,
-        letterSpacing = 0.1.sp
-    ),
-    labelLarge = TextStyle(
-        fontWeight = FontWeight.SemiBold,
-        fontSize = 14.sp,
-        lineHeight = 20.sp,
-        letterSpacing = 0.1.sp
-    ),
-    labelMedium = TextStyle(
-        fontWeight = FontWeight.Medium,
-        fontSize = 12.sp,
-        lineHeight = 16.sp,
-        letterSpacing = 0.3.sp
-    )
+private val BaseTypography = Typography()
+
+private val AppTypography = BaseTypography.copy(
+    displayLarge = BaseTypography.displayLarge.copy(fontFamily = GoogleSansFlex.family, fontWeight = FontWeight.Light),
+    displayMedium = BaseTypography.displayMedium.copy(fontFamily = GoogleSansFlex.family, fontWeight = FontWeight.Light),
+    displaySmall = BaseTypography.displaySmall.copy(fontFamily = GoogleSansFlex.family, fontWeight = FontWeight.Light),
+    headlineLarge = BaseTypography.headlineLarge.copy(fontFamily = GoogleSansFlex.family, fontWeight = FontWeight.Medium),
+    headlineMedium = TextStyle(fontFamily = GoogleSansFlex.family, fontWeight = FontWeight.Bold, fontSize = 28.sp, lineHeight = 34.sp, letterSpacing = (-0.5).sp),
+    headlineSmall = TextStyle(fontFamily = GoogleSansFlex.family, fontWeight = FontWeight.SemiBold, fontSize = 24.sp, lineHeight = 30.sp),
+    titleLarge = TextStyle(fontFamily = GoogleSansFlex.family, fontWeight = FontWeight.SemiBold, fontSize = 22.sp, lineHeight = 28.sp),
+    titleMedium = TextStyle(fontFamily = GoogleSansFlex.family, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, lineHeight = 22.sp, letterSpacing = 0.1.sp),
+    titleSmall = TextStyle(fontFamily = GoogleSansFlex.family, fontWeight = FontWeight.Medium, fontSize = 14.sp, lineHeight = 20.sp, letterSpacing = 0.1.sp),
+    labelLarge = TextStyle(fontFamily = GoogleSansFlex.family, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, lineHeight = 20.sp, letterSpacing = 0.1.sp),
+    labelMedium = TextStyle(fontFamily = GoogleSansFlex.family, fontWeight = FontWeight.Medium, fontSize = 12.sp, lineHeight = 16.sp, letterSpacing = 0.3.sp)
 )
 
+private val ExpressiveShapes = Shapes(
+    extraSmall = RoundedCornerShape(8.dp),
+    small = RoundedCornerShape(12.dp),
+    medium = RoundedCornerShape(16.dp),
+    large = RoundedCornerShape(28.dp),
+    largeIncreased = RoundedCornerShape(32.dp),
+    extraLarge = RoundedCornerShape(36.dp),
+    extraLargeIncreased = RoundedCornerShape(44.dp),
+    extraExtraLarge = RoundedCornerShape(52.dp)
+)
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun WeatherTheme(mode: ThemeMode = ThemeMode.System, content: @Composable () -> Unit) {
     val dark = when (mode) {
@@ -126,16 +114,11 @@ fun WeatherTheme(mode: ThemeMode = ThemeMode.System, content: @Composable () -> 
         dark -> DarkFallback
         else -> LightFallback
     }
-    MaterialTheme(
+    MaterialExpressiveTheme(
         colorScheme = scheme,
+        motionScheme = MotionScheme.expressive(),
+        shapes = ExpressiveShapes,
         typography = AppTypography,
-        shapes = Shapes(
-            extraSmall = RoundedCornerShape(8.dp),
-            small = RoundedCornerShape(12.dp),
-            medium = RoundedCornerShape(20.dp),
-            large = RoundedCornerShape(28.dp),
-            extraLarge = RoundedCornerShape(32.dp)
-        ),
         content = content
     )
 }
