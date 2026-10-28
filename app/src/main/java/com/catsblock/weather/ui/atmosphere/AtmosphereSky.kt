@@ -5,6 +5,7 @@ import androidx.annotation.RequiresApi
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import com.catsblock.weather.data.Condition
@@ -12,6 +13,10 @@ import com.catsblock.weather.data.WeatherDecisionEngine
 import com.catsblock.weather.ui.glass.rainIntensity
 import com.catsblock.weather.ui.glass.snowIntensity
 import java.time.LocalTime
+import kotlin.math.cos
+import kotlin.math.sin
+
+val LocalShadersDisabled = compositionLocalOf { false }
 
 private const val WIND_REFERENCE_KMH = 50.0
 
@@ -39,7 +44,8 @@ fun AtmosphereSky(
     windKmh: Double,
     time: LocalTime?,
     dayOfYear: Int,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    windDirDeg: Double = 0.0
 ) {
     val state = remember { AtmosphereState() }
     val minutes = time?.let { it.hour * 60 + it.minute } ?: 720
@@ -49,6 +55,10 @@ fun AtmosphereSky(
     val snow = snowIntensity(kind)
     val storm = if (kind == Condition.Storm) 1f else 0f
     val wind = (windKmh / WIND_REFERENCE_KMH).toFloat().coerceIn(0f, 1f)
+    val windFrom = if (windDirDeg.isFinite()) windDirDeg else 0.0
+    val windRadians = Math.toRadians(windFrom + 180.0)
+    val windX = sin(windRadians).toFloat() * wind
+    val windZ = cos(windRadians).toFloat() * wind
     val alto = WeatherDecisionEngine.altocumulusChance(cover, dayOfYear)
     val seed = (dayOfYear % 97).toFloat()
     SideEffect {
@@ -58,9 +68,15 @@ fun AtmosphereSky(
         state.storm = storm
         state.snow = snow
         state.wind = wind
+        state.windX = windX
+        state.windZ = windZ
         state.altoChance = alto
         state.seed = seed
         state.sunTint = sunTintFor(tod)
     }
-    Box(modifier.atmosphere(state))
+    if (LocalShadersDisabled.current) {
+        Box(modifier)
+    } else {
+        Box(modifier.atmosphere(state))
+    }
 }
