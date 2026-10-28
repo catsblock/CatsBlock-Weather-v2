@@ -34,12 +34,12 @@ class AtmosphereState {
     @Volatile var rain: Float = 0f
     @Volatile var storm: Float = 0f
     @Volatile var wind: Float = 0f
+    @Volatile var windX: Float = 0f
+    @Volatile var windZ: Float = 0f
     @Volatile var snow: Float = 0f
     @Volatile var altoChance: Float = 0f
     @Volatile var seed: Float = 0f
     @Volatile var sunTint: Int = 0
-    @Volatile var night: Float = 0f
-    @Volatile var moonT: Float = 0.5f
 }
 
 private const val RENDER_SCALE = 0.5f
@@ -73,6 +73,17 @@ private class AtmosphereNode(var state: AtmosphereState) : Modifier.Node(), Draw
     private var time = 0f
     private var layerWidth = 1f
     private var layerHeight = 1f
+    private val resolutionUniform = FloatArray(2)
+    private val timeUniform = FloatArray(1)
+    private val todUniform = FloatArray(1)
+    private val coverUniform = FloatArray(1)
+    private val rainUniform = FloatArray(1)
+    private val stormUniform = FloatArray(1)
+    private val windUniform = FloatArray(1)
+    private val windVectorUniform = FloatArray(2)
+    private val snowUniform = FloatArray(1)
+    private val altoChanceUniform = FloatArray(1)
+    private val seedUniform = FloatArray(1)
 
     private val recordBlock: DrawScope.() -> Unit = {
         brush?.let { drawRect(it, size = Size(layerWidth, layerHeight)) }
@@ -114,19 +125,31 @@ private class AtmosphereNode(var state: AtmosphereState) : Modifier.Node(), Draw
         layerWidth = w.toFloat()
         layerHeight = h.toFloat()
         val st = state
-        s.setFloatUniform("resolution", layerWidth, layerHeight)
-        s.setFloatUniform("time", time)
-        s.setFloatUniform("tod", st.tod)
-        s.setFloatUniform("cover", st.cover)
-        s.setFloatUniform("rain", st.rain)
-        s.setFloatUniform("storm", st.storm)
-        s.setFloatUniform("wind", st.wind)
-        s.setFloatUniform("snow", st.snow)
-        s.setFloatUniform("altoChance", st.altoChance)
-        s.setFloatUniform("seed", st.seed)
+        resolutionUniform[0] = layerWidth
+        resolutionUniform[1] = layerHeight
+        timeUniform[0] = time
+        todUniform[0] = st.tod
+        coverUniform[0] = st.cover
+        rainUniform[0] = st.rain
+        stormUniform[0] = st.storm
+        windUniform[0] = st.wind
+        windVectorUniform[0] = st.windX
+        windVectorUniform[1] = st.windZ
+        snowUniform[0] = st.snow
+        altoChanceUniform[0] = st.altoChance
+        seedUniform[0] = st.seed
+        RuntimeShaderUniforms.setFloatUniform(s, "resolution", resolutionUniform)
+        RuntimeShaderUniforms.setFloatUniform(s, "time", timeUniform)
+        RuntimeShaderUniforms.setFloatUniform(s, "tod", todUniform)
+        RuntimeShaderUniforms.setFloatUniform(s, "cover", coverUniform)
+        RuntimeShaderUniforms.setFloatUniform(s, "rain", rainUniform)
+        RuntimeShaderUniforms.setFloatUniform(s, "storm", stormUniform)
+        RuntimeShaderUniforms.setFloatUniform(s, "wind", windUniform)
+        RuntimeShaderUniforms.setFloatUniform(s, "windVector", windVectorUniform)
+        RuntimeShaderUniforms.setFloatUniform(s, "snow", snowUniform)
+        RuntimeShaderUniforms.setFloatUniform(s, "altoChance", altoChanceUniform)
+        RuntimeShaderUniforms.setFloatUniform(s, "seed", seedUniform)
         s.setColorUniform("sunTint", st.sunTint)
-        s.setFloatUniform("night", st.night)
-        s.setFloatUniform("moonT", st.moonT)
         l.record(this, layoutDirection, IntSize(w, h), recordBlock)
         scale(1f / RENDER_SCALE, 1f / RENDER_SCALE, Offset.Zero, compositeBlock)
     }
@@ -164,6 +187,12 @@ private class GlassRainNode(
 
     private val trail = FloatArray(TRAIL_POINTS * 3)
     private val trailUniform = FloatArray(TRAIL_POINTS * 4)
+    private val resolutionUniform = FloatArray(2)
+    private val timeUniform = FloatArray(1)
+    private val seedUniform = FloatArray(1)
+    private val rainUniform = FloatArray(1)
+    private val snowUniform = FloatArray(1)
+    private val dropStateUniform = FloatArray(4)
     private var head = 0
     private var pressed = false
     private var downX = 0f
@@ -276,12 +305,26 @@ private class GlassRainNode(
         }
         val dropAge = time - dropBirth
         val dropValid = if (dropAge in 0f..DROP_LIFE) 1f else 0f
-        s.setFloatUniform("resolution", size.width, size.height)
-        s.setFloatUniform("time", time)
-        s.setFloatUniform("seed", seed)
-        if (snowMode) s.setFloatUniform("snow", snow) else s.setFloatUniform("rain", intensity)
-        s.setFloatUniform("tp", trailUniform)
-        s.setFloatUniform("dropState", dropX, dropY, dropAge, dropValid)
+        resolutionUniform[0] = size.width
+        resolutionUniform[1] = size.height
+        timeUniform[0] = time
+        seedUniform[0] = seed
+        rainUniform[0] = intensity
+        snowUniform[0] = snow
+        dropStateUniform[0] = dropX
+        dropStateUniform[1] = dropY
+        dropStateUniform[2] = dropAge
+        dropStateUniform[3] = dropValid
+        RuntimeShaderUniforms.setFloatUniform(s, "resolution", resolutionUniform)
+        RuntimeShaderUniforms.setFloatUniform(s, "time", timeUniform)
+        RuntimeShaderUniforms.setFloatUniform(s, "seed", seedUniform)
+        if (snowMode) {
+            RuntimeShaderUniforms.setFloatUniform(s, "snow", snowUniform)
+        } else {
+            RuntimeShaderUniforms.setFloatUniform(s, "rain", rainUniform)
+        }
+        RuntimeShaderUniforms.setFloatUniform(s, "tp", trailUniform)
+        RuntimeShaderUniforms.setFloatUniform(s, "dropState", dropStateUniform)
         drawRect(b, size = size)
     }
 }
