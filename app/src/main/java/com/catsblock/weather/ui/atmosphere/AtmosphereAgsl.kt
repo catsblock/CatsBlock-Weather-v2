@@ -10,6 +10,7 @@ uniform float cover;
 uniform float rain;
 uniform float storm;
 uniform float wind;
+uniform float2 windVector;
 uniform float altoChance;
 uniform float seed;
 uniform float snow;
@@ -94,34 +95,43 @@ float miePhase(float c) {
 }
 
 float dens(float3 p, float hgt, float dist, float cirA, float altA, float genA) {
-    float3 q = p * 0.6 + float3(time * 0.010 * (0.6 + wind), 0.0, time * 0.003 + seed);
+    float2 drift = windVector * time * 0.000035;
+    float3 q = p * 0.6 + float3(drift.x, 0.0, drift.y + seed);
     float2 w1 = float2(noise3(q * 0.5), noise3(q * 0.5 + float3(17.3, 3.1, 9.7))) - 0.5;
     q.xz += w1 * 1.3;
     float2 w2 = float2(noise3(q * 1.3 + 4.1), noise3(q * 1.3 + float3(8.2, 1.7, 5.3))) - 0.5;
     q.xz += w2 * 0.5;
+    float3 midQ = q + float3(drift.x * 0.42, 0.0, drift.y * 0.42);
+    float3 highQ = q + float3(drift.x * 1.35, 0.0, drift.y * 1.35);
     float sw = 0.16 + 0.34 * dist;
+    float lowShape = smoothstep(0.0, 0.22, hgt) * (1.0 - smoothstep(0.68, 1.0, hgt));
+    float midShape = smoothstep(0.14, 0.40, hgt) * (1.0 - smoothstep(0.76, 1.0, hgt));
+    float highShape = smoothstep(0.34, 0.62, hgt) * (1.0 - smoothstep(0.78, 1.0, hgt));
+    float towerShape = smoothstep(0.0, 0.18, hgt) * (1.0 - smoothstep(0.86, 1.0, hgt));
     float d = 0.0;
     if (cirA > 0.01) {
-        float3 c = float3(q.x * 0.22, q.y * 1.2, q.z * 1.9);
+        float3 c = float3(highQ.x * 0.22, highQ.y * 1.2, highQ.z * 1.9);
         float n = fbm3(c * 2.0);
-        float fib = noise3(float3(q.x * 0.06, q.y, q.z * 7.0));
+        float fib = noise3(float3(highQ.x * 0.06, highQ.y, highQ.z * 7.0));
         float th = mix(0.74, 0.52, cover);
-        d += cirA * smoothstep(th, th + sw + 0.12, n) * (0.45 + 0.75 * fib) * 0.6;
+        d += cirA * smoothstep(th, th + sw + 0.12, n) * (0.45 + 0.75 * fib) * highShape * 0.7;
     }
     if (altA > 0.01) {
-        float b = fbm3(q * 1.1);
-        float bill = 1.0 - abs(noise3(q * 3.3 + float3(5.0, 1.0, 2.0)) * 2.0 - 1.0);
-        float rows = 0.55 + 0.45 * sin(q.z * 2.4 + b * 3.5);
+        float b = fbm3(midQ * 1.1);
+        float bill = 1.0 - abs(noise3(midQ * 3.3 + float3(5.0, 1.0, 2.0)) * 2.0 - 1.0);
+        float rows = 0.55 + 0.45 * sin(midQ.z * 2.4 + b * 3.5);
         float th = mix(0.80, 0.5, cover);
-        d += altA * smoothstep(th, th + sw, b * 0.72 + bill * 0.30 * rows);
+        d += altA * smoothstep(th, th + sw, b * 0.72 + bill * 0.30 * rows) * midShape;
     }
     if (genA > 0.01) {
         float g = fbm3(q * 0.85);
+        float erosion = noise3(q * 2.7 + float3(3.4, 8.1, 2.6));
+        float body = g + (erosion - 0.5) * 0.18;
         float th = mix(0.55, 0.2, genA);
-        d += genA * smoothstep(th, th + sw + 0.2, g) * 1.2;
+        float shape = mix(lowShape, towerShape, smoothstep(0.45, 1.0, genA));
+        d += genA * smoothstep(th, th + sw + 0.2, body) * shape * 1.2;
     }
-    float shape = smoothstep(0.0, 0.28, hgt) * (1.0 - smoothstep(0.6, 1.0, hgt));
-    return clamp(d * shape, 0.0, 1.0);
+    return clamp(d, 0.0, 1.0);
 }
 
 float3 scene(float2 uv, float2 fragCoord) {
