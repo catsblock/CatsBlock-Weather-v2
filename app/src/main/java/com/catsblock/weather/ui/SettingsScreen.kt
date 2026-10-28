@@ -1,5 +1,6 @@
 package com.catsblock.weather.ui
 
+import com.catsblock.weather.ui.components.ExpressiveLoader
 import com.catsblock.weather.data.SecretKeys
 import com.catsblock.weather.data.WeatherSource
 import com.catsblock.weather.data.WindUnit
@@ -62,7 +63,6 @@ import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.material.icons.rounded.Wallpaper
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -781,7 +781,7 @@ private fun UpdateCard(up: UpdateViewModel) {
                 }
                 if (s is UpdateState.Checking) {
                     Spacer(Modifier.width(12.dp))
-                    CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.5.dp)
+                    ExpressiveLoader(size = 28.dp)
                 }
             }
 
