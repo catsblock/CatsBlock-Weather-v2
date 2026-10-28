@@ -1,5 +1,6 @@
 package com.catsblock.weather.ui
 
+import com.catsblock.weather.ui.atmosphere.ShaderGate
 import android.annotation.SuppressLint
 import android.os.Build
 import androidx.compose.foundation.background
@@ -100,13 +101,15 @@ fun WeatherBackground(
     cloud: Int = -1,
     windKmh: Double = 0.0,
     dayOfYear: Int = 0,
-    windDirDeg: Double = 0.0
+    windDirDeg: Double = 0.0,
+    pressureHpa: Double = Double.NaN,
+    precipMm: Double = -1.0
 ) {
     val context = LocalContext.current
     val version by BackgroundKit.version.collectAsState()
     val custom = remember(kind, isDay, version) { BackgroundKit.visual(context, kind, isDay) }
     val phase = skyPhase(time, isDay)
-    val procedural = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && isDay && custom == null
+    val procedural = ShaderGate.enabled() && isDay && custom == null
     val imageUrl = defaultImageUrl(kind, phase)
     val downloaded by produceState<File?>(null, imageUrl, custom, procedural) {
         value = null
@@ -123,7 +126,9 @@ fun WeatherBackground(
                 time = time,
                 dayOfYear = dayOfYear,
                 modifier = Modifier.fillMaxSize(),
-                windDirDeg = windDirDeg
+                windDirDeg = windDirDeg,
+                pressureHpa = pressureHpa,
+                precipMm = precipMm
             )
         } else if (file != null) {
             AsyncImage(
