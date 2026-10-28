@@ -99,7 +99,8 @@ fun WeatherBackground(
     time: LocalTime? = null,
     cloud: Int = -1,
     windKmh: Double = 0.0,
-    dayOfYear: Int = 0
+    dayOfYear: Int = 0,
+    windDirDeg: Double = 0.0
 ) {
     val context = LocalContext.current
     val version by BackgroundKit.version.collectAsState()
@@ -115,7 +116,15 @@ fun WeatherBackground(
     Box(modifier) {
         Box(Modifier.fillMaxSize().background(Brush.verticalGradient(backgroundGradient(kind, isDay))))
         if (procedural) {
-            AtmosphereSky(kind, cloud, windKmh, time, dayOfYear, Modifier.fillMaxSize())
+            AtmosphereSky(
+                kind = kind,
+                cloudPercent = cloud,
+                windKmh = windKmh,
+                time = time,
+                dayOfYear = dayOfYear,
+                modifier = Modifier.fillMaxSize(),
+                windDirDeg = windDirDeg
+            )
         } else if (file != null) {
             AsyncImage(
                 model = file,
