@@ -1,8 +1,12 @@
 package com.catsblock.weather.ui
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,7 +20,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -25,10 +31,13 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Shield
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
@@ -37,14 +46,20 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.draw.graphicsLayer
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.invisibleToUser
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -54,45 +69,63 @@ import java.time.LocalDate
 
 data class HistoryDay(val date: LocalDate, val low: Int, val high: Int, val avg: Int, val hourly: List<Int>)
 
-private val ScreenBackground = Brush.verticalGradient(listOf(Color(0xFF0A0F17), Color(0xFF151C28)))
-private val SurfaceColor = Color(0xFF1B212C)
-private val TrackColor = Color(0x1FFFFFFF)
-private val PillTop = Color(0xFFE3EEF8)
-private val PillBottom = Color(0xFF7F9FC0)
-private val MutedText = Color(0x99FFFFFF)
-private val DisabledIcon = Color(0x44FFFFFF)
+private val CardShape = RoundedCornerShape(32.dp)
 
-private fun Modifier.pill(selected: Boolean, low: Int, high: Int, avg: Int): Modifier = drawWithCache {
+private fun Modifier.expressiveSurface(colors: ColorScheme): Modifier =
+    clip(CardShape)
+        .background(colors.surfaceContainerHigh)
+        .border(1.dp, colors.outlineVariant.copy(alpha = 0.42f), CardShape)
+
+private fun Modifier.pill(
+    selectedProgress: Float,
+    low: Int,
+    high: Int,
+    avg: Int,
+    colors: ColorScheme
+): Modifier = drawWithCache {
     val w = size.width
     val h = size.height
-    val segTop = (h * (1f - high / 100f)).coerceAtMost(h - w)
-    val segBottom = (h * (1f - low / 100f)).coerceAtLeast(segTop + w)
+    val safeHigh = high.coerceIn(0, 100)
+    val safeLow = low.coerceIn(0, safeHigh)
+    val safeAvg = avg.coerceIn(safeLow, safeHigh)
+    val segTop = (h * (1f - safeHigh / 100f)).coerceIn(0f, h - w)
+    val segBottom = (h * (1f - safeLow / 100f)).coerceIn(segTop + w, h)
     val radius = CornerRadius(w / 2f, w / 2f)
-    val brush = Brush.verticalGradient(listOf(PillTop, PillBottom), segTop, segBottom)
-    val dot = Offset(w / 2f, (h * (1f - avg / 100f)).coerceIn(segTop + w / 2f, segBottom - w / 2f))
+    val brush = Brush.verticalGradient(listOf(colors.primary, colors.tertiary), segTop, segBottom)
+    val dot = Offset(w / 2f, (h * (1f - safeAvg / 100f)).coerceIn(segTop + w / 2f, segBottom - w / 2f))
     val dotRadius = w * 0.22f
     val trackSize = Size(w, h)
     val segSize = Size(w, segBottom - segTop)
     val segOrigin = Offset(0f, segTop)
-    val alpha = if (selected) 1f else 0.5f
+    val alpha = 0.45f + selectedProgress * 0.55f
+    val animatedDotRadius = w * (0.15f + selectedProgress * 0.07f)
     onDrawBehind {
-        drawRoundRect(TrackColor, size = trackSize, cornerRadius = radius)
+        drawRoundRect(colors.onSurface.copy(alpha = 0.08f), size = trackSize, cornerRadius = radius)
         drawRoundRect(brush, topLeft = segOrigin, size = segSize, cornerRadius = radius, alpha = alpha)
-        if (selected) drawCircle(Color.White, dotRadius, dot)
+        if (selectedProgress > 0.01f) {
+            drawCircle(colors.onPrimary.copy(alpha = selectedProgress), animatedDotRadius, dot)
+        }
     }
 }
 
 @Composable
 private fun CircleButton(icon: ImageVector, description: String, enabled: Boolean, onClick: () -> Unit) {
+    val colors = MaterialTheme.colorScheme
     Box(
         Modifier
-            .size(40.dp)
+            .size(46.dp)
             .clip(CircleShape)
-            .background(SurfaceColor)
-            .clickable(enabled = enabled, onClick = onClick),
+            .background(colors.surfaceContainerHigh)
+            .border(1.dp, colors.outlineVariant.copy(alpha = 0.42f), CircleShape)
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
-        Icon(icon, description, Modifier.size(22.dp), tint = if (enabled) Color.White else DisabledIcon)
+        Icon(
+            icon,
+            contentDescription = description,
+            modifier = Modifier.size(23.dp),
+            tint = if (enabled) colors.onSurface else colors.onSurface.copy(alpha = 0.32f)
+        )
     }
 }
 
@@ -109,11 +142,20 @@ fun CardDetailHistoryScreen(
         LaunchedEffect(Unit) { onBack() }
         return
     }
-    var index by remember { mutableIntStateOf(0) }
+
+    val colors = MaterialTheme.colorScheme
+    val scrollState = rememberScrollState()
+    val density = LocalDensity.current
+    val collapseDistance = with(density) { 148.dp.toPx() }
+    val scrollProgress by remember(scrollState, collapseDistance) {
+        derivedStateOf { (scrollState.value / collapseDistance).coerceIn(0f, 1f) }
+    }
+    var index by remember(days) { mutableIntStateOf(0) }
     val safeIndex = index.coerceIn(0, days.lastIndex)
     val day = days[safeIndex]
-    val weekLow = days.minOf { it.avg }
-    val weekHigh = days.maxOf { it.avg }
+    val weekLow = days.minOf { it.low }
+    val weekHigh = days.maxOf { it.high }
+
     Dialog(
         onDismissRequest = onBack,
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
@@ -121,108 +163,222 @@ fun CardDetailHistoryScreen(
         Column(
             Modifier
                 .fillMaxSize()
-                .background(ScreenBackground)
+                .background(
+                    Brush.verticalGradient(
+                        listOf(colors.background, colors.surfaceContainerLow)
+                    )
+                )
                 .statusBarsPadding()
                 .navigationBarsPadding()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                CircleButton(Icons.AutoMirrored.Rounded.ArrowBack, tr("Back"), true, onBack)
-                Spacer(Modifier.width(14.dp))
-                Text(title, color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
-            }
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                CircleButton(
-                    Icons.AutoMirrored.Rounded.KeyboardArrowLeft,
-                    tr("Previous day"),
-                    safeIndex > 0
-                ) { index = safeIndex - 1 }
-                Text(
-                    "${dayLabel(day.date, today)}, ${dateLabel(day.date)}",
-                    modifier = Modifier.weight(1f),
-                    color = Color.White,
-                    fontSize = 17.sp,
-                    fontWeight = FontWeight.Medium,
-                    textAlign = TextAlign.Center
-                )
-                CircleButton(
-                    Icons.AutoMirrored.Rounded.KeyboardArrowRight,
-                    tr("Next day"),
-                    safeIndex < days.lastIndex
-                ) { index = safeIndex + 1 }
-            }
-            Column(
-                Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(28.dp))
-                    .background(SurfaceColor)
-                    .padding(20.dp)
-            ) {
-                Text("$weekLow%–$weekHigh%", color = Color.White, fontSize = 30.sp, fontWeight = FontWeight.Light)
-                Text(tr("Range this week"), color = MutedText, fontSize = 14.sp)
-                Spacer(Modifier.height(16.dp))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    days.forEachIndexed { i, entry ->
-                        Column(
-                            Modifier
-                                .weight(1f)
-                                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
-                                    index = i
-                                },
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Box(
-                                Modifier
-                                    .width(26.dp)
-                                    .height(132.dp)
-                                    .pill(i == safeIndex, entry.low, entry.high, entry.avg)
-                            )
-                            Spacer(Modifier.height(8.dp))
-                            Text(
-                                weekdayLabel(entry.date.atStartOfDay()),
-                                color = if (i == safeIndex) Color.White else MutedText,
-                                fontSize = 12.sp,
-                                fontWeight = if (i == safeIndex) FontWeight.SemiBold else FontWeight.Normal
-                            )
-                        }
-                    }
-                }
-            }
-            Column(
-                Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(28.dp))
-                    .background(SurfaceColor)
-                    .padding(20.dp)
-            ) {
-                Text(tr("24-hour cloud cover"), color = MutedText, fontSize = 14.sp)
-                Spacer(Modifier.height(8.dp))
-                HourlyCloudChart(day.hourly, day.date)
-            }
-            Column(
-                Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(28.dp))
-                    .background(SurfaceColor)
-                    .padding(20.dp)
-            ) {
-                Text(tr("Peak cloud cover"), color = MutedText, fontSize = 14.sp)
-                Text("${day.high}%", color = Color.White, fontSize = 56.sp, fontWeight = FontWeight.Light)
-                Text(bandLabel(day.high), color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Medium)
-            }
             Row(
                 Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(28.dp))
-                    .background(SurfaceColor)
-                    .padding(20.dp),
-                verticalAlignment = Alignment.Top
+                    .height(68.dp)
+                    .padding(horizontal = 18.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(Icons.Rounded.Shield, null, Modifier.size(24.dp), tint = Color(0xFF9FC4E8))
-                Spacer(Modifier.width(14.dp))
-                Text(advice(day.high), color = Color.White, fontSize = 15.sp, lineHeight = 22.sp)
+                CircleButton(Icons.AutoMirrored.Rounded.ArrowBack, tr("Back"), true, onBack)
+                Spacer(Modifier.width(12.dp))
+                Text(
+                    title,
+                    modifier = Modifier.weight(1f),
+                    color = colors.onSurface,
+                    style = MaterialTheme.typography.titleLarge,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                AnimatedContent(
+                    targetState = day.high,
+                    modifier = Modifier
+                        .widthIn(min = 62.dp)
+                        .graphicsLayer {
+                            alpha = scrollProgress
+                            scaleX = 0.9f + scrollProgress * 0.1f
+                            scaleY = 0.9f + scrollProgress * 0.1f
+                        }
+                        .semantics {
+                            if (scrollProgress < 0.45f) invisibleToUser()
+                        },
+                    label = "collapsed-cloud-cover"
+                ) { value ->
+                    Text(
+                        "$value%",
+                        color = colors.primary,
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Medium,
+                        textAlign = TextAlign.End
+                    )
+                }
+            }
+
+            Column(
+                Modifier
+                    .weight(1f)
+                    .verticalScroll(scrollState)
+                    .padding(horizontal = 18.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    CircleButton(
+                        Icons.AutoMirrored.Rounded.KeyboardArrowLeft,
+                        tr("Previous day"),
+                        safeIndex > 0
+                    ) { index = safeIndex - 1 }
+                    Text(
+                        "${dayLabel(day.date, today)} · ${dateLabel(day.date)}",
+                        modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
+                        color = colors.onSurface,
+                        style = MaterialTheme.typography.titleMedium,
+                        textAlign = TextAlign.Center,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    CircleButton(
+                        Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                        tr("Next day"),
+                        safeIndex < days.lastIndex
+                    ) { index = safeIndex + 1 }
+                }
+
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .expressiveSurface(colors)
+                        .padding(horizontal = 24.dp, vertical = 22.dp)
+                ) {
+                    Text(
+                        tr("Peak cloud cover"),
+                        color = colors.onSurfaceVariant,
+                        style = MaterialTheme.typography.titleSmall
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    AnimatedContent(targetState = day.high, label = "daily-peak-cloud-cover") { value ->
+                        Text(
+                            "$value%",
+                            modifier = Modifier.graphicsLayer {
+                                alpha = 1f - scrollProgress
+                                scaleX = 1f - scrollProgress * 0.06f
+                                scaleY = 1f - scrollProgress * 0.06f
+                            },
+                            color = colors.onSurface,
+                            fontSize = 68.sp,
+                            lineHeight = 72.sp,
+                            letterSpacing = (-3).sp,
+                            fontWeight = FontWeight.Thin
+                        )
+                    }
+                    Text(
+                        bandLabel(day.high),
+                        color = colors.primary,
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                }
+
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .expressiveSurface(colors)
+                        .padding(20.dp)
+                ) {
+                    Text(
+                        tr("Range this week"),
+                        color = colors.onSurfaceVariant,
+                        style = MaterialTheme.typography.labelLarge
+                    )
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        "$weekLow%–$weekHigh%",
+                        color = colors.onSurface,
+                        fontSize = 34.sp,
+                        lineHeight = 40.sp,
+                        fontWeight = FontWeight.Light,
+                        letterSpacing = (-1).sp
+                    )
+                    Spacer(Modifier.height(16.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                        days.forEachIndexed { dayIndex, entry ->
+                            val selectedProgress by animateFloatAsState(
+                                targetValue = if (dayIndex == safeIndex) 1f else 0f,
+                                animationSpec = spring(
+                                    dampingRatio = Spring.DampingRatioNoBouncy,
+                                    stiffness = Spring.StiffnessMediumLow
+                                ),
+                                label = "weekly-pill-selection"
+                            )
+                            Column(
+                                Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(18.dp))
+                                    .selectable(
+                                        selected = dayIndex == safeIndex,
+                                        role = Role.RadioButton,
+                                        onClick = { index = dayIndex }
+                                    )
+                                    .semantics(mergeDescendants = true) {
+                                        contentDescription = "${weekdayLabel(entry.date.atStartOfDay())} ${entry.low}%–${entry.high}%"
+                                    }
+                                    .padding(vertical = 6.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Box(
+                                    Modifier
+                                        .width(22.dp)
+                                        .height(116.dp)
+                                        .pill(selectedProgress, entry.low, entry.high, entry.avg, colors)
+                                )
+                                Spacer(Modifier.height(8.dp))
+                                Text(
+                                    weekdayLabel(entry.date.atStartOfDay()),
+                                    color = if (dayIndex == safeIndex) colors.primary else colors.onSurfaceVariant,
+                                    fontSize = 11.sp,
+                                    fontWeight = if (dayIndex == safeIndex) FontWeight.SemiBold else FontWeight.Normal,
+                                    maxLines = 1
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .expressiveSurface(colors)
+                        .padding(20.dp)
+                ) {
+                    Text(
+                        tr("24-hour cloud cover"),
+                        color = colors.onSurface,
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    HourlyCloudChart(day.hourly, day.date)
+                }
+
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .expressiveSurface(colors)
+                        .padding(20.dp),
+                    verticalAlignment = Alignment.Top
+                ) {
+                    Icon(
+                        Icons.Rounded.Shield,
+                        contentDescription = null,
+                        modifier = Modifier.size(24.dp),
+                        tint = colors.primary
+                    )
+                    Spacer(Modifier.width(14.dp))
+                    Text(
+                        advice(day.high),
+                        color = colors.onSurface,
+                        style = MaterialTheme.typography.bodyLarge,
+                        lineHeight = 24.sp
+                    )
+                }
             }
         }
     }
