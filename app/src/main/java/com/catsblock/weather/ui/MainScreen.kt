@@ -1,5 +1,6 @@
 package com.catsblock.weather.ui
 
+import com.catsblock.weather.ui.components.ExpressiveLoader
 import androidx.compose.ui.platform.LocalContext
 import com.catsblock.weather.data.NetworkPolicy
 import com.catsblock.weather.data.HubAlert
@@ -62,7 +63,6 @@ import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.WaterDrop
 import androidx.compose.material.icons.rounded.WbSunny
 import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
@@ -313,7 +313,9 @@ fun MainScreen(vm: WeatherViewModel) {
                     bundle?.current?.cloud ?: -1,
                     bundle?.current?.windSpeed ?: 0.0,
                     bundle?.current?.now?.dayOfYear ?: 0,
-                    bundle?.current?.windDir ?: 0.0
+                    bundle?.current?.windDir ?: 0.0,
+                    bundle?.current?.pressure ?: Double.NaN,
+                    bundle?.let { b -> b.hours.firstOrNull { it.time == b.current.now.truncatedTo(ChronoUnit.HOURS) }?.precip } ?: -1.0
                 )
             }
             Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = progress * 0.32f)))
@@ -396,7 +398,7 @@ fun MainScreen(vm: WeatherViewModel) {
                     FilledTonalButton(onClick = vm::openPicker) { Text(tr("Choose a location")) }
                 }
                 else -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(Modifier.size(48.dp), color = Color.White)
+                    ExpressiveLoader(size = 56.dp, color = Color.White)
                 }
             }
             }
@@ -487,7 +489,7 @@ private fun PullIndicator(elastic: ElasticScrollState, refreshing: Boolean, head
         verticalAlignment = Alignment.CenterVertically
     ) {
         if (refreshing) {
-            CircularProgressIndicator(Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
+            ExpressiveLoader(size = 18.dp, color = Color.White)
         } else {
             Icon(Icons.Rounded.ArrowDownward, null, Modifier.size(16.dp), tint = Color.White)
         }
