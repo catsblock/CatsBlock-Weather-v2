@@ -1,5 +1,6 @@
 package com.catsblock.weather.ui.atmosphere
 
+import android.graphics.RenderEffect
 import android.graphics.RuntimeShader
 import android.os.Build
 import androidx.annotation.RequiresApi
@@ -8,6 +9,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.ShaderBrush
+import androidx.compose.ui.graphics.asComposeRenderEffect
 import androidx.compose.ui.graphics.drawscope.ContentDrawScope
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.scale
@@ -40,6 +42,7 @@ class AtmosphereState {
     @Volatile var altoChance: Float = 0f
     @Volatile var seed: Float = 0f
     @Volatile var sunTint: Int = 0
+    @Volatile var pressure: Float = 0f
 }
 
 private const val RENDER_SCALE = 0.5f
@@ -84,6 +87,11 @@ private class AtmosphereNode(var state: AtmosphereState) : Modifier.Node(), Draw
     private val snowUniform = FloatArray(1)
     private val altoChanceUniform = FloatArray(1)
     private val seedUniform = FloatArray(1)
+    private val pressureUniform = FloatArray(1)
+    private val gradeSize = FloatArray(2)
+    private var gradeShader: RuntimeShader? = null
+    private var gradeW = 0
+    private var gradeH = 0
 
     private val recordBlock: DrawScope.() -> Unit = {
         brush?.let { drawRect(it, size = Size(layerWidth, layerHeight)) }
@@ -97,6 +105,7 @@ private class AtmosphereNode(var state: AtmosphereState) : Modifier.Node(), Draw
         val created = runCatching { RuntimeShader(AtmosphereAgsl.SOURCE) }.getOrNull() ?: return
         shader = created
         brush = ShaderBrush(created)
+        gradeShader = runCatching { RuntimeShader(AtmosphereAgsl.GRADE) }.getOrNull()
         layer = requireGraphicsContext().createGraphicsLayer().apply {
             compositingStrategy = CompositingStrategy.Offscreen
         }
@@ -115,6 +124,7 @@ private class AtmosphereNode(var state: AtmosphereState) : Modifier.Node(), Draw
         layer = null
         brush = null
         shader = null
+        gradeShader = null
     }
 
     override fun ContentDrawScope.draw() {
@@ -138,6 +148,8 @@ private class AtmosphereNode(var state: AtmosphereState) : Modifier.Node(), Draw
         snowUniform[0] = st.snow
         altoChanceUniform[0] = st.altoChance
         seedUniform[0] = st.seed
+        pressureUniform[0] = st.pressure
+        RuntimeShaderUniforms.setFloatUniform(s, "pressure", pressureUniform)
         RuntimeShaderUniforms.setFloatUniform(s, "resolution", resolutionUniform)
         RuntimeShaderUniforms.setFloatUniform(s, "time", timeUniform)
         RuntimeShaderUniforms.setFloatUniform(s, "tod", todUniform)
@@ -150,6 +162,15 @@ private class AtmosphereNode(var state: AtmosphereState) : Modifier.Node(), Draw
         RuntimeShaderUniforms.setFloatUniform(s, "altoChance", altoChanceUniform)
         RuntimeShaderUniforms.setFloatUniform(s, "seed", seedUniform)
         s.setColorUniform("sunTint", st.sunTint)
+        val g = gradeShader
+        if (g != null && (gradeW != w || gradeH != h)) {
+            gradeW = w
+            gradeH = h
+            gradeSize[0] = layerWidth
+            gradeSize[1] = layerHeight
+            RuntimeShaderUniforms.setFloatUniform(g, "size", gradeSize)
+            l.renderEffect = RenderEffect.createRuntimeShaderEffect(g, "content").asComposeRenderEffect()
+        }
         l.record(this, layoutDirection, IntSize(w, h), recordBlock)
         scale(1f / RENDER_SCALE, 1f / RENDER_SCALE, Offset.Zero, compositeBlock)
     }
@@ -253,7 +274,7 @@ private class GlassRainNode(
     }
 
     override fun onPointerEvent(pointerEvent: PointerEvent, pass: PointerEventPass, bounds: IntSize) {
-        if (pass != PointerEventPass.Initial) return
+        if (pass != PointerEventPass.Initial || !snowMode) return
         val change = pointerEvent.changes.firstOrNull() ?: return
         val x = change.position.x
         val y = change.position.y
@@ -294,6 +315,10 @@ private class GlassRainNode(
         drawContent()
         val s = shader ?: return
         val b = brush ?: return
+        drawGlass(s, b)
+    }
+
+    private fun updateTouchUniforms(s: RuntimeShader) {
         if (pressed) trail[head * 3 + 2] = time
         for (i in 0 until TRAIL_POINTS) {
             val age = time - trail[i * 3 + 2]
@@ -304,27 +329,30 @@ private class GlassRainNode(
             trailUniform[i * 4 + 3] = 0f
         }
         val dropAge = time - dropBirth
-        val dropValid = if (dropAge in 0f..DROP_LIFE) 1f else 0f
+        dropStateUniform[0] = dropX
+        dropStateUniform[1] = dropY
+        dropStateUniform[2] = dropAge
+        dropStateUniform[3] = if (dropAge in 0f..DROP_LIFE) 1f else 0f
+        RuntimeShaderUniforms.setFloatUniform(s, "tp", trailUniform)
+        RuntimeShaderUniforms.setFloatUniform(s, "dropState", dropStateUniform)
+    }
+
+    private fun ContentDrawScope.drawGlass(s: RuntimeShader, b: ShaderBrush) {
         resolutionUniform[0] = size.width
         resolutionUniform[1] = size.height
         timeUniform[0] = time
         seedUniform[0] = seed
-        rainUniform[0] = intensity
-        snowUniform[0] = snow
-        dropStateUniform[0] = dropX
-        dropStateUniform[1] = dropY
-        dropStateUniform[2] = dropAge
-        dropStateUniform[3] = dropValid
         RuntimeShaderUniforms.setFloatUniform(s, "resolution", resolutionUniform)
         RuntimeShaderUniforms.setFloatUniform(s, "time", timeUniform)
         RuntimeShaderUniforms.setFloatUniform(s, "seed", seedUniform)
         if (snowMode) {
+            snowUniform[0] = snow
             RuntimeShaderUniforms.setFloatUniform(s, "snow", snowUniform)
+            updateTouchUniforms(s)
         } else {
+            rainUniform[0] = intensity
             RuntimeShaderUniforms.setFloatUniform(s, "rain", rainUniform)
         }
-        RuntimeShaderUniforms.setFloatUniform(s, "tp", trailUniform)
-        RuntimeShaderUniforms.setFloatUniform(s, "dropState", dropStateUniform)
         drawRect(b, size = size)
     }
 }
