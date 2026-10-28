@@ -255,7 +255,7 @@ private fun drawIcon(
 }
 
 private fun drawBackground(canvas: Canvas, w: Float, h: Float, density: Float, palette: Palette) {
-    val radius = 22f * density
+    val radius = 28f * density
     val rect = RectF(0f, 0f, w, h)
     val base = Paint(Paint.ANTI_ALIAS_FLAG)
     base.shader = LinearGradient(0f, 0f, w * 0.4f, h, palette.top, palette.bottom, Shader.TileMode.CLAMP)
@@ -278,8 +278,19 @@ private fun drawBackground(canvas: Canvas, w: Float, h: Float, density: Float, p
     val border = Paint(Paint.ANTI_ALIAS_FLAG)
     border.style = Paint.Style.STROKE
     border.strokeWidth = density
-    border.color = 0x30FFFFFF
+    border.color = 0x44FFFFFF
     canvas.drawRoundRect(RectF(density / 2f, density / 2f, w - density / 2f, h - density / 2f), radius, radius, border)
+}
+
+private fun drawGlassTile(canvas: Canvas, rect: RectF, radius: Float) {
+    val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = white(0.09f) }
+    canvas.drawRoundRect(rect, radius, radius, fill)
+    val outline = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 1f
+        color = white(0.14f)
+    }
+    canvas.drawRoundRect(rect, radius, radius, outline)
 }
 
 private fun drawCity(canvas: Canvas, name: String, x: Float, top: Float, size: Float, maxWidth: Float) {
@@ -343,10 +354,11 @@ private fun drawCompact(context: Context, canvas: Canvas, w: Float, h: Float, s:
     val ascent = temp.textSize * 0.74f
     val top = (h - (ascent + cond.textSize * 1.3f)) / 2f
     val tempBase = top + ascent
-    canvas.drawFit(tempText(s.temp, f), pad, tempBase, temp)
-    canvas.drawFit(s.kind.label(s.isDay), pad, tempBase + cond.textSize * 1.25f, cond, w * 0.45f)
     val icon = h * 0.62f
     val iconX = w - pad - icon
+    drawCity(canvas, s.city, pad, pad * 0.34f, h * 0.13f, iconX - pad * 1.3f)
+    canvas.drawFit(tempText(s.temp, f), pad, tempBase, temp)
+    canvas.drawFit(s.kind.label(s.isDay), pad, tempBase + cond.textSize * 1.25f, cond, w * 0.45f)
     drawIcon(context, canvas, s.kind, s.isDay, iconX, (h - icon) / 2f, icon)
     if (w > h * 2.8f) {
         val span = paintOf(h * 0.2f, regular, white(0.9f), Paint.Align.RIGHT)
@@ -354,14 +366,16 @@ private fun drawCompact(context: Context, canvas: Canvas, w: Float, h: Float, s:
     }
 }
 
-private fun drawSquare(canvas: Canvas, w: Float, h: Float, s: WidgetSnapshot, f: Boolean) {
+private fun drawSquare(context: Context, canvas: Canvas, w: Float, h: Float, s: WidgetSnapshot, f: Boolean) {
     val pad = minOf(w, h) * 0.09f
     var y = pad
     val citySize = h * 0.11f
-    drawCity(canvas, s.city, pad, y, citySize, w - pad * 2f)
+    val iconSize = h * 0.27f
+    drawCity(canvas, s.city, pad, y, citySize, w - pad * 2f - iconSize * 1.05f)
+    drawIcon(context, canvas, s.kind, s.isDay, w - pad - iconSize, y + citySize * 0.45f, iconSize)
     y += citySize * 1.35f
     val temp = paintOf(h * 0.36f, light)
-    canvas.drawFit(tempText(s.temp, f), pad, y + temp.textSize * 0.78f, temp)
+    canvas.drawFit(tempText(s.temp, f), pad, y + temp.textSize * 0.78f, temp, w * 0.7f)
     y += temp.textSize * 0.95f
     val cond = paintOf(h * 0.13f, medium)
     canvas.drawFit(s.kind.label(s.isDay), pad, y + cond.textSize * 0.9f, cond, w - pad * 2f)
@@ -383,15 +397,33 @@ private fun drawTips(context: Context, canvas: Canvas, w: Float, h: Float, s: Wi
     drawCity(canvas, s.city, pad, pad, h * 0.095f, iconX - pad * 1.5f)
 
     val gridTop = h * 0.30f
-    val rowHeight = (h - gridTop - h * 0.06f) / 2f
+    val rowGap = h * 0.035f
+    val rowHeight = (h - gridTop - h * 0.06f - rowGap) / 2f
     val gap = pad
     val columnWidth = (w - pad * 2f - gap) / 2f
-    val glyphSize = h * 0.105f
+    val glyphSize = h * 0.09f
     buildTips(s).forEachIndexed { index, tip ->
         val x = pad + (index % 2) * (columnWidth + gap)
         val y = gridTop + (index / 2) * rowHeight
-        drawGlyph(canvas, tip.glyph, x, y, glyphSize, white(0.95f))
-        drawWrapped(canvas, tip.text, x, y + glyphSize + h * 0.02f, columnWidth, h * 0.085f, h * 0.06f, 2)
+        val cardTop = y + rowGap * 0.5f
+        val cardBottom = y + rowHeight - rowGap * 0.5f
+        drawGlassTile(
+            canvas,
+            RectF(x, cardTop, x + columnWidth, cardBottom),
+            h * 0.075f
+        )
+        val contentX = x + pad * 0.38f
+        drawGlyph(canvas, tip.glyph, contentX, cardTop + h * 0.025f, glyphSize, white(0.96f))
+        drawWrapped(
+            canvas,
+            tip.text,
+            contentX,
+            cardTop + glyphSize + h * 0.035f,
+            columnWidth - pad * 0.76f,
+            h * 0.078f,
+            h * 0.052f,
+            2
+        )
     }
 }
 
@@ -413,11 +445,16 @@ private fun drawHourly(context: Context, canvas: Canvas, w: Float, h: Float, s: 
     val hours = s.upcomingHours(6)
     if (hours.isEmpty()) return
     val columnWidth = (w - pad * 2f) / 6f
-    val timePaint = paintOf(h * 0.085f, regular, white(0.8f), Paint.Align.CENTER)
-    val hourTemp = paintOf(h * 0.1f, regular, Color.WHITE, Paint.Align.CENTER)
+    val timePaint = paintOf(h * 0.085f, regular, white(0.86f), Paint.Align.CENTER)
+    val hourTemp = paintOf(h * 0.1f, medium, Color.WHITE, Paint.Align.CENTER)
     val hourIcon = h * 0.15f
     hours.forEachIndexed { index, hour ->
         val cx = pad + columnWidth * (index + 0.5f)
+        drawGlassTile(
+            canvas,
+            RectF(cx - columnWidth * 0.46f, h * 0.59f, cx + columnWidth * 0.46f, h * 0.98f),
+            h * 0.075f
+        )
         canvas.drawFit(hourLabel(hour.time), cx, h * 0.64f, timePaint, columnWidth)
         drawIcon(context, canvas, hour.kind, hour.isDay, cx - hourIcon / 2f, h * 0.67f, hourIcon)
         canvas.drawFit(tempText(hour.temp, f), cx, h * 0.93f, hourTemp)
@@ -470,7 +507,7 @@ object WidgetRenderer {
         val fahrenheit = settings.fahrenheit
         when (kind) {
             WidgetKind.Compact -> drawCompact(context, canvas, w, h, data, fahrenheit)
-            WidgetKind.Square -> drawSquare(canvas, w, h, data, fahrenheit)
+            WidgetKind.Square -> drawSquare(context, canvas, w, h, data, fahrenheit)
             WidgetKind.Tips -> drawTips(context, canvas, w, h, data, fahrenheit)
             WidgetKind.Hourly -> drawHourly(context, canvas, w, h, data, fahrenheit)
         }
