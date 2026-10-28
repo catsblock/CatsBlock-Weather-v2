@@ -3,9 +3,7 @@ package com.catsblock.weather.ui
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.MaterialExpressiveTheme
-import androidx.compose.material3.MotionScheme
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
@@ -91,15 +89,11 @@ private val AppTypography = BaseTypography.copy(
 private val ExpressiveShapes = Shapes(
     extraSmall = RoundedCornerShape(8.dp),
     small = RoundedCornerShape(12.dp),
-    medium = RoundedCornerShape(16.dp),
+    medium = RoundedCornerShape(20.dp),
     large = RoundedCornerShape(28.dp),
-    largeIncreased = RoundedCornerShape(32.dp),
-    extraLarge = RoundedCornerShape(36.dp),
-    extraLargeIncreased = RoundedCornerShape(44.dp),
-    extraExtraLarge = RoundedCornerShape(52.dp)
+    extraLarge = RoundedCornerShape(40.dp)
 )
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun WeatherTheme(mode: ThemeMode = ThemeMode.System, content: @Composable () -> Unit) {
     val dark = when (mode) {
@@ -114,9 +108,8 @@ fun WeatherTheme(mode: ThemeMode = ThemeMode.System, content: @Composable () -> 
         dark -> DarkFallback
         else -> LightFallback
     }
-    MaterialExpressiveTheme(
+    MaterialTheme(
         colorScheme = scheme,
-        motionScheme = MotionScheme.expressive(),
         shapes = ExpressiveShapes,
         typography = AppTypography,
         content = content
