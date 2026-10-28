@@ -1,5 +1,6 @@
 package com.catsblock.weather.ui
 
+import com.catsblock.weather.ui.components.ExpressiveLoader
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -17,7 +18,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Search
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -94,7 +94,7 @@ fun CityPickerScreen(vm: WeatherViewModel) {
             )
             when {
                 searching && loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(Modifier.size(48.dp))
+                    ExpressiveLoader(size = 48.dp, contained = true)
                 }
                 searching -> {
                     if (results.isEmpty()) {
