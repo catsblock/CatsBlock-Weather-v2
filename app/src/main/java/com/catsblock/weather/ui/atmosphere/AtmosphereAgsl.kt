@@ -14,6 +14,7 @@ uniform float2 windVector;
 uniform float altoChance;
 uniform float seed;
 uniform float snow;
+uniform float pressure;
 layout(color) uniform half4 sunTint;
 """
 
@@ -76,7 +77,7 @@ float sunKelvin() {
 }
 
 float3 skyColor(float h) {
-    float3 beta = float3(0.174, 0.405, 0.993);
+    float3 beta = float3(0.174, 0.405, 0.993) * (1.0 - 0.12 * pressure);
     float cosz = mix(0.06, 1.0, pow(h, 0.85));
     float3 scatter = 1.0 - exp(-beta / cosz);
     float3 illum = mix(cctLinear(sunKelvin()), float3(1.0), 0.45);
@@ -95,15 +96,17 @@ float miePhase(float c) {
 }
 
 float dens(float3 p, float hgt, float dist, float cirA, float altA, float genA) {
-    float2 drift = windVector * time * 0.000035;
-    float3 q = p * 0.6 + float3(drift.x, 0.0, drift.y + seed);
+    float par = 1.6 / (1.0 + 0.18 * length(p));
+    float2 drift = windVector * time * 0.000035 * par;
+    float shear = (hgt - 0.5) * 0.12;
+    float3 q = p * 0.6 + float3(drift.x + windVector.x * shear, 0.0, drift.y + windVector.y * shear + seed);
     float2 w1 = float2(noise3(q * 0.5), noise3(q * 0.5 + float3(17.3, 3.1, 9.7))) - 0.5;
     q.xz += w1 * 1.3;
     float2 w2 = float2(noise3(q * 1.3 + 4.1), noise3(q * 1.3 + float3(8.2, 1.7, 5.3))) - 0.5;
     q.xz += w2 * 0.5;
     float3 midQ = q + float3(drift.x * 0.42, 0.0, drift.y * 0.42);
     float3 highQ = q + float3(drift.x * 1.35, 0.0, drift.y * 1.35);
-    float sw = 0.16 + 0.34 * dist;
+    float sw = (0.16 + 0.34 * dist) * (1.0 + 0.25 * pressure);
     float lowShape = smoothstep(0.0, 0.22, hgt) * (1.0 - smoothstep(0.68, 1.0, hgt));
     float midShape = smoothstep(0.14, 0.40, hgt) * (1.0 - smoothstep(0.76, 1.0, hgt));
     float highShape = smoothstep(0.34, 0.62, hgt) * (1.0 - smoothstep(0.78, 1.0, hgt));
@@ -131,7 +134,7 @@ float dens(float3 p, float hgt, float dist, float cirA, float altA, float genA) 
         float shape = mix(lowShape, towerShape, smoothstep(0.45, 1.0, genA));
         d += genA * smoothstep(th, th + sw + 0.2, body) * shape * 1.2;
     }
-    return clamp(d, 0.0, 1.0);
+    return clamp(d * (1.0 - 0.18 * pressure), 0.0, 1.0);
 }
 
 float3 scene(float2 uv, float2 fragCoord) {
@@ -152,7 +155,8 @@ float3 scene(float2 uv, float2 fragCoord) {
     float glow = exp(-r * 3.0) * 0.55 + exp(-r * 12.0) * 0.8;
     sky += sunL * glow * 0.35 * (1.0 - 0.7 * genA);
     sky += horizon * pow(1.0 - h, 3.0) * 0.18;
-    float disc = (1.0 - smoothstep(0.02, 0.035, r)) * 6.0 * (1.0 - genA);
+    float limb = 1.0 - 0.35 * smoothstep(0.0, 0.035, r);
+    float disc = (1.0 - smoothstep(0.02, 0.035, r)) * 6.0 * limb * (1.0 - genA);
     float transmit = 1.0;
     float3 acc = float3(0.0);
     float horizonFade = smoothstep(0.02, 0.18, rd.y);
@@ -161,31 +165,36 @@ float3 scene(float2 uv, float2 fragCoord) {
         float ht = 1.7;
         float t0 = hb / rd.y;
         float t1 = ht / rd.y;
-        float dt = (t1 - t0) / 6.0;
+        float dt = (t1 - t0) / 10.0;
         float jit = hash21(fragCoord);
         float dist = clamp((t0 - 1.0) / 20.0, 0.0, 1.0);
         float3 amb = zenith * 0.55 + horizon * 0.25;
-        float phase = miePhase(dot(rd, sd));
-        for (int i = 0; i < 6; i++) {
-            if (transmit < 0.03) {
+        float cosSun = dot(rd, sd);
+        float phase = miePhase(cosSun);
+        for (int i = 0; i < 10; i++) {
+            if (transmit < 0.02) {
                 break;
             }
             float t = t0 + dt * (float(i) + jit);
             float3 p = rd * t;
             float hgt = (p.y - hb) / (ht - hb);
             float d = dens(p, hgt, dist, cirA, altA, genA);
-            if (d > 0.01) {
-                float tau = 0.0;
+            if (d > 0.008) {
+                float od = 0.0;
                 float3 lp = p;
-                for (int j = 0; j < 2; j++) {
-                    lp += sd * 0.17;
-                    tau += dens(lp, (lp.y - hb) / (ht - hb), dist, cirA, altA, genA);
+                float ls = 0.12;
+                for (int j = 0; j < 3; j++) {
+                    lp += sd * ls;
+                    od += dens(lp, (lp.y - hb) / (ht - hb), dist, cirA, altA, genA) * ls;
+                    ls *= 1.7;
                 }
-                float beer = max(exp(-tau * 2.6), 0.55 * exp(-tau * 0.55));
+                od *= 6.0;
+                float beer = exp(-od);
+                float multi = 0.55 * exp(-od * 0.25);
                 float powder = 1.0 - exp(-d * 3.5);
-                float3 direct = sunL * beer * (0.28 + 1.9 * phase) * (0.55 + 0.45 * powder) * (1.0 - 0.6 * genA);
+                float3 direct = sunL * (beer * (0.2 + 1.9 * phase) + multi * 0.3) * (0.55 + 0.45 * powder) * (1.0 - 0.6 * genA);
                 float3 fill = amb * mix(0.55, 1.0, hgt);
-                float a = 1.0 - exp(-d * dt * 0.9);
+                float a = 1.0 - exp(-d * dt * 1.1);
                 acc += transmit * a * (direct + fill);
                 transmit *= 1.0 - a;
             }
@@ -256,20 +265,7 @@ half4 main(float2 fragCoord) {
 
     val SOURCE: String = HEADER + NOISE + DropLib.SOURCE + SKY + CLOUDS + SNOW + MAIN
 
-    private const val TOUCH = """
-uniform float4 tp[10];
-uniform float4 dropState;
-
-float wipeAt(float2 fc) {
-    float m = 0.0;
-    float r = resolution.y * 0.085;
-    for (int i = 0; i < 10; i++) {
-        float d = length(fc - tp[i].xy);
-        m = max(m, tp[i].z * (1.0 - smoothstep(r * 0.5, r, d)));
-    }
-    return m;
-}
-
+    private const val WAVES = """
 float2 capillary(float2 d, float age, float k, float c, float damp, float width, float amp) {
     float rho = length(d);
     float front = c * age;
@@ -282,9 +278,46 @@ float2 capillary(float2 d, float age, float k, float c, float damp, float width,
     return dir * dh * amp * decay;
 }
 
+
+
 float2 rippleShade(float2 g) {
     float s = dot(g, float2(-0.6, -0.8));
     return float2(clamp(s * 1.2, 0.0, 1.0), clamp(-s, 0.0, 1.0));
+}
+"""
+
+    private const val IMPACT = """
+float2 impactRipples(float2 uv) {
+    float cell = 0.3;
+    float2 st = uv / cell;
+    float2 id = floor(st);
+    float2 f = fract(st) - 0.5;
+    float n = hash21(id + 31.7);
+    float period = 2.4 + 2.0 * fract(n * 13.1);
+    float tt = time / period + n * 7.0;
+    float k = floor(tt);
+    float age = fract(tt) * period;
+    float2 c = (float2(hash21(id + k * 1.3 + 5.1), hash21(id + k * 2.7 + 9.4)) - 0.5) * 0.4;
+    float on = step(0.55 - 0.5 * rain, hash21(id + k + 77.0));
+    float2 d = (f - c) * cell;
+    float fade = 1.0 - smoothstep(0.0, 1.0, (0.09 * age) / (cell * 0.5));
+    float2 g = capillary(d, age, 120.0, 0.09, 1.4, 0.03, 0.0025) * on * fade;
+    return rippleShade(g);
+}
+"""
+
+    private const val TOUCH = """
+uniform float4 tp[10];
+uniform float4 dropState;
+
+float wipeAt(float2 fc) {
+    float m = 0.0;
+    float r = resolution.y * 0.085;
+    for (int i = 0; i < 10; i++) {
+        float d = length(fc - tp[i].xy);
+        m = max(m, tp[i].z * (1.0 - smoothstep(r * 0.5, r, d)));
+    }
+    return m;
 }
 
 float2 rippleAt(float2 fc) {
@@ -366,15 +399,12 @@ half4 main(float2 fragCoord) {
     float2 uvd = fragCoord / resolution.y + float2(seed, seed * 0.7);
     float4 a = dropLayer(uvd, 5.0, 0.0);
     float4 b = dropLayer(uvd, 11.0, 1.0);
-    float wipe = wipeAt(fragCoord);
-    float keep = 1.0 - wipe * 0.92;
-    float4 td = touchDrop(fragCoord);
-    float2 rp = rippleAt(fragCoord);
-    float spec = (a.z + b.z) * keep + td.x + rp.x * 0.55;
-    float shade = (a.w + b.w) * keep + td.y + rp.y * 0.5;
-    float lensTint = clamp(length(a.xy + b.xy) * 18.0, 0.0, 1.0) * 0.10 * keep;
-    float lightA = clamp(spec * 0.9 + lensTint + wipe * 0.035, 0.0, 0.8);
-    float darkA = clamp(shade * 0.4 + wipe * 0.04, 0.0, 0.5);
+    float2 rp = impactRipples(uvd);
+    float spec = a.z + b.z + rp.x * 0.55;
+    float shade = a.w + b.w + rp.y * 0.5;
+    float lensTint = clamp(length(a.xy + b.xy) * 18.0, 0.0, 1.0) * 0.10;
+    float lightA = clamp(spec * 0.9 + lensTint, 0.0, 0.8);
+    float darkA = clamp(shade * 0.4, 0.0, 0.5);
     float alpha = lightA + darkA * (1.0 - lightA);
     float3 rgb = float3(1.0, 0.99, 0.96) * lightA;
     return half4(float4(rgb, alpha));
@@ -424,12 +454,24 @@ uniform float2 resolution;
 uniform float time;
 uniform float rain;
 uniform float seed;
-""" + DropLib.SOURCE + TOUCH + GLASS_MAIN
+""" + DropLib.SOURCE + WAVES + IMPACT + GLASS_MAIN
 
     val GLASS_SNOW: String = """
 uniform float2 resolution;
 uniform float time;
 uniform float snow;
 uniform float seed;
-""" + DropLib.BASE + HELP + TOUCH + SNOW_MAIN
+""" + DropLib.BASE + HELP + WAVES + TOUCH + SNOW_MAIN
+
+    val GRADE: String = """
+uniform shader content;
+uniform float2 size;
+half4 main(float2 fc) {
+    half4 c = content.eval(fc);
+    float2 d = fc / size - 0.5;
+    float v = 1.0 - dot(d, d) * 0.32;
+    c.rgb *= half(v);
+    return c;
+}
+"""
 }
