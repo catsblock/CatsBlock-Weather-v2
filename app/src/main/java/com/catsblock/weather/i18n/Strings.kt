@@ -581,5 +581,21 @@ private val cloudStrings: Map<String, Array<out String>> = mapOf(
     row("Installed Android version", "Versão do Android instalada", "Versão do Android instalada", "Versión de Android instalada", "Version d'Android installée", "Установленная версия Android", "Installierte Android-Version", "Versione di Android installata", "설치된 Android 버전", "Versi Android terpasang")
 )
 
+private val shaderTable: Map<String, Array<out String>> = mapOf(
+    row("Disable shaders", "Desativar shaders", "Desativar shaders", "Desactivar shaders", "Désactiver les shaders", "Отключить шейдеры", "Shader deaktivieren", "Disattiva gli shader", "셰이더 비활성화", "Nonaktifkan shader"),
+    row(
+        "Turn off the real-time shader graphics, including realistic clouds and rain on glass, to save battery and improve performance.",
+        "Desative os efeitos gráficos em tempo real, incluindo nuvens realistas e chuva no vidro, para economizar bateria e melhorar o desempenho.",
+        "Desative os efeitos gráficos em tempo real, incluindo nuvens realistas e chuva no vidro, para poupar bateria e melhorar o desempenho.",
+        "Desactiva los efectos gráficos en tiempo real, incluidas las nubes realistas y la lluvia sobre el cristal, para ahorrar batería y mejorar el rendimiento.",
+        "Désactivez les effets graphiques en temps réel, notamment les nuages réalistes et la pluie sur la vitre, pour économiser la batterie et améliorer les performances.",
+        "Отключите графические эффекты в реальном времени, включая реалистичные облака и дождь на стекле, чтобы экономить заряд и повысить производительность.",
+        "Deaktivieren Sie Echtzeit-Shader-Effekte wie realistische Wolken und Regen auf Glas, um Akku zu sparen und die Leistung zu verbessern.",
+        "Disattiva gli effetti shader in tempo reale, incluse le nuvole realistiche e la pioggia sul vetro, per risparmiare batteria e migliorare le prestazioni.",
+        "배터리를 절약하고 성능을 높이려면 사실적인 구름과 유리창 빗물을 포함한 실시간 셰이더 그래픽을 끄세요.",
+        "Nonaktifkan efek shader waktu nyata, termasuk awan realistis dan hujan di kaca, untuk menghemat baterai dan meningkatkan kinerja."
+    )
+)
+
 private val table: Map<String, Array<out String>> =
     commonStrings + forecastStrings + featureStrings + policyStrings + cloudStrings + policyTable + shaderTable
