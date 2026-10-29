@@ -10,6 +10,7 @@ import android.webkit.ConsoleMessage
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -92,12 +93,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.catsblock.weather.data.FireHotspots
 import com.catsblock.weather.data.ThemeMode
 import com.catsblock.weather.i18n.tr
 import com.catsblock.weather.ui.components.ExpressiveLoader
 import com.catsblock.weather.ui.components.ExpressiveProgressBar
 import kotlinx.coroutines.launch
 import org.json.JSONObject
+import java.io.ByteArrayInputStream
 
 private val CycloneIcon: ImageVector by lazy {
     ImageVector.Builder(
@@ -140,6 +143,8 @@ internal enum class MapLayer(val id: String, val label: String, val icon: ImageV
 internal object MapHost {
     private var view: WebView? = null
 
+    private var appContext: Context? = null
+
     var progress by mutableIntStateOf(0)
         private set
 
@@ -155,6 +160,7 @@ internal object MapHost {
 
     fun obtain(context: Context, background: Int, init: String): WebView {
         view?.let { return it }
+        appContext = context.applicationContext
         val web = WebView(context.applicationContext)
         web.settings.javaScriptEnabled = true
         web.settings.domStorageEnabled = true
@@ -164,6 +170,18 @@ internal object MapHost {
         web.overScrollMode = View.OVER_SCROLL_NEVER
         web.setBackgroundColor(background)
         web.webViewClient = object : WebViewClient() {
+            override fun shouldInterceptRequest(webView: WebView?, request: WebResourceRequest?): WebResourceResponse? {
+                val url = request?.url?.toString().orEmpty()
+                if (!url.endsWith("__fires.json")) return null
+                val data = appContext?.let { FireHotspots.json(it) }
+                val headers = mapOf("Access-Control-Allow-Origin" to "*")
+                return if (data != null) {
+                    WebResourceResponse("application/json", "utf-8", 200, "OK", headers, ByteArrayInputStream(data))
+                } else {
+                    WebResourceResponse("application/json", "utf-8", 503, "Unavailable", headers, ByteArrayInputStream(ByteArray(0)))
+                }
+            }
+
             override fun onPageFinished(webView: WebView?, url: String?) {
                 webView?.let { probe(it, 0) }
             }
@@ -245,6 +263,7 @@ private fun mapLabels(): JSONObject = JSONObject()
     .put("c5", tr("Category 5"))
     .put("winds", tr("Max winds"))
     .put("fire", tr("Wildfire"))
+    .put("hotspots", tr("Hotspots"))
     .put("none", tr("No active storms right now"))
 
 @OptIn(ExperimentalMaterial3Api::class)
