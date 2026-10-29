@@ -235,6 +235,18 @@ internal object MapHost {
     }
 }
 
+private fun mapLabels(): JSONObject = JSONObject()
+    .put("td", tr("Tropical depression"))
+    .put("ts", tr("Tropical storm"))
+    .put("c1", tr("Category 1"))
+    .put("c2", tr("Category 2"))
+    .put("c3", tr("Category 3"))
+    .put("c4", tr("Category 4"))
+    .put("c5", tr("Category 5"))
+    .put("winds", tr("Max winds"))
+    .put("fire", tr("Wildfire"))
+    .put("none", tr("No active storms right now"))
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MapScreen(vm: WeatherViewModel) {
@@ -266,6 +278,7 @@ fun MapScreen(vm: WeatherViewModel) {
             .put("title", tr(layer.label))
             .put("err", tr("Map data unavailable"))
             .put("f", settings.fahrenheit)
+            .put("labels", mapLabels())
             .toString()
     }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -290,7 +303,7 @@ fun MapScreen(vm: WeatherViewModel) {
         if (ready) {
             MapHost.run(
                 "MapApi.setLayer(" + JSONObject.quote(layer.id) + "," + JSONObject.quote(tr(layer.label)) + "," +
-                    JSONObject.quote(tr("Map data unavailable")) + "," + settings.fahrenheit + ")"
+                    JSONObject.quote(tr("Map data unavailable")) + "," + settings.fahrenheit + "," + mapLabels() + ")"
             )
         }
     }
