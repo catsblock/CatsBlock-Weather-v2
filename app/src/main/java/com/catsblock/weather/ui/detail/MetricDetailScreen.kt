@@ -24,6 +24,7 @@ import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.material.icons.rounded.Umbrella
+import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -66,6 +67,7 @@ import com.catsblock.weather.ui.pressureShort
 import com.catsblock.weather.ui.pressureValue
 import com.catsblock.weather.ui.tempText
 import com.catsblock.weather.ui.toUnit
+import com.catsblock.weather.ui.visibilityShort
 import com.catsblock.weather.ui.weekdayLabel
 import com.catsblock.weather.ui.windShort
 import com.catsblock.weather.ui.windText
@@ -80,7 +82,7 @@ import kotlin.math.pow
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
-enum class MetricKind { Precip, Wind, Air, Uv, Humidity, Pressure, Cloud }
+enum class MetricKind { Precip, Wind, Air, Uv, Humidity, Pressure, Cloud, Visibility }
 
 private class DayData(val date: LocalDate, val hours: List<Hour>)
 
@@ -122,11 +124,13 @@ private val PressureViolet = Color(0xFFB39DDB)
 
 private val UvColors = listOf(Color(0xFF3E8E41), Color(0xFFE5A22B), Color(0xFFE06C0F), Color(0xFFC62F2F), Color(0xFF7B2CA3))
 private val AqiColors = listOf(Color(0xFF66BB6A), Color(0xFFE6C229), Color(0xFFEF8F2B), Color(0xFFE5484D), Color(0xFF8E4EC6), Color(0xFF8A2A47))
+private val VisibilityColors = listOf(Color(0xFFD13B3B), Color(0xFFE0701A), Color(0xFFE6C229), Color(0xFF66BB6A), Color(0xFF4DD0E1))
 private val ComfortColors = listOf(Color(0xFF4FC3D6), Color(0xFF4CAF50), Color(0xFFE6A817), Color(0xFFE0701A), Color(0xFFD13B3B))
 
 private val UvBreaks = listOf(3.0, 6.0, 8.0, 11.0)
 private val AqiBreaks = listOf(50.0, 100.0, 150.0, 200.0, 300.0)
 private val ComfortBreaks = listOf(15.0, 24.0, 28.0, 31.0)
+private val VisibilityBreaks = listOf(1.0, 4.0, 10.0, 20.0)
 
 private fun band(value: Double, breaks: List<Double>): Int = breaks.count { value >= it }
 
@@ -240,6 +244,7 @@ private fun titleFor(kind: MetricKind): String = tr(
         MetricKind.Humidity -> "Humidity"
         MetricKind.Pressure -> "Pressure forecast"
         MetricKind.Cloud -> "Cloud cover"
+        MetricKind.Visibility -> "Visibility"
     }
 )
 
@@ -251,6 +256,7 @@ private fun buildTabs(kind: MetricKind, all: List<DayData>, ctx: Ctx): List<TabS
     MetricKind.Humidity -> listOfNotNull(humidityTab(all, ctx), comfortTab(all, ctx))
     MetricKind.Pressure -> listOfNotNull(pressureTab(all, ctx))
     MetricKind.Cloud -> listOfNotNull(cloudTab(all.filter { d -> d.hours.any { it.cloud >= 0 } }, ctx))
+    MetricKind.Visibility -> listOfNotNull(visibilityTab(all, ctx))
 }
 
 private fun precipTab(days: List<DayData>, ctx: Ctx): TabSpec? {
@@ -820,5 +826,80 @@ private fun CloudBody(day: DayData, avg: Int, ctx: Ctx) {
             nowHour = day.marker(ctx),
             format = { _, v -> "${v.roundToInt()}%" }
         )
+    }
+}
+
+private fun visibilityText(km: Double): String = if (km >= 10.0) km.roundToInt().toString() else f1(km)
+
+private fun visibilityLabel(index: Int): String = tr(listOf("Very poor", "Poor", "Moderate", "Good", "Excellent")[index])
+
+private fun visibilityTab(days: List<DayData>, ctx: Ctx): TabSpec? {
+    if (days.isEmpty()) return null
+    val avgs = days.map { d -> d.hours.map { it.visibility / 1000.0 }.average().takeIf { !it.isNaN() } ?: 0.0 }
+    val lead = tr("Now")
+    val pills = days.mapIndexed { i, d ->
+        Pill(
+            top = visibilityText(avgs[i]),
+            bottom = bottomLabel(i, d, lead),
+            low = 0f,
+            high = max((avgs[i] / 20.0).toFloat().coerceIn(0f, 1f), 0.08f),
+            tint = VisibilityColors[band(avgs[i], VisibilityBreaks)]
+        )
+    }
+    val first = days.first().focus(ctx)?.let { it.visibility / 1000.0 } ?: avgs.first()
+    return TabSpec(
+        label = tr("Visibility"),
+        outlookLabel = tr("Visibility outlook"),
+        headline = "${visibilityText(first)} km",
+        sub = visibilityLabel(band(first, VisibilityBreaks)),
+        accent = VisibilityColors[3],
+        floating = false,
+        leadLabel = lead,
+        dates = days.map { it.date },
+        pills = pills,
+        body = { i -> VisibilityBody(days[i], avgs[i], ctx) }
+    )
+}
+
+@Composable
+private fun VisibilityBody(day: DayData, avg: Double, ctx: Ctx) {
+    val f = day.focus(ctx)
+    val km = f?.let { it.visibility / 1000.0 } ?: avg
+    val idx = band(km, VisibilityBreaks)
+    val tint = VisibilityColors[idx]
+    val series = day.series { it.visibility / 1000.0 }
+    CardGroup(
+        listOf(
+            {
+                GaugeRow(
+                    label = tr("Visibility"),
+                    value = "${visibilityText(km)} km",
+                    sub = visibilityLabel(idx)
+                ) { VisibilityGauge((km / 20.0).toFloat(), tint) }
+            },
+            { AdviceRow(Icons.Rounded.Visibility, tint, visibilityShort(km)) }
+        ),
+        baseIndex = 1
+    )
+    ChartCard(tr("Hourly visibility"), 3) {
+        HourlyChart(
+            lines = listOf(ChartLine(series, tint, tr("Visibility"))),
+            style = HourlyStyle.Line,
+            yMin = 0f,
+            yMax = max(12f, series.peak() * 1.2f),
+            thresholds = listOf(Threshold(1f, "1 km"), Threshold(10f, "10 km")),
+            nowHour = day.marker(ctx),
+            format = { _, v -> "${visibilityText(v.toDouble())} km" },
+            bandColors = listOf(
+                0f to VisibilityColors[0],
+                1f to VisibilityColors[1],
+                4f to VisibilityColors[2],
+                10f to VisibilityColors[3],
+                20f to VisibilityColors[4]
+            )
+        )
+    }
+    ChartCard(tr("Visibility scale"), 4) {
+        SegmentBar(VisibilityColors, piecewiseFraction(km, VisibilityBreaks))
     }
 }
