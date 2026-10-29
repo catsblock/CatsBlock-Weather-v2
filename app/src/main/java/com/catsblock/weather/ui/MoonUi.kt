@@ -85,8 +85,8 @@ import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlin.random.Random
 
-private val EclipseAccent = Color(0xFFFF8A65)
-private val SoftWhite = Color(0xB3FFFFFF)
+internal val EclipseAccent = Color(0xFFFF8A65)
+internal val SoftWhite = Color(0xB3FFFFFF)
 
 fun DrawScope.drawEclipse(eclipse: Eclipse, c: Offset, r: Float) {
     val shadow = Offset(c.x + (eclipse.dx * r).toFloat(), c.y + (eclipse.dy * r).toFloat())
@@ -174,7 +174,7 @@ fun MoonOrb(cycle: Double, modifier: Modifier = Modifier, eclipse: Eclipse? = nu
     }
 }
 
-private fun moonCap(text: String): String = text.replaceFirstChar { it.titlecase(I18n.lang.locale) }
+internal fun moonCap(text: String): String = text.replaceFirstChar { it.titlecase(I18n.lang.locale) }
 
 private fun moonTimeLabel(date: LocalDate, time: LocalTime?): String =
     if (time == null) "—" else clockLabel(date.atTime(time))
@@ -220,7 +220,7 @@ private fun IlluminationBar(fraction: Float) {
 }
 
 @Composable
-private fun LiveMoonButton(onClick: () -> Unit) {
+internal fun LiveMoonButton(onClick: () -> Unit) {
     val shape = RoundedCornerShape(20.dp)
     val pulse by rememberInfiniteTransition(label = "live").animateFloat(
         0f,
@@ -319,170 +319,14 @@ fun MoonCard(city: City, offsetSeconds: Int, now: LocalDateTime, onClick: () -> 
     }
 }
 
-private class MoonDayInfo(val date: LocalDate, val phase: MoonPhase, val eclipse: Eclipse?)
-
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MoonCalendarSheet(
     city: City,
     offsetSeconds: Int,
     now: LocalDateTime,
+    cloud: Int = -1,
     onLiveMoon: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    val offset = remember(offsetSeconds) { ZoneOffset.ofTotalSeconds(offsetSeconds) }
-    val locale = I18n.lang.locale
-    val today = now.toLocalDate()
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    var month by remember { mutableStateOf(YearMonth.from(today)) }
-    var selected by remember { mutableStateOf(today) }
-    val days = remember(month, offset) {
-        (1..month.lengthOfMonth()).map { d ->
-            val date = month.atDay(d)
-            val noon = date.atTime(12, 0).toInstant(offset).toEpochMilli()
-            MoonDayInfo(date, Moon.phase(noon), Moon.dayEclipse(date, offset)?.second)
-        }
-    }
-    val shown = days.firstOrNull { it.date == selected } ?: days.first()
-    val shownTimes = remember(shown.date, city.lat, city.lon, offset) {
-        Moon.riseSet(shown.date, city.lat, city.lon, offset)
-    }
-    val shownEclipseTime = remember(shown.date, offset) {
-        Moon.dayEclipse(shown.date, offset)?.first?.let {
-            clockLabel(Instant.ofEpochMilli(it).atOffset(offset).toLocalDateTime())
-        }
-    }
-    val firstDay = remember(locale) { WeekFields.of(locale).firstDayOfWeek }
-    val blanks = (month.atDay(1).dayOfWeek.value - firstDay.value + 7) % 7
-    val weekdays = remember(firstDay, locale) {
-        (0 until 7).map { moonCap(firstDay.plus(it.toLong()).getDisplayName(TextStyle.SHORT, locale)) }
-    }
-    val cells: List<MoonDayInfo?> = List(blanks) { null } + days
-    val rows = cells.chunked(7)
-    val tile = RoundedCornerShape(16.dp)
-
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        containerColor = Color(0xFF10141C),
-        contentColor = Color.White
-    ) {
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .navigationBarsPadding()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = { month = month.minusMonths(1) }) {
-                    Icon(Icons.Rounded.ChevronLeft, contentDescription = null, tint = Color.White)
-                }
-                Text(
-                    moonCap(month.month.getDisplayName(TextStyle.FULL, locale)) + " " + month.year,
-                    modifier = Modifier.weight(1f),
-                    style = MaterialTheme.typography.titleLarge,
-                    color = Color.White,
-                    textAlign = TextAlign.Center
-                )
-                IconButton(onClick = { month = month.plusMonths(1) }) {
-                    Icon(Icons.Rounded.ChevronRight, contentDescription = null, tint = Color.White)
-                }
-            }
-            Row(Modifier.fillMaxWidth()) {
-                weekdays.forEach {
-                    Text(
-                        it,
-                        modifier = Modifier.weight(1f),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = SoftWhite,
-                        textAlign = TextAlign.Center
-                    )
-                }
-            }
-            rows.forEach { week ->
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                    for (i in 0 until 7) {
-                        val info = week.getOrNull(i)
-                        if (info == null) {
-                            Spacer(Modifier.weight(1f))
-                        } else {
-                            val isSelected = info.date == shown.date
-                            val isToday = info.date == today
-                            val ring = when {
-                                isSelected -> Color(0xFFCDE6FF)
-                                isToday -> Color.White.copy(alpha = 0.45f)
-                                else -> Color.White.copy(alpha = 0.10f)
-                            }
-                            Column(
-                                Modifier
-                                    .weight(1f)
-                                    .aspectRatio(0.78f)
-                                    .clip(tile)
-                                    .background(Color.White.copy(alpha = if (isSelected) 0.14f else 0.06f))
-                                    .border(if (isSelected) 2.dp else 1.dp, ring, tile)
-                                    .clickable { selected = info.date }
-                                    .padding(vertical = 5.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                MoonOrb(info.phase.cycle, Modifier.size(32.dp), info.eclipse)
-                                Text(
-                                    info.date.dayOfMonth.toString(),
-                                    style = MaterialTheme.typography.labelLarge,
-                                    color = Color.White,
-                                    fontWeight = if (isToday) FontWeight.Bold else FontWeight.Normal
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-            Spacer(Modifier.height(4.dp))
-            val panel = RoundedCornerShape(24.dp)
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .clip(panel)
-                    .background(Color.White.copy(alpha = 0.02f))
-                    .border(1.dp, Color.White.copy(alpha = 0.09f), panel)
-                    .padding(18.dp)
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text(longDateLabel(shown.date), style = MaterialTheme.typography.labelLarge, color = SoftWhite)
-                        Text(
-                            tr(Moon.phaseName(shown.phase.cycle)),
-                            style = MaterialTheme.typography.titleLarge,
-                            color = Color.White
-                        )
-                        Text(
-                            "${(shown.phase.illumination * 100).roundToInt()}% ${tr("illuminated")}",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = SoftWhite
-                        )
-                        if (shown.eclipse != null) {
-                            Spacer(Modifier.height(6.dp))
-                            Text(
-                                tr(Moon.eclipseName(shown.eclipse)) + (shownEclipseTime?.let { " · $it" } ?: ""),
-                                style = MaterialTheme.typography.labelLarge,
-                                color = EclipseAccent
-                            )
-                        }
-                    }
-                    MoonOrb(shown.phase.cycle, Modifier.size(112.dp), shown.eclipse)
-                }
-            }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                MoonChip(Icons.Rounded.ArrowUpward, tr("Moonrise"), moonTimeLabel(shown.date, shownTimes.first), Modifier.weight(1f))
-                MoonChip(Icons.Rounded.ArrowDownward, tr("Moonset"), moonTimeLabel(shown.date, shownTimes.second), Modifier.weight(1f))
-            }
-            LiveMoonButton {
-                onLiveMoon()
-                onDismiss()
-            }
-            Spacer(Modifier.height(12.dp))
-        }
-    }
+    MoonScreen(city, offsetSeconds, now, cloud, onLiveMoon, onDismiss)
 }
