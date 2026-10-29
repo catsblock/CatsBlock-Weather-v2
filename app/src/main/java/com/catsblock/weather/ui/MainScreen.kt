@@ -164,6 +164,7 @@ private sealed interface Sheet {
     data object Visibility : Sheet
     data object Cloud : Sheet
     data object Moon : Sheet
+    data object Sun : Sheet
 }
 
 private val textShadow = TextStyle(
@@ -695,6 +696,7 @@ private fun WeatherDetails(
                             "Pressure" -> Sheet.Pressure
                             "Visibility" -> Sheet.Visibility
                             "Cloud" -> Sheet.Cloud
+                            "Sun" -> Sheet.Sun
                             else -> Sheet.Moon
                         }
                     }
@@ -725,8 +727,12 @@ private fun WeatherDetails(
         DayDetailSheet(current.day, bundle.hours, fahrenheit, today, cur.now) { sheet = null }
     }
 
+    if (sheet is Sheet.Sun && city != null) {
+        SunScreen(city, bundle.utcOffsetSeconds, cur.now) { sheet = null }
+    }
+
     if (sheet is Sheet.Moon && city != null) {
-        MoonCalendarSheet(city, bundle.utcOffsetSeconds, cur.now, onLiveMoon) { sheet = null }
+        MoonCalendarSheet(city, bundle.utcOffsetSeconds, cur.now, cur.cloud, onLiveMoon) { sheet = null }
     }
 
     metricKindOf(sheet)?.let { kind ->
@@ -740,7 +746,7 @@ private fun WeatherDetails(
         )
     }
 
-    sheet?.takeIf { it !is Sheet.DaySheet && it !is Sheet.Moon && metricKindOf(it) == null }?.let { current ->
+    sheet?.takeIf { it !is Sheet.DaySheet && it !is Sheet.Moon && it !is Sheet.Sun && metricKindOf(it) == null }?.let { current ->
         val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         ModalBottomSheet(onDismissRequest = { sheet = null }, sheetState = sheetState) {
             Column(
@@ -750,6 +756,7 @@ private fun WeatherDetails(
                 when (current) {
                     is Sheet.DaySheet -> Unit
                     Sheet.Moon -> Unit
+                    Sheet.Sun -> Unit
                     Sheet.Cloud -> Unit
                     Sheet.Days -> {
                         Text(tr("Next 7 days"), style = MaterialTheme.typography.titleLarge)
