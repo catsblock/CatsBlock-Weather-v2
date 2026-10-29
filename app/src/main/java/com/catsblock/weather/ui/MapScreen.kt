@@ -2,8 +2,11 @@ package com.catsblock.weather.ui
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.util.Log
 import android.view.View
 import android.view.ViewGroup
+import android.widget.FrameLayout
+import android.webkit.ConsoleMessage
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
@@ -150,24 +153,19 @@ internal object MapHost {
 
     var cityKey: String? = null
 
-    fun obtain(context: Context, background: Int): WebView {
+    fun obtain(context: Context, background: Int, init: String): WebView {
         view?.let { return it }
         val web = WebView(context.applicationContext)
         web.settings.javaScriptEnabled = true
         web.settings.domStorageEnabled = true
         web.settings.cacheMode = WebSettings.LOAD_DEFAULT
-        web.setLayerType(View.LAYER_TYPE_HARDWARE, null)
         web.isVerticalScrollBarEnabled = false
         web.isHorizontalScrollBarEnabled = false
         web.overScrollMode = View.OVER_SCROLL_NEVER
         web.setBackgroundColor(background)
         web.webViewClient = object : WebViewClient() {
             override fun onPageFinished(webView: WebView?, url: String?) {
-                webView?.evaluateJavascript("typeof window.MapApi") { result ->
-                    val ok = result?.contains("object") == true
-                    ready = ok
-                    failed = !ok
-                }
+                webView?.let { probe(it, 0) }
             }
 
             override fun onReceivedError(webView: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
@@ -178,19 +176,38 @@ internal object MapHost {
             }
         }
         web.webChromeClient = object : WebChromeClient() {
+            override fun onConsoleMessage(message: ConsoleMessage?): Boolean {
+                Log.d("WeatherMap", message?.message().orEmpty())
+                return true
+            }
+
             override fun onProgressChanged(webView: WebView?, newProgress: Int) {
                 progress = newProgress
             }
         }
-        val dm = context.resources.displayMetrics
-        web.measure(
-            View.MeasureSpec.makeMeasureSpec(dm.widthPixels, View.MeasureSpec.EXACTLY),
-            View.MeasureSpec.makeMeasureSpec(dm.heightPixels, View.MeasureSpec.EXACTLY)
-        )
-        web.layout(0, 0, dm.widthPixels, dm.heightPixels)
         view = web
+        pageInit = init
         load(web)
         return web
+    }
+
+    private var pageInit = "{}"
+
+    private fun probe(web: WebView, attempt: Int) {
+        web.evaluateJavascript("typeof window.MapApi") { result ->
+            val ok = result?.contains("object") == true
+            when {
+                ok -> {
+                    ready = true
+                    failed = false
+                }
+                attempt < 40 -> web.postDelayed({ probe(web, attempt + 1) }, 250)
+                else -> {
+                    ready = false
+                    failed = true
+                }
+            }
+        }
     }
 
     private fun load(web: WebView) {
@@ -198,7 +215,7 @@ internal object MapHost {
         failed = false
         progress = 0
         cityKey = null
-        web.loadDataWithBaseURL(MapPage.BASE_URL, MapPage.html, "text/html", "utf-8", null)
+        web.loadDataWithBaseURL(MapPage.BASE_URL, MapPage.page(pageInit), "text/html", "utf-8", null)
     }
 
     fun reload() {
@@ -209,9 +226,12 @@ internal object MapHost {
         if (ready) view?.evaluateJavascript(script, null)
     }
 
-    fun detach(web: WebView) {
-        (web.parent as? ViewGroup)?.removeView(web)
-        web.onPause()
+    fun release(frame: FrameLayout) {
+        val web = frame.getChildAt(0) as? WebView ?: return
+        if (web.parent === frame) {
+            frame.removeView(web)
+            web.onPause()
+        }
     }
 }
 
@@ -233,6 +253,21 @@ fun MapScreen(vm: WeatherViewModel) {
     val topInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val bottomInset = LocalBottomInset.current
     val scope = rememberCoroutineScope()
+    val initJson = remember {
+        val target = city
+        JSONObject()
+            .put("dark", dark)
+            .put("top", topInset.value.toDouble())
+            .put("bottom", bottomInset.value.toDouble())
+            .put("hasCity", target != null)
+            .put("lat", target?.lat ?: 0.0)
+            .put("lon", target?.lon ?: 0.0)
+            .put("layer", layer.id)
+            .put("title", tr(layer.label))
+            .put("err", tr("Map data unavailable"))
+            .put("f", settings.fahrenheit)
+            .toString()
+    }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var sheetOpen by remember { mutableStateOf(false) }
     val locate = remember { Animatable(0f) }
@@ -264,12 +299,14 @@ fun MapScreen(vm: WeatherViewModel) {
         AndroidView(
             modifier = Modifier.fillMaxSize(),
             factory = { ctx ->
-                MapHost.obtain(ctx, surface).also {
-                    (it.parent as? ViewGroup)?.removeView(it)
-                    it.onResume()
+                val web = MapHost.obtain(ctx, surface, initJson)
+                (web.parent as? ViewGroup)?.removeView(web)
+                FrameLayout(ctx).also { frame ->
+                    frame.addView(web, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+                    web.onResume()
                 }
             },
-            onRelease = { MapHost.detach(it) }
+            onRelease = { MapHost.release(it) }
         )
 
         if (MapHost.progress < 100 && !MapHost.failed) {
