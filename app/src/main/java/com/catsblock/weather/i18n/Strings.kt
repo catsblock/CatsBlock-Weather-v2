@@ -598,4 +598,4 @@ private val shaderTable: Map<String, Array<out String>> = mapOf(
 )
 
 private val table: Map<String, Array<out String>> =
-    commonStrings + forecastStrings + featureStrings + policyStrings + cloudStrings + policyTable + shaderTable
+    commonStrings + forecastStrings + featureStrings + policyStrings + cloudStrings + policyTable + shaderTable + detailStrings
