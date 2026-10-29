@@ -350,9 +350,6 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
         topBar = {
             LargeTopAppBar(
                 title = { Text(tr("Settings")) },
-                navigationIcon = {
-                    IconButton(onClick = vm::back) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, tr("Back")) }
-                },
                 scrollBehavior = scrollBehavior
             )
         }
@@ -362,8 +359,8 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
                 .padding(padding)
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .navigationBarsPadding()
                 .padding(horizontal = 16.dp, vertical = 8.dp)
+                .padding(bottom = LocalBottomInset.current)
         ) {
             CategoryTitle(tr("Appearance"))
 
