@@ -1,20 +1,29 @@
 package com.catsblock.weather.ui
 
-import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -22,6 +31,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -46,6 +56,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -65,7 +76,11 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
@@ -80,6 +95,9 @@ import com.catsblock.weather.data.SolarDay
 import com.catsblock.weather.data.compassLabel
 import com.catsblock.weather.i18n.I18n
 import com.catsblock.weather.i18n.tr
+import com.catsblock.weather.ui.detail.entrance
+import com.catsblock.weather.ui.typography.GoogleSansFlex
+import kotlinx.coroutines.delay
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.YearMonth
@@ -91,7 +109,9 @@ import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.roundToInt
+import kotlin.math.sin
 
 private val Amber = Color(0xFFE8A33D)
 private val AmberLight = Color(0xFFFFB74D)
@@ -140,7 +160,7 @@ fun SunScreen(city: City, offsetSeconds: Int, now: LocalDateTime, onDismiss: () 
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
     ) {
-        Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
+        Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             SunContent(city, offsetSeconds, now, onDismiss)
         }
     }
@@ -171,7 +191,6 @@ private fun SunContent(city: City, offsetSeconds: Int, now: LocalDateTime, onDis
     }
     val percent = if (data.max > 0) (day.daylightMinutes * 100f / data.max).roundToInt() else 0
     val listState = rememberLazyListState()
-    val collapsed by remember { derivedStateOf { listState.firstVisibleItemIndex > 0 } }
     val solstice = remember(today, lat) { nextSummerSolstice(today, lat >= 0.0) }
     val solsticeDays = ChronoUnit.DAYS.between(today, solstice).toInt()
     val dateText = if (selected == today) {
@@ -180,59 +199,69 @@ private fun SunContent(city: City, offsetSeconds: Int, now: LocalDateTime, onDis
         "${selected.dayOfWeek.getDisplayName(TextStyle.SHORT, locale).capFirst()}, ${dateLabel(selected)}"
     }
 
-    Column(Modifier.fillMaxSize().statusBarsPadding()) {
-        Row(
-            Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 4.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            IconButton(onClick = onDismiss) {
-                Icon(Icons.AutoMirrored.Rounded.ArrowBack, tr("Back"), tint = scheme.onSurface)
-            }
-            AnimatedVisibility(visible = collapsed, enter = fadeIn(), exit = fadeOut()) {
-                Text(
-                    tr("Sunrise & sunset"),
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Medium,
-                    color = scheme.onSurface
-                )
-            }
+    val density = LocalDensity.current
+    val statusTop = with(density) { WindowInsets.statusBars.getTop(density).toDp() }
+    val collapse by remember {
+        derivedStateOf {
+            if (listState.firstVisibleItemIndex > 0) 1f
+            else (listState.firstVisibleItemScrollOffset / 300f).coerceIn(0f, 1f)
         }
+    }
+
+    Box(Modifier.fillMaxSize().background(scheme.background)) {
         LazyColumn(
-            Modifier.weight(1f).fillMaxWidth(),
+            Modifier.fillMaxSize(),
             state = listState,
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 16.dp, end = 16.dp, top = statusTop + 64.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             item {
                 Text(
                     tr("Sunrise & sunset"),
-                    Modifier.padding(start = 4.dp, top = 28.dp, bottom = 20.dp),
-                    style = MaterialTheme.typography.displaySmall.copy(fontWeight = FontWeight.Medium),
-                    color = scheme.onSurface
+                    Modifier
+                        .padding(start = 8.dp, top = 32.dp, bottom = 12.dp)
+                        .graphicsLayer {
+                            alpha = 1f - collapse
+                            translationY = -collapse * 24.dp.toPx()
+                        },
+                    color = scheme.onSurface,
+                    fontFamily = GoogleSansFlex.family,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 38.sp,
+                    lineHeight = 44.sp,
+                    letterSpacing = (-1).sp
                 )
             }
             item {
-                PanoramaCard(
-                    week = week,
-                    minutes = weekMinutes,
-                    maxMinutes = data.max,
-                    selected = selected,
-                    today = today,
-                    percent = percent,
-                    onSelect = { selected = it }
-                )
+                Box(Modifier.entrance(0)) {
+                    SunPathCard(day = day, now = now, live = selected == today)
+                }
+            }
+            item {
+                Box(Modifier.entrance(1)) {
+                    PanoramaCard(
+                        week = week,
+                        minutes = weekMinutes,
+                        maxMinutes = data.max,
+                        selected = selected,
+                        today = today,
+                        percent = percent,
+                        onSelect = { selected = it }
+                    )
+                }
             }
             stickyHeader {
                 Row(
-                    Modifier.fillMaxWidth().background(scheme.surface).padding(horizontal = 4.dp, vertical = 8.dp),
+                    Modifier.fillMaxWidth().background(scheme.background).padding(horizontal = 4.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
                         dateText,
                         Modifier.weight(1f, fill = false),
-                        style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.Medium,
                         color = scheme.onSurface,
+                        fontFamily = GoogleSansFlex.family,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 26.sp,
                         maxLines = 1
                     )
                     if (selected != today) {
@@ -241,49 +270,233 @@ private fun SunContent(city: City, offsetSeconds: Int, now: LocalDateTime, onDis
                         }
                     }
                     Spacer(Modifier.weight(1f))
-                    NavButton(Icons.Rounded.ChevronLeft, tr("Previous day")) { selected = selected.minusDays(1) }
-                    Spacer(Modifier.width(12.dp))
-                    NavButton(Icons.Rounded.ChevronRight, tr("Next day")) { selected = selected.plusDays(1) }
+                    NavButton(Icons.Rounded.ChevronLeft, tr("Previous day"), false) { selected = selected.minusDays(1) }
+                    Spacer(Modifier.width(8.dp))
+                    NavButton(Icons.Rounded.ChevronRight, tr("Next day"), true) { selected = selected.plusDays(1) }
                 }
             }
             item {
-                DaylightCard(
-                    day = day,
-                    delta = delta,
-                    againstToday = selected != today,
-                    nowFraction = if (selected == today) minuteOfDay(now) / 1440f else null
-                )
+                Box(Modifier.entrance(2)) {
+                    DaylightCard(
+                        day = day,
+                        delta = delta,
+                        againstToday = selected != today,
+                        nowFraction = if (selected == today) minuteOfDay(now) / 1440f else null
+                    )
+                }
             }
-            item { DetailsCard(day) }
+            item { Box(Modifier.entrance(3)) { DetailsCard(day) } }
             item {
-                SeasonalCard(
-                    longest = data.longest,
-                    longestMinutes = data.max,
-                    shortest = data.shortest,
-                    shortestMinutes = data.min,
-                    solstice = solstice,
-                    solsticeDays = solsticeDays
-                )
+                Box(Modifier.entrance(4)) {
+                    SeasonalCard(
+                        longest = data.longest,
+                        longestMinutes = data.max,
+                        shortest = data.shortest,
+                        shortestMinutes = data.min,
+                        solstice = solstice,
+                        solsticeDays = solsticeDays
+                    )
+                }
             }
-            item { AnnualCard(data, selected) }
+            item { Box(Modifier.entrance(5)) { AnnualCard(data, selected) } }
             item { MonthsCard(year, data.max, selected.monthValue, lat, lon, offsetSeconds, locale) }
-            item { Spacer(Modifier.navigationBarsPadding().height(24.dp)) }
+            item { Spacer(Modifier.navigationBarsPadding().height(32.dp)) }
+        }
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .background(scheme.background)
+                .statusBarsPadding()
+                .height(64.dp)
+                .padding(horizontal = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = onDismiss) {
+                Icon(Icons.AutoMirrored.Rounded.ArrowBack, tr("Back"), tint = scheme.onSurface)
+            }
+            Text(
+                tr("Sunrise & sunset"),
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(start = 8.dp)
+                    .graphicsLayer {
+                        alpha = collapse
+                        translationY = (1f - collapse) * 14.dp.toPx()
+                    },
+                color = scheme.onSurface,
+                fontFamily = GoogleSansFlex.family,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 22.sp,
+                maxLines = 1
+            )
         }
     }
 }
 
 @Composable
-private fun NavButton(icon: ImageVector, description: String, onClick: () -> Unit) {
+private fun NavButton(icon: ImageVector, description: String, primary: Boolean, onClick: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
+    val source = remember { MutableInteractionSource() }
+    val pressed by source.collectIsPressedAsState()
+    val corner by animateDpAsState(
+        targetValue = if (pressed) 16.dp else 28.dp,
+        animationSpec = spring(dampingRatio = 0.5f, stiffness = 520f),
+        label = "nav-shape"
+    )
+    val width by animateDpAsState(
+        targetValue = if (pressed) 52.dp else 44.dp,
+        animationSpec = spring(dampingRatio = 0.5f, stiffness = 520f),
+        label = "nav-width"
+    )
     FilledTonalIconButton(
         onClick = onClick,
-        modifier = Modifier.size(48.dp),
+        modifier = Modifier.size(width, 44.dp),
+        shape = RoundedCornerShape(corner),
+        interactionSource = source,
         colors = IconButtonDefaults.filledTonalIconButtonColors(
-            containerColor = scheme.secondaryContainer,
-            contentColor = scheme.onSecondaryContainer
+            containerColor = if (primary) scheme.secondaryContainer else scheme.surfaceContainerHigh,
+            contentColor = if (primary) scheme.onSecondaryContainer else scheme.onSurfaceVariant
         )
     ) {
-        Icon(icon, description)
+        Icon(icon, description, Modifier.size(24.dp))
+    }
+}
+
+@Composable
+private fun SunPathCard(day: SolarDay, now: LocalDateTime, live: Boolean) {
+    val rise = day.sunrise?.let { minuteOfDay(it) } ?: 360
+    val set = day.sunset?.let { minuteOfDay(it) } ?: 1080
+    val current = if (live) minuteOfDay(now) else minuteOfDay(day.noon)
+    val span = (set - rise).coerceAtLeast(1)
+    val raw = (current - rise).toFloat() / span
+    val up = raw in 0f..1f
+    val target = raw.coerceIn(0f, 1f)
+    val progress = remember { Animatable(0f) }
+    LaunchedEffect(target) { progress.animateTo(target, spring(dampingRatio = 0.85f, stiffness = Spring.StiffnessVeryLow)) }
+    val transition = rememberInfiniteTransition(label = "sun-path")
+    val spin by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(tween(30000, easing = LinearEasing)),
+        label = "sun-spin"
+    )
+    val pulse by transition.animateFloat(
+        initialValue = 0.9f,
+        targetValue = 1.12f,
+        animationSpec = infiniteRepeatable(tween(2200, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "sun-pulse"
+    )
+    val twinkle by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = (2.0 * PI).toFloat(),
+        animationSpec = infiniteRepeatable(tween(4000, easing = LinearEasing)),
+        label = "sun-twinkle"
+    )
+    val headline = when {
+        !live -> daylightText(day.daylightMinutes)
+        up -> daylightText(set - current)
+        raw < 0f -> daylightText(rise - current)
+        else -> daylightText(1440 - current + rise)
+    }
+    val caption = when {
+        !live -> tr("Daylight")
+        up -> tr("Daylight left")
+        else -> tr("Until sunrise")
+    }
+    val status = if (up) tr("Sun is up") else tr("Sun is down")
+    val k = if (up) sin(PI * progress.value).toFloat().coerceIn(0f, 1f) else 0f
+    val top = lerp(Color(0xFF0B1220), Color(0xFF2F7FD0), k)
+    val bottom = lerp(lerp(Color(0xFF1B2740), Color(0xFFF2994A), if (up) 0.85f else 0f), Color(0xFF8CC8F4), k)
+    val sunAlpha = if (up) 1f else 0.45f
+    Box(Modifier.fillMaxWidth().height(300.dp).clip(CardShape)) {
+        Canvas(Modifier.fillMaxSize()) {
+            val w = size.width
+            val h = size.height
+            drawRect(Brush.verticalGradient(listOf(top, bottom)))
+            val horizon = h - 84.dp.toPx()
+            val cx = w / 2f
+            val r = min(w / 2f - 36.dp.toPx(), horizon - 110.dp.toPx())
+            for (i in 0 until 18) {
+                val sx = ((i * 53) % 100) / 100f * w
+                val sy = ((i * 37) % 100) / 100f * horizon * 0.7f
+                val a = ((1f - k) * (0.35f + 0.35f * sin(twinkle + i))).coerceIn(0f, 1f)
+                drawCircle(Color.White.copy(alpha = a), (1f + (i % 3) * 0.6f).dp.toPx(), Offset(sx, sy))
+            }
+            drawArc(
+                Color.White.copy(alpha = 0.32f),
+                180f,
+                180f,
+                false,
+                Offset(cx - r, horizon - r),
+                Size(2 * r, 2 * r),
+                style = Stroke(2.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f)))
+            )
+            drawArc(
+                AmberLight,
+                180f,
+                180f * progress.value,
+                false,
+                Offset(cx - r, horizon - r),
+                Size(2 * r, 2 * r),
+                style = Stroke(4.dp.toPx(), cap = StrokeCap.Round)
+            )
+            drawRect(Color.Black.copy(alpha = 0.28f), Offset(0f, horizon), Size(w, h - horizon))
+            drawLine(Color.White.copy(alpha = 0.4f), Offset(0f, horizon), Offset(w, horizon), 1.5f.dp.toPx())
+            val angle = PI * (1.0 - progress.value)
+            val c = Offset(cx + r * cos(angle).toFloat(), horizon - r * sin(angle).toFloat())
+            val glow = 46.dp.toPx() * pulse
+            drawCircle(
+                Brush.radialGradient(listOf(Amber.copy(alpha = 0.6f * sunAlpha), Color.Transparent), center = c, radius = glow),
+                glow,
+                c
+            )
+            for (i in 0 until 12) {
+                rotate(spin + i * 30f, c) {
+                    drawLine(
+                        AmberLight.copy(alpha = 0.85f * sunAlpha),
+                        Offset(c.x, c.y - 23.dp.toPx()),
+                        Offset(c.x, c.y - 31.dp.toPx()),
+                        2.5f.dp.toPx(),
+                        StrokeCap.Round
+                    )
+                }
+            }
+            drawCircle(AmberLight.copy(alpha = sunAlpha), 16.dp.toPx(), c)
+            drawCircle(Color.White.copy(alpha = 0.9f * sunAlpha), 7.dp.toPx(), c)
+        }
+        Column(Modifier.align(Alignment.TopStart).padding(start = 24.dp, top = 22.dp, end = 24.dp)) {
+            Text(caption, color = Color.White.copy(alpha = 0.8f), style = MaterialTheme.typography.titleMedium)
+            Text(
+                headline,
+                color = Color.White,
+                fontFamily = GoogleSansFlex.family,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 40.sp,
+                lineHeight = 46.sp,
+                letterSpacing = (-1).sp,
+                maxLines = 1
+            )
+            Text(status, color = Color.White.copy(alpha = 0.75f), style = MaterialTheme.typography.bodyMedium)
+        }
+        Row(
+            Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(horizontal = 24.dp, vertical = 18.dp),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            SunTime(tr("Sunrise"), day.sunrise?.let { clockLabel(it) } ?: "—")
+            SunTime(tr("Sunset"), day.sunset?.let { clockLabel(it) } ?: "—", Alignment.End)
+        }
+    }
+}
+
+@Composable
+private fun SunTime(label: String, time: String, align: Alignment.Horizontal = Alignment.Start) {
+    Column(horizontalAlignment = align) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Rounded.WbTwilight, null, Modifier.size(18.dp), tint = AmberLight)
+            Spacer(Modifier.width(6.dp))
+            Text(label, color = Color.White.copy(alpha = 0.75f), style = MaterialTheme.typography.labelLarge)
+        }
+        Text(time, color = Color.White, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
     }
 }
 
@@ -316,8 +529,13 @@ private fun PanoramaCard(
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 week.forEachIndexed { index, date ->
                     val isSelected = date == selected
+                    var started by remember { mutableStateOf(false) }
+                    LaunchedEffect(Unit) {
+                        delay(index * 50L)
+                        started = true
+                    }
                     val fraction by animateFloatAsState(
-                        if (maxMinutes > 0) (minutes[index].toFloat() / maxMinutes).coerceIn(0.05f, 1f) else 0.05f,
+                        if (started && maxMinutes > 0) (minutes[index].toFloat() / maxMinutes).coerceIn(0.05f, 1f) else 0.05f,
                         spring(Spring.DampingRatioMediumBouncy, Spring.StiffnessLow),
                         label = "dayPill"
                     )
@@ -431,6 +649,17 @@ private fun DaylightCurve(day: SolarDay, nowFraction: Float?) {
     val line = scheme.onSurface.copy(alpha = 0.25f)
     val sunriseText = day.sunrise?.let { clockLabel(it) }
     val sunsetText = day.sunset?.let { clockLabel(it) }
+    val reveal = remember { Animatable(0f) }
+    LaunchedEffect(day.date) {
+        reveal.snapTo(0f)
+        reveal.animateTo(1f, tween(1000, easing = FastOutSlowInEasing))
+    }
+    val halo by rememberInfiniteTransition(label = "now-halo").animateFloat(
+        initialValue = 1f,
+        targetValue = 1.5f,
+        animationSpec = infiniteRepeatable(tween(1600, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "now-halo-scale"
+    )
     Canvas(Modifier.fillMaxWidth().height(176.dp)) {
         val w = size.width
         val h = size.height
@@ -460,11 +689,11 @@ private fun DaylightCurve(day: SolarDay, nowFraction: Float?) {
         fill.lineTo(0f, horizon)
         fill.close()
         drawRect(blue.copy(alpha = 0.14f), Offset(0f, horizon), Size(w, h - horizon))
-        clipRect(0f, 0f, w, horizon) {
+        clipRect(0f, 0f, w * reveal.value, horizon) {
             drawPath(fill, Brush.verticalGradient(listOf(Amber.copy(alpha = 0.5f), Color.Transparent), 0f, horizon))
             drawPath(curve, AmberLight, style = Stroke(3.5f.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
         }
-        clipRect(0f, horizon, w, h) {
+        clipRect(0f, horizon, w * reveal.value, h) {
             drawPath(curve, blue, style = Stroke(3.5f.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
         }
         drawLine(line, Offset(0f, horizon), Offset(w, horizon), 1.dp.toPx())
@@ -481,8 +710,8 @@ private fun DaylightCurve(day: SolarDay, nowFraction: Float?) {
         marker(day.sunset, sunsetText)
         if (nowFraction != null) {
             val p = Offset(nowFraction * w, yOf(valueAt(nowFraction)))
-            drawCircle(blue.copy(alpha = 0.28f), 16.dp.toPx(), p)
-            drawCircle(blue, 9.dp.toPx(), p)
+            drawCircle(blue.copy(alpha = 0.28f * (2f - halo)), 16.dp.toPx() * halo, p)
+            drawCircle(blue, 9.dp.toPx() * reveal.value, p)
         }
     }
 }
@@ -490,9 +719,14 @@ private fun DaylightCurve(day: SolarDay, nowFraction: Float?) {
 @Composable
 private fun InfoRow(icon: ImageVector, label: String, value: String) {
     val scheme = MaterialTheme.colorScheme
-    Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-        Icon(icon, null, Modifier.size(26.dp), tint = scheme.onSurface)
-        Spacer(Modifier.width(18.dp))
+    Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            Modifier.size(44.dp).clip(CircleShape).background(Amber.copy(alpha = 0.16f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(icon, null, Modifier.size(24.dp), tint = AmberLight)
+        }
+        Spacer(Modifier.width(16.dp))
         Text(label, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, color = scheme.onSurface)
         Text(value, style = MaterialTheme.typography.titleMedium, color = scheme.onSurface, fontWeight = FontWeight.Medium)
     }
@@ -563,6 +797,17 @@ private fun AnnualCard(data: YearData, selected: LocalDate) {
     val locale = I18n.lang.locale
     val line = scheme.onSurface.copy(alpha = 0.08f)
     val blue = scheme.primary
+    val reveal = remember { Animatable(0f) }
+    LaunchedEffect(data.start) {
+        reveal.snapTo(0f)
+        reveal.animateTo(1f, tween(1200, easing = FastOutSlowInEasing))
+    }
+    val halo by rememberInfiniteTransition(label = "annual-halo").animateFloat(
+        initialValue = 1f,
+        targetValue = 1.4f,
+        animationSpec = infiniteRepeatable(tween(1600, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "annual-halo-scale"
+    )
     Surface(Modifier.fillMaxWidth(), shape = CardShape, color = scheme.surfaceContainerHigh) {
         Column(Modifier.padding(horizontal = 18.dp, vertical = 20.dp)) {
             Text(tr("Annual daylight"), style = MaterialTheme.typography.titleMedium, color = scheme.onSurfaceVariant)
@@ -589,12 +834,16 @@ private fun AnnualCard(data: YearData, selected: LocalDate) {
                 fill.lineTo(w, h)
                 fill.lineTo(0f, h)
                 fill.close()
-                drawPath(fill, Brush.verticalGradient(listOf(Amber.copy(alpha = 0.45f), Color.Transparent)))
+                clipRect(0f, 0f, w * reveal.value, h) {
+                    drawPath(fill, Brush.verticalGradient(listOf(Amber.copy(alpha = 0.45f), Color.Transparent)))
+                }
                 for (m in 0 until 12) {
                     val x = (YearMonth.of(data.start.year, m + 1).atDay(1).dayOfYear - 1) / (n - 1f) * w
                     drawLine(line, Offset(x, 0f), Offset(x, h), 1.dp.toPx())
                 }
-                drawPath(curve, Color(0xFFFFD54F), style = Stroke(3.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
+                clipRect(0f, 0f, w * reveal.value, h) {
+                    drawPath(curve, Color(0xFFFFD54F), style = Stroke(3.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
+                }
                 val index = (selected.dayOfYear - 1).coerceIn(0, n - 1)
                 val x = index / (n - 1f) * w
                 val y = yOf(data.minutes[index])
@@ -605,8 +854,8 @@ private fun AnnualCard(data: YearData, selected: LocalDate) {
                     1.5f.dp.toPx(),
                     pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 8f))
                 )
-                drawCircle(blue.copy(alpha = 0.3f), 13.dp.toPx(), Offset(x, y))
-                drawCircle(blue, 7.dp.toPx(), Offset(x, y))
+                drawCircle(blue.copy(alpha = 0.3f * (2f - halo)), 13.dp.toPx() * halo, Offset(x, y))
+                drawCircle(blue, 7.dp.toPx() * reveal.value, Offset(x, y))
             }
             Spacer(Modifier.height(8.dp))
             Row(Modifier.fillMaxWidth()) {
@@ -648,7 +897,17 @@ private fun MonthsCard(
                 12 -> RoundedCornerShape(topStart = 10.dp, topEnd = 10.dp, bottomStart = 28.dp, bottomEnd = 28.dp)
                 else -> RoundedCornerShape(10.dp)
             }
-            val fraction = if (maxMinutes > 0) (row.day.daylightMinutes.toFloat() / maxMinutes).coerceIn(0.3f, 1f) else 0.3f
+            var shown by remember { mutableStateOf(false) }
+            LaunchedEffect(Unit) {
+                delay(row.month * 40L)
+                shown = true
+            }
+            val target = if (maxMinutes > 0) (row.day.daylightMinutes.toFloat() / maxMinutes).coerceIn(0.3f, 1f) else 0.3f
+            val fraction by animateFloatAsState(
+                if (shown) target else 0.02f,
+                spring(dampingRatio = 0.75f, stiffness = Spring.StiffnessLow),
+                label = "monthBar"
+            )
             Surface(Modifier.fillMaxWidth(), shape = shape, color = scheme.surfaceContainerHigh) {
                 Row(
                     Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
@@ -681,7 +940,7 @@ private fun MonthsCard(
                     ) {
                         Box(
                             Modifier
-                                .fillMaxWidth(fraction)
+                                .fillMaxWidth(fraction.coerceIn(0.02f, 1f))
                                 .fillMaxHeight()
                                 .clip(CircleShape)
                                 .background(if (current) scheme.primary else Amber),
