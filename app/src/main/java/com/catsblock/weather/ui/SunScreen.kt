@@ -97,7 +97,7 @@ private val Amber = Color(0xFFE8A33D)
 private val AmberLight = Color(0xFFFFB74D)
 private val CardShape = RoundedCornerShape(32.dp)
 
-internal fun durationText(minutes: Int): String =
+internal fun daylightText(minutes: Int): String =
     String.format(Locale.US, tr("%dh %dm"), minutes / 60, minutes % 60)
 
 private fun shortMinutes(minutes: Int): String = String.format(Locale.US, tr("%dm"), minutes)
@@ -329,7 +329,7 @@ private fun PanoramaCard(
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Text(
-                            durationText(minutes[index]),
+                            daylightText(minutes[index]),
                             style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
                             color = if (isSelected) scheme.onSurface else scheme.onSurfaceVariant.copy(alpha = 0.8f),
                             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
@@ -398,7 +398,7 @@ private fun DaylightCard(day: SolarDay, delta: Int, againstToday: Boolean, nowFr
             Text(tr("Sunrise & sunset"), style = MaterialTheme.typography.titleMedium, color = scheme.onSurfaceVariant)
             Spacer(Modifier.height(4.dp))
             Text(
-                String.format(tr("%s of daylight"), durationText(day.daylightMinutes)),
+                String.format(tr("%s of daylight"), daylightText(day.daylightMinutes)),
                 style = MaterialTheme.typography.displaySmall.copy(fontWeight = FontWeight.Medium, fontSize = 32.sp, lineHeight = 38.sp),
                 color = scheme.onSurface
             )
@@ -550,8 +550,8 @@ private fun SeasonalCard(
         Column(Modifier.padding(horizontal = 20.dp, vertical = 18.dp)) {
             Text(tr("Seasonal highlights"), style = MaterialTheme.typography.titleMedium, color = scheme.onSurfaceVariant)
             Spacer(Modifier.height(8.dp))
-            SeasonRow(tr("Longest day"), longest, durationText(longestMinutes), false)
-            SeasonRow(tr("Shortest day"), shortest, durationText(shortestMinutes), false)
+            SeasonRow(tr("Longest day"), longest, daylightText(longestMinutes), false)
+            SeasonRow(tr("Shortest day"), shortest, daylightText(shortestMinutes), false)
             SeasonRow(tr("Next summer solstice"), solstice, countText(solsticeDays), true)
         }
     }
@@ -688,7 +688,7 @@ private fun MonthsCard(
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                durationText(row.day.daylightMinutes),
+                                daylightText(row.day.daylightMinutes),
                                 style = MaterialTheme.typography.labelLarge,
                                 color = if (current) scheme.onPrimary else Color(0xFF2B1B00),
                                 fontWeight = FontWeight.Medium,
