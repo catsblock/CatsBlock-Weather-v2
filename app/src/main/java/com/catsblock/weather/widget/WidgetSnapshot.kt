@@ -39,6 +39,15 @@ data class WidgetSnapshot(
         return cityNow.plus(elapsed, ChronoUnit.MILLIS)
     }
 
+    private fun liveHour(): WidgetHour? {
+        val floor = estimatedNow().truncatedTo(ChronoUnit.HOURS)
+        return hours.firstOrNull { it.time == floor }
+    }
+
+    fun liveDay(): Boolean = liveHour()?.isDay ?: isDay
+
+    fun liveKind(): Condition = liveHour()?.kind ?: kind
+
     fun upcomingHours(count: Int): List<WidgetHour> {
         val floor = estimatedNow().truncatedTo(ChronoUnit.HOURS)
         val future = hours.filter { !it.time.isBefore(floor) }
