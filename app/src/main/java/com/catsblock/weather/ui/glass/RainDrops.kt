@@ -1,13 +1,7 @@
 package com.catsblock.weather.ui.glass
 
-import androidx.compose.runtime.Composable
 import androidx.compose.runtime.compositionLocalOf
-import androidx.compose.runtime.remember
-import androidx.compose.ui.Modifier
 import com.catsblock.weather.data.Condition
-import com.catsblock.weather.ui.atmosphere.ShaderGate
-import com.catsblock.weather.ui.atmosphere.glassRain
-import kotlin.random.Random
 
 val LocalRainIntensity = compositionLocalOf { 0f }
 val LocalSnowIntensity = compositionLocalOf { 0f }
@@ -26,12 +20,4 @@ fun snowIntensity(kind: Condition): Float = when (kind) {
     Condition.HeavySnow -> 0.85f
     Condition.Blizzard -> 1f
     else -> 0f
-}
-
-@Composable
-fun Modifier.rainDrops(intensity: Float, snow: Float = 0f): Modifier {
-    if (!ShaderGate.enabled()) return this
-    if (intensity <= 0f && snow <= 0f) return this
-    val seed = remember { Random.nextFloat() * 40f }
-    return this.glassRain(intensity, seed, snow)
 }
