@@ -667,6 +667,7 @@ private val shellStrings: Map<String, Array<out String>> = mapOf(
     row("Tropical depression", "Depressão tropical", "Depressão tropical", "Depresión tropical", "Dépression tropicale", "Тропическая депрессия", "Tropische Depression", "Depressione tropicale", "열대저압부", "Depresi tropis"),
     row("Tropical storm", "Tempestade tropical", "Tempestade tropical", "Tormenta tropical", "Tempête tropicale", "Тропический шторм", "Tropischer Sturm", "Tempesta tropicale", "열대폭풍", "Badai tropis"),
     row("Max winds", "Ventos máximos", "Ventos máximos", "Vientos máximos", "Vents maximaux", "Макс. скорость ветра", "Maximale Windgeschwindigkeit", "Venti massimi", "최대 풍속", "Angin maksimum"),
+    row("Hotspots", "Focos de calor", "Focos de calor", "Focos de calor", "Foyers de chaleur", "Очаги возгорания", "Hotspots", "Punti caldi", "열점", "Titik panas"),
     row("Wildfire", "Incêndio florestal", "Incêndio florestal", "Incendio forestal", "Feu de forêt", "Лесной пожар", "Waldbrand", "Incendio boschivo", "산불", "Kebakaran hutan"),
     row("No active storms right now", "Nenhuma tempestade ativa agora", "Nenhuma tempestade ativa neste momento", "Ninguna tormenta activa ahora", "Aucune tempête active actuellement", "Сейчас нет активных штормов", "Derzeit keine aktiven Stürme", "Nessuna tempesta attiva al momento", "현재 활성 폭풍 없음", "Tidak ada badai aktif saat ini"),
     row("Category 1", "Categoria 1", "Categoria 1", "Categoría 1", "Catégorie 1", "Категория 1", "Kategorie 1", "Categoria 1", "1등급", "Kategori 1"),
