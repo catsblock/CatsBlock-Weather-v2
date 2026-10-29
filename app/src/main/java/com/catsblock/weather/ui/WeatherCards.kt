@@ -1,6 +1,19 @@
 package com.catsblock.weather.ui
 
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.rounded.Explore
+import androidx.compose.material.icons.rounded.NightsStay
+import androidx.compose.material3.Icon
+import androidx.compose.ui.draw.clip
+import com.catsblock.weather.data.Solar
+import com.catsblock.weather.data.SolarDay
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
@@ -82,6 +95,7 @@ fun SunCardV2(
     sunset: LocalDateTime,
     now: LocalDateTime,
     modifier: Modifier = Modifier,
+    solar: SolarDay? = null,
     onClick: (() -> Unit)? = null
 ) {
     val total = Duration.between(sunrise, sunset).toMinutes().coerceAtLeast(1)
@@ -89,52 +103,116 @@ fun SunCardV2(
     val target = (elapsed.toFloat() / total.toFloat()).coerceIn(0f, 1f)
     val up = !now.isBefore(sunrise) && !now.isAfter(sunset)
     val progress by animateFloatAsState(target, tween(1100), label = "sun")
-    val ink = MaterialTheme.colorScheme.onSurface
-    GlassCard(modifier, onClick, Modifier.fillMaxSize()) {
-        CardHeader(Icons.Rounded.WbTwilight, tr("Sun"))
-        Spacer(Modifier.weight(1f))
-        BoxWithConstraints(Modifier.fillMaxWidth().height(78.dp)) {
-            val r = min(maxWidth.value / 2f - 18f, maxHeight.value - 20f)
-            val cx = maxWidth.value / 2f
-            val cy = maxHeight.value - 8f
+    val scheme = MaterialTheme.colorScheme
+    val ink = scheme.onSurface
+    val sky = Color(0xFFFFB300)
+    val night = Color(0xFF5C6BC0)
+    val remaining = Duration.between(now, sunset).toMinutes().coerceAtLeast(0)
+    val pulse = rememberInfiniteTransition(label = "pulse")
+    val halo by pulse.animateFloat(
+        0.85f, 1.15f,
+        infiniteRepeatable(tween(2200, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "halo"
+    )
+    GlassCard(modifier, onClick, Modifier.fillMaxWidth()) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Rounded.WbSunny, null, Modifier.size(22.dp), tint = scheme.onSurfaceVariant)
+            Spacer(Modifier.width(10.dp))
+            Text(tr("Sun"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Normal, color = scheme.onSurfaceVariant)
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(
+            durationLabel(total.toInt()),
+            style = MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.Medium
+        )
+        Text(
+            if (up) "${durationLabel(remaining.toInt())} ${tr("of daylight left")}" else tr("The sun is down"),
+            style = MaterialTheme.typography.bodyMedium,
+            color = scheme.onSurfaceVariant
+        )
+        Spacer(Modifier.height(10.dp))
+        BoxWithConstraints(Modifier.fillMaxWidth().height(112.dp)) {
+            val w = maxWidth.value
+            val h = maxHeight.value
+            val horizon = h * 0.62f
+            val amp = horizon - 10f
             val a = PI * (1.0 - progress)
-            val sx = cx + r * cos(a).toFloat()
-            val sy = cy - r * sin(a).toFloat()
+            val sx = w * 0.06f + (w * 0.88f) * progress
+            val sy = horizon - amp * sin(a).toFloat() * 1f
             Canvas(Modifier.fillMaxSize()) {
-                val rp = r.dp.toPx()
-                val cxp = cx.dp.toPx()
-                val cyp = cy.dp.toPx()
-                drawLine(
-                    ink.copy(alpha = 0.3f),
-                    Offset(cxp - rp - 14.dp.toPx(), cyp),
-                    Offset(cxp + rp + 14.dp.toPx(), cyp),
-                    1.5f.dp.toPx()
-                )
-                drawArc(
-                    ink.copy(alpha = 0.3f), 180f, 180f, false, Offset(cxp - rp, cyp - rp), Size(2 * rp, 2 * rp),
-                    style = Stroke(2.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f)))
-                )
-                drawArc(
-                    Color.White.copy(alpha = 0.45f), 180f, 180f * progress, false, Offset(cxp - rp, cyp - rp), Size(2 * rp, 2 * rp),
-                    style = Stroke(2.5f.dp.toPx(), cap = StrokeCap.Round)
-                )
+                val left = w * 0.06f
+                val span = w * 0.88f
+                val hp = horizon.dp.toPx()
+                val ap = amp.dp.toPx()
+                val path = Path()
+                val steps = 64
+                for (i in 0..steps) {
+                    val t = i / steps.toFloat()
+                    val x = (left + span * t).dp.toPx()
+                    val y = hp - ap * sin(PI * t).toFloat()
+                    if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+                }
+                val fill = Path().apply {
+                    addPath(path)
+                    lineTo((left + span).dp.toPx(), hp)
+                    lineTo(left.dp.toPx(), hp)
+                    close()
+                }
+                drawPath(fill, Brush.verticalGradient(listOf(sky.copy(alpha = 0.34f), sky.copy(alpha = 0f)), startY = hp - ap, endY = hp))
+                drawRect(night.copy(alpha = 0.16f), Offset(0f, hp), Size(size.width, size.height - hp))
+                drawLine(ink.copy(alpha = 0.35f), Offset(0f, hp), Offset(size.width, hp), 1.5f.dp.toPx())
+                drawPath(path, ink.copy(alpha = 0.22f), style = Stroke(3.dp.toPx(), cap = StrokeCap.Round))
+                clipPath(Path().apply { addRect(Rect(0f, 0f, sx.dp.toPx(), size.height)) }) {
+                    drawPath(path, sky, style = Stroke(4.dp.toPx(), cap = StrokeCap.Round))
+                }
+                listOf(left, left + span).forEach { x ->
+                    drawCircle(sky, 5.dp.toPx(), Offset(x.dp.toPx(), hp))
+                    drawCircle(scheme.surface, 2.5f.dp.toPx(), Offset(x.dp.toPx(), hp))
+                }
+                val c = Offset(sx.dp.toPx(), sy.dp.toPx())
+                val alpha = if (up) 1f else 0.4f
+                drawCircle(sky.copy(alpha = 0.18f * alpha), 22.dp.toPx() * halo, c)
+                drawCircle(sky.copy(alpha = 0.32f * alpha), 15.dp.toPx() * halo, c)
+                drawCircle(Color(0xFFFFE082).copy(alpha = alpha), 10.dp.toPx(), c)
+                drawCircle(Color(0xFFFFF8E1).copy(alpha = alpha), 5.dp.toPx(), c)
             }
-            WeatherIcon(
-                Condition.Clear,
-                true,
-                Modifier
-                    .offset((sx - 12f).dp, (sy - 12f).dp)
-                    .size(24.dp)
-                    .graphicsLayer { alpha = if (up) 1f else 0.45f }
+            Text(
+                clockLabel(sunrise),
+                Modifier.align(Alignment.TopStart).offset((w * 0.06f - 18f).coerceAtLeast(0f).dp, (horizon + 8f).dp),
+                style = MaterialTheme.typography.labelLarge
+            )
+            Text(
+                clockLabel(sunset),
+                Modifier.align(Alignment.TopEnd).offset(-(w * 0.06f - 18f).coerceAtLeast(0f).dp, (horizon + 8f).dp),
+                style = MaterialTheme.typography.labelLarge
             )
         }
-        Spacer(Modifier.height(4.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(clockLabel(sunrise), style = MaterialTheme.typography.labelLarge)
-            Text(clockLabel(sunset), style = MaterialTheme.typography.labelLarge)
+        Spacer(Modifier.height(10.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            SunFact(Icons.Rounded.WbSunny, tr("Solar noon"), solar?.noon?.let { clockLabel(it) } ?: "--", Modifier.weight(1f))
+            SunFact(Icons.Rounded.WbTwilight, tr("First light"), solar?.firstLight?.let { clockLabel(it) } ?: "--", Modifier.weight(1f))
+            SunFact(Icons.Rounded.NightsStay, tr("Last light"), solar?.lastLight?.let { clockLabel(it) } ?: "--", Modifier.weight(1f))
+            SunFact(Icons.Rounded.Explore, tr("Sunset direction"), solar?.sunsetAzimuth?.let { "${compassLabel(it)} ${it.roundToInt()}°" } ?: "--", Modifier.weight(1f))
         }
     }
 }
+
+@Composable
+private fun SunFact(icon: ImageVector, label: String, value: String, modifier: Modifier) {
+    val scheme = MaterialTheme.colorScheme
+    Column(
+        modifier.clip(MaterialTheme.shapes.large).background(scheme.onSurface.copy(alpha = 0.07f)).padding(horizontal = 8.dp, vertical = 10.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Icon(icon, null, Modifier.size(18.dp), tint = scheme.onSurfaceVariant)
+        Spacer(Modifier.height(4.dp))
+        Text(value, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, maxLines = 1)
+        Text(label, style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+private fun durationLabel(minutes: Int): String = "${minutes / 60}h ${(minutes % 60).toString().padStart(2, '0')}m"
 
 @Composable
 private fun GradientBarCard(
@@ -422,18 +500,20 @@ fun CardsDashboard(
             modifier = Modifier.weight(1f),
             onClick = { onOpen("Humidity") }
         )
-        SunCardV2(
-            day.sunrise,
-            day.sunset,
-            cur.now,
-            Modifier.weight(1f).then(tall),
-            if (city != null) ({ onOpen("Sun") }) else null
-        )
-    }
-    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         PressureCardV2(cur.pressure, Modifier.weight(1f).then(tall)) { onOpen("Pressure") }
-        VisibilityCardV2(km, visibilityShort(km), Modifier.weight(1f).then(tall)) { onOpen("Visibility") }
     }
+    val solar = remember(city, bundle.utcOffsetSeconds, cur.now.toLocalDate()) {
+        city?.let { Solar.day(cur.now.toLocalDate(), it.lat, it.lon, bundle.utcOffsetSeconds) }
+    }
+    SunCardV2(
+        day.sunrise,
+        day.sunset,
+        cur.now,
+        Modifier.fillMaxWidth(),
+        solar,
+        if (city != null) ({ onOpen("Sun") }) else null
+    )
+    VisibilityCardV2(km, visibilityShort(km), Modifier.fillMaxWidth().then(tall)) { onOpen("Visibility") }
     if (cur.cloud >= 0) {
         CloudCoverCard(cur.cloud, bundle.hours, cur.now, Modifier.fillMaxWidth()) { onOpen("Cloud") }
     }
