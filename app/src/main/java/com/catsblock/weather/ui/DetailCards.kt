@@ -14,11 +14,13 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
@@ -361,82 +363,80 @@ fun DaysCard(
 @Composable
 private fun DaysChart(days: List<Day>, today: LocalDate, fahrenheit: Boolean, onDayClick: (Day) -> Unit) {
     if (days.isEmpty()) return
-    val measurer = rememberTextMeasurer()
     val scheme = MaterialTheme.colorScheme
-    val highColor = scheme.primary
-    val lowColor = scheme.tertiary
-    val grid = scheme.onSurface.copy(alpha = 0.10f)
-    val hole = scheme.surfaceContainerHigh
-    val valueStyle = MaterialTheme.typography.labelLarge.copy(color = scheme.onSurface)
     val maxAll = days.maxOf { it.max }
     val minAll = days.minOf { it.min }
     val span = (maxAll - minAll).coerceAtLeast(4.0)
     val todayLabel = tr("Today")
-    val tomorrowLabel = tr("Tomorrow")
-    Column(Modifier.horizontalScroll(rememberScrollState())) {
-        Canvas(Modifier.width(DayStep * days.size).height(170.dp)) {
-            val topPad = 34.dp.toPx()
-            val bottomPad = 34.dp.toPx()
-            val plotH = size.height - topPad - bottomPad
-            val stepPx = size.width / days.size
-            fun yOf(c: Double): Float = topPad + (1f - ((c - minAll) / span).toFloat()) * plotH
-            val highs = days.mapIndexed { i, d -> Offset(stepPx * (i + 0.5f), yOf(d.max)) }
-            val lows = days.mapIndexed { i, d -> Offset(stepPx * (i + 0.5f), yOf(d.min)) }
-            highs.forEach { p -> drawLine(grid, Offset(p.x, 4.dp.toPx()), Offset(p.x, size.height), 1.dp.toPx()) }
-            drawPath(buildCurvePath(highs), highColor, style = Stroke(3.dp.toPx(), cap = StrokeCap.Round))
-            drawPath(buildCurvePath(lows), lowColor, style = Stroke(3.dp.toPx(), cap = StrokeCap.Round))
-            days.forEachIndexed { i, d ->
-                val hp = highs[i]
-                val lp = lows[i]
-                drawCircle(highColor, 6.dp.toPx(), hp)
-                drawCircle(hole, 3.dp.toPx(), hp)
-                drawCircle(lowColor, 6.dp.toPx(), lp)
-                drawCircle(hole, 3.dp.toPx(), lp)
-                val hi = measurer.measure(tempText(d.max, fahrenheit), valueStyle)
-                drawText(hi, topLeft = Offset(hp.x - hi.size.width / 2f, (hp.y - hi.size.height - 10.dp.toPx()).coerceAtLeast(0f)))
-                val lo = measurer.measure(tempText(d.min, fahrenheit), valueStyle)
-                drawText(lo, topLeft = Offset(lp.x - lo.size.width / 2f, lp.y + 10.dp.toPx()))
-            }
-        }
-        Row {
-            days.forEach { d ->
-                Column(
+    val trackHeight = 156.dp
+    val labelBand = 28.dp
+    val plotHeight = trackHeight - labelBand * 2
+    Row(
+        Modifier.horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        days.forEach { d ->
+            val isToday = d.date == today
+            val top = ((maxAll - d.max) / span).toFloat()
+            val bottom = ((maxAll - d.min) / span).toFloat()
+            Column(
+                Modifier
+                    .width(56.dp)
+                    .clip(RoundedCornerShape(28.dp))
+                    .clickable { onDayClick(d) }
+                    .padding(vertical = 4.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    if (isToday) todayLabel else weekdayLabel(d.date.atStartOfDay()),
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = if (isToday) FontWeight.Bold else FontWeight.Medium,
+                    color = if (isToday) scheme.primary else scheme.onSurfaceVariant,
+                    maxLines = 1
+                )
+                Spacer(Modifier.height(8.dp))
+                Box(
                     Modifier
-                        .width(DayStep)
-                        .clip(RoundedCornerShape(16.dp))
-                        .clickable { onDayClick(d) }
-                        .padding(vertical = 4.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
+                        .width(48.dp)
+                        .height(trackHeight)
+                        .clip(RoundedCornerShape(24.dp))
+                        .background(scheme.onSurface.copy(alpha = if (isToday) 0.16f else 0.08f))
                 ) {
-                    WeatherIcon(d.kind, true, Modifier.size(36.dp))
-                    Box(Modifier.height(16.dp), contentAlignment = Alignment.Center) {
-                        if (d.rainChance >= 30) {
-                            Text(
-                                "${d.rainChance}%",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.secondary
-                            )
-                        }
-                    }
-                    Text(
-                        d.kind.label(true),
-                        style = MaterialTheme.typography.labelSmall,
-                        textAlign = TextAlign.Center,
-                        maxLines = 2,
-                        minLines = 2,
-                        overflow = TextOverflow.Ellipsis
+                    Box(
+                        Modifier
+                            .align(Alignment.TopCenter)
+                            .offset(y = labelBand + plotHeight * top)
+                            .width(30.dp)
+                            .height((plotHeight * (bottom - top)).coerceAtLeast(16.dp))
+                            .clip(CircleShape)
+                            .background(Brush.verticalGradient(listOf(scheme.primary, scheme.tertiary)))
                     )
-                    Spacer(Modifier.height(6.dp))
                     Text(
-                        when (d.date) {
-                            today -> todayLabel
-                            today.plusDays(1) -> tomorrowLabel
-                            else -> dateLabel(d.date)
-                        },
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        tempText(d.max, fahrenheit),
+                        Modifier.align(Alignment.TopCenter).padding(top = 7.dp),
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        color = scheme.onSurface,
                         maxLines = 1
                     )
+                    Text(
+                        tempText(d.min, fahrenheit),
+                        Modifier.align(Alignment.BottomCenter).padding(bottom = 7.dp),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = scheme.onSurfaceVariant,
+                        maxLines = 1
+                    )
+                }
+                Spacer(Modifier.height(8.dp))
+                WeatherIcon(d.kind, true, Modifier.size(34.dp))
+                Box(Modifier.height(18.dp), contentAlignment = Alignment.Center) {
+                    if (d.rainChance >= 30) {
+                        Text(
+                            "${d.rainChance}%",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = scheme.secondary
+                        )
+                    }
                 }
             }
         }
