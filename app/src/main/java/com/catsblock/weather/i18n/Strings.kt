@@ -641,5 +641,30 @@ private val sunMoonStrings: Map<String, Array<out String>> = mapOf(
     row("Next month", "Próximo mês", "Mês seguinte", "Mes siguiente", "Mois suivant", "Следующий месяц", "Nächster Monat", "Mese successivo", "다음 달", "Bulan berikutnya")
 )
 
+private val shellStrings: Map<String, Array<out String>> = mapOf(
+    row("Weather", "Clima", "Meteorologia", "Clima", "Météo", "Погода", "Wetter", "Meteo", "날씨", "Cuaca"),
+    row("Weather map", "Mapa meteorológico", "Mapa meteorológico", "Mapa del clima", "Carte météo", "Карта погоды", "Wetterkarte", "Mappa meteo", "날씨 지도", "Peta cuaca"),
+    row("of daylight left", "de luz do dia restantes", "de luz do dia restantes", "de luz diurna restantes", "de jour restant", "светового дня осталось", "Tageslicht übrig", "di luce rimasta", "낮 시간 남음", "siang tersisa"),
+    row("The sun is down", "O sol já se pôs", "O sol já se pôs", "El sol ya se ocultó", "Le soleil est couché", "Солнце село", "Die Sonne ist untergegangen", "Il sole è tramontato", "해가 졌습니다", "Matahari sudah terbenam"),
+    row("Solar noon", "Meio-dia solar", "Meio-dia solar", "Mediodía solar", "Midi solaire", "Солнечный полдень", "Sonnenhöchststand", "Mezzogiorno solare", "정오", "Tengah hari surya"),
+    row("First light", "Primeira luz", "Primeira luz", "Primera luz", "Première lueur", "Первый свет", "Erstes Licht", "Prima luce", "첫 빛", "Cahaya pertama"),
+    row("Last light", "Última luz", "Última luz", "Última luz", "Dernière lueur", "Последний свет", "Letztes Licht", "Ultima luce", "마지막 빛", "Cahaya terakhir"),
+    row("Sunset direction", "Direção do pôr do sol", "Direção do pôr do sol", "Dirección del atardecer", "Direction du coucher", "Направление заката", "Sonnenuntergangsrichtung", "Direzione del tramonto", "일몰 방향", "Arah matahari terbenam"),
+    row("Map layers", "Camadas do mapa", "Camadas do mapa", "Capas del mapa", "Couches de la carte", "Слои карты", "Kartenebenen", "Livelli della mappa", "지도 레이어", "Lapisan peta"),
+    row("None (Default)", "Nenhum (padrão)", "Nenhum (predefinição)", "Ninguno (predeterminado)", "Aucune (par défaut)", "Нет (по умолчанию)", "Keine (Standard)", "Nessuno (predefinito)", "없음(기본)", "Tidak ada (default)"),
+    row("Precipitation", "Precipitação", "Precipitação", "Precipitación", "Précipitations", "Осадки", "Niederschlag", "Precipitazioni", "강수", "Curah hujan"),
+    row("Temperature", "Temperatura", "Temperatura", "Temperatura", "Température", "Температура", "Temperatur", "Temperatura", "기온", "Suhu"),
+    row("Cloudiness", "Nebulosidade", "Nebulosidade", "Nubosidad", "Nébulosité", "Облачность", "Bewölkung", "Nuvolosità", "구름량", "Tutupan awan"),
+    row("Wind speed", "Velocidade do vento", "Velocidade do vento", "Velocidad del viento", "Vitesse du vent", "Скорость ветра", "Windgeschwindigkeit", "Velocità del vento", "풍속", "Kecepatan angin"),
+    row("Pressure", "Pressão", "Pressão", "Presión", "Pression", "Давление", "Luftdruck", "Pressione", "기압", "Tekanan"),
+    row("Hurricanes & cyclones", "Furacões e ciclones", "Furacões e ciclones", "Huracanes y ciclones", "Ouragans et cyclones", "Ураганы и циклоны", "Hurrikane und Zyklone", "Uragani e cicloni", "허리케인 및 사이클론", "Badai dan siklon"),
+    row("El Niño & ocean heat", "El Niño e calor oceânico", "El Niño e calor oceânico", "El Niño y calor oceánico", "El Niño et chaleur océanique", "Эль-Ниньо и тепло океана", "El Niño und Ozeanwärme", "El Niño e calore oceanico", "엘니뇨와 해양 열", "El Niño dan panas laut"),
+    row("Active fires", "Incêndios ativos", "Incêndios ativos", "Incendios activos", "Incendies actifs", "Активные пожары", "Aktive Brände", "Incendi attivi", "활성 화재", "Kebakaran aktif"),
+    row("My location", "Minha localização", "A minha localização", "Mi ubicación", "Ma position", "Моё местоположение", "Mein Standort", "La mia posizione", "내 위치", "Lokasi saya"),
+    row("Loading map…", "Carregando mapa…", "A carregar o mapa…", "Cargando mapa…", "Chargement de la carte…", "Загрузка карты…", "Karte wird geladen…", "Caricamento mappa…", "지도 불러오는 중…", "Memuat peta…"),
+    row("Layers", "Camadas", "Camadas", "Capas", "Couches", "Слои", "Ebenen", "Livelli", "레이어", "Lapisan"),
+    row("Map data unavailable", "Dados do mapa indisponíveis", "Dados do mapa indisponíveis", "Datos del mapa no disponibles", "Données de carte indisponibles", "Данные карты недоступны", "Kartendaten nicht verfügbar", "Dati della mappa non disponibili", "지도 데이터를 사용할 수 없음", "Data peta tidak tersedia")
+)
+
 private val table: Map<String, Array<out String>> =
-    commonStrings + forecastStrings + featureStrings + policyStrings + cloudStrings + policyTable + shaderTable + detailStrings + sunMoonStrings
+    commonStrings + forecastStrings + featureStrings + policyStrings + cloudStrings + policyTable + shaderTable + detailStrings + sunMoonStrings + shellStrings
