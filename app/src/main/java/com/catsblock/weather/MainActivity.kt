@@ -37,7 +37,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -53,7 +52,6 @@ import com.catsblock.weather.i18n.I18n
 import com.catsblock.weather.i18n.tr
 import com.catsblock.weather.ui.AppIconScreen
 import com.catsblock.weather.ui.AppShell
-import com.catsblock.weather.ui.atmosphere.LocalShadersDisabled
 import com.catsblock.weather.ui.BackgroundKitScreen
 import com.catsblock.weather.ui.CityPickerScreen
 import com.catsblock.weather.ui.IconKitScreen
@@ -79,9 +77,7 @@ class MainActivity : ComponentActivity() {
             val settings by vm.settings.collectAsStateWithLifecycle()
             WeatherTheme(settings.theme) {
                 I18n.lang = settings.language
-                CompositionLocalProvider(LocalShadersDisabled provides settings.disableShaders) {
-                    key(settings.language) { AppRoot(vm) }
-                }
+                key(settings.language) { AppRoot(vm) }
             }
         }
     }
@@ -114,7 +110,7 @@ private fun UnsupportedApiScreen() {
                 )
                 Spacer(Modifier.height(16.dp))
                 Text(
-                    tr("This app relies on modern Kotlin APIs, the advanced Jetpack Compose graphics pipeline and native runtime shaders (AGSL), none of which exist on Android 12 or earlier. Android 13 (API level 33) or newer is required to run it."),
+                    tr("This app relies on modern Kotlin APIs, the advanced Jetpack Compose graphics pipeline, which are not available on Android 12 or earlier. Android 13 (API level 33) or newer is required to run it."),
                     color = Color(0xCCFFFFFF),
                     fontSize = 16.sp,
                     lineHeight = 24.sp,
