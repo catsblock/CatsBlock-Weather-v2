@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -101,7 +102,7 @@ fun VisibilityGauge(
             )
             for (i in 0 until 3) {
                 val a = drift + i * 2.1f
-                val puff = Offset(center.x + cos(a) * inner * 0.45f, center.y + sin(a * 1.3f) * inner * 0.35f)
+                val puff = Offset(center.x + cos(a.toDouble()).toFloat() * inner * 0.45f, center.y + sin((a * 1.3f).toDouble()).toFloat() * inner * 0.35f)
                 val r = inner * (0.42f - 0.22f * level.value)
                 drawCircle(
                     Brush.radialGradient(
