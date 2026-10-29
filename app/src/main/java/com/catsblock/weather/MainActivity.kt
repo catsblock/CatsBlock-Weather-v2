@@ -52,15 +52,14 @@ import com.catsblock.weather.i18n.AppLanguage
 import com.catsblock.weather.i18n.I18n
 import com.catsblock.weather.i18n.tr
 import com.catsblock.weather.ui.AppIconScreen
+import com.catsblock.weather.ui.AppShell
 import com.catsblock.weather.ui.atmosphere.LocalShadersDisabled
 import com.catsblock.weather.ui.BackgroundKitScreen
 import com.catsblock.weather.ui.CityPickerScreen
 import com.catsblock.weather.ui.IconKitScreen
 import com.catsblock.weather.ui.LiveMoonScreen
-import com.catsblock.weather.ui.MainScreen
 import com.catsblock.weather.ui.PrivacyPolicyScreen
 import com.catsblock.weather.ui.Screen
-import com.catsblock.weather.ui.SettingsScreen
 import com.catsblock.weather.ui.WeatherTheme
 import com.catsblock.weather.ui.WeatherViewModel
 import com.catsblock.weather.ui.WelcomeScreen
@@ -144,6 +143,7 @@ private fun AppRoot(vm: WeatherViewModel) {
         ThemeMode.Light -> false
         ThemeMode.Dark -> true
     }
+    val inShell = screen == Screen.Main || screen == Screen.Map || screen == Screen.Settings
     val onMain = screen == Screen.Main
     val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
@@ -168,13 +168,13 @@ private fun AppRoot(vm: WeatherViewModel) {
     BackHandler(enabled = screen != null && screen != Screen.Main && screen != Screen.Welcome) {
         vm.back()
     }
-    Crossfade(targetState = screen, animationSpec = tween(320), label = "screen") { target ->
+    Crossfade(targetState = if (inShell) Screen.Main else screen, animationSpec = tween(320), label = "screen") { target ->
         when (target) {
             null -> Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background))
             Screen.Welcome -> WelcomeScreen(vm)
             Screen.Picker -> CityPickerScreen(vm)
-            Screen.Main -> MainScreen(vm)
-            Screen.Settings -> SettingsScreen(vm)
+            Screen.Main -> AppShell(vm, screen)
+            Screen.Map, Screen.Settings -> AppShell(vm, screen)
             Screen.IconKit -> IconKitScreen(vm)
             Screen.BackgroundKit -> BackgroundKitScreen(vm)
             Screen.AppIcon -> AppIconScreen(vm)
