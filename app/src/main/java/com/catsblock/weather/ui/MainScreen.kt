@@ -1,5 +1,7 @@
 package com.catsblock.weather.ui
 
+import com.catsblock.weather.ui.detail.MetricDetailScreen
+import com.catsblock.weather.ui.detail.MetricKind
 import com.catsblock.weather.ui.components.ExpressiveLoader
 import androidx.compose.ui.platform.LocalContext
 import com.catsblock.weather.data.NetworkPolicy
@@ -138,6 +140,17 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.temporal.ChronoUnit
 import kotlin.math.roundToInt
+
+private fun metricKindOf(sheet: Sheet?): MetricKind? = when (sheet) {
+    Sheet.Precip -> MetricKind.Precip
+    Sheet.Wind -> MetricKind.Wind
+    Sheet.Air -> MetricKind.Air
+    Sheet.Uv -> MetricKind.Uv
+    Sheet.Humidity -> MetricKind.Humidity
+    Sheet.Pressure -> MetricKind.Pressure
+    Sheet.Cloud -> MetricKind.Cloud
+    else -> null
+}
 
 private sealed interface Sheet {
     data class DaySheet(val day: Day) : Sheet
@@ -716,18 +729,18 @@ private fun WeatherDetails(
         MoonCalendarSheet(city, bundle.utcOffsetSeconds, cur.now, onLiveMoon) { sheet = null }
     }
 
-    if (sheet is Sheet.Cloud) {
-        CardDetailHistoryScreen(
-            title = tr("Cloud cover"),
-            days = remember(bundle) { cloudHistory(bundle.hours, today) },
-            today = today,
-            bandLabel = ::cloudBandLabel,
-            advice = ::cloudAdvice,
+    metricKindOf(sheet)?.let { kind ->
+        MetricDetailScreen(
+            kind = kind,
+            bundle = bundle,
+            windUnit = settings.windUnit,
+            pressureUnit = settings.pressureUnit,
+            fahrenheit = settings.fahrenheit,
             onBack = { sheet = null }
         )
     }
 
-    sheet?.takeIf { it !is Sheet.DaySheet && it !is Sheet.Moon && it !is Sheet.Cloud }?.let { current ->
+    sheet?.takeIf { it !is Sheet.DaySheet && it !is Sheet.Moon && metricKindOf(it) == null }?.let { current ->
         val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         ModalBottomSheet(onDismissRequest = { sheet = null }, sheetState = sheetState) {
             Column(
