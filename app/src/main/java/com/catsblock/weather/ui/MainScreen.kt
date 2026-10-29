@@ -443,8 +443,7 @@ fun MainScreen(vm: WeatherViewModel) {
                 onCities = {
                     vm.loadSummaries()
                     citiesOpen = true
-                },
-                onSettings = vm::openSettings
+                }
             )
 
             AnimatedVisibility(
@@ -523,8 +522,7 @@ private fun HeaderBar(
     progress: Float,
     dots: Int,
     current: Int,
-    onCities: () -> Unit,
-    onSettings: () -> Unit
+    onCities: () -> Unit
 ) {
     Row(
         Modifier.fillMaxWidth().statusBarsPadding().padding(start = 24.dp, end = 4.dp, top = 6.dp),
@@ -557,7 +555,6 @@ private fun HeaderBar(
             ModeSelector(mode, onMode)
         }
         IconButton(onClick = onCities) { Icon(Icons.Rounded.Menu, tr("Saved cities"), tint = Color.White) }
-        IconButton(onClick = onSettings) { Icon(Icons.Rounded.Settings, tr("Settings"), tint = Color.White) }
     }
 }
 
@@ -668,7 +665,7 @@ private fun WeatherDetails(
         ) {
             MaterialTheme(colorScheme = glassScheme, typography = MaterialTheme.typography, shapes = MaterialTheme.shapes) {
                 Column(
-                    Modifier.padding(horizontal = 16.dp).navigationBarsPadding().padding(bottom = 24.dp),
+                    Modifier.padding(horizontal = 16.dp).padding(bottom = LocalBottomInset.current + 24.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     alert?.let { AlertCard(it) }
