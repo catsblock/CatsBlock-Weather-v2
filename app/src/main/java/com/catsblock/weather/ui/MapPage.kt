@@ -22,11 +22,13 @@ html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;background:v
 #legend{position:absolute;z-index:1000;left:50%;top:calc(var(--top) + 12px);transform:translate(-50%,-140%);opacity:0;min-width:176px;max-width:84%;padding:10px 16px 12px;border-radius:24px;background:var(--chip);color:var(--fg);box-shadow:0 4px 18px rgba(0,0,0,.22);border:1px solid var(--edge);transition:transform .5s cubic-bezier(.2,0,0,1),opacity .35s;box-sizing:border-box}
 #legend.on{transform:translate(-50%,0);opacity:1}
 #legend .t{font-size:14px;font-weight:600;text-align:center;white-space:nowrap}
-#legend .bar{height:8px;border-radius:4px;margin:8px 0 4px;background:var(--grad)}
-#legend .r{display:flex;justify-content:space-between;font-size:11px;color:var(--sub)}
 #legend .m{font-size:12px;color:var(--sub);text-align:center;margin-top:4px}
-#legend.busy .bar{background-size:200% 100%;animation:sh 1.1s linear infinite;opacity:.55}
-@keyframes sh{0%{background-position:0 0}100%{background-position:-200% 0}}
+#scale{position:absolute;z-index:1000;left:12px;top:50%;transform:translate(-170%,-50%);opacity:0;display:flex;flex-direction:column;align-items:center;gap:9px;padding:14px 10px;border-radius:28px;background:var(--chip);color:var(--fg);box-shadow:0 4px 18px rgba(0,0,0,.28);border:1px solid var(--edge);transition:transform .5s cubic-bezier(.2,0,0,1),opacity .35s}
+#scale.on{transform:translate(0,-50%);opacity:1}
+#scale .bar{width:14px;height:200px;border-radius:7px;background:var(--grad)}
+#scale span{font-size:11px;font-weight:700;white-space:nowrap}
+#scale.busy .bar{animation:bp .9s ease-in-out infinite alternate}
+@keyframes bp{to{opacity:.35}}
 .leaflet-bottom{margin-bottom:var(--bottom)}
 .leaflet-control-attribution{background:var(--chip)!important;color:var(--sub)!important;font-size:10px;border-radius:10px 0 0 0;padding:2px 8px}
 #note{position:absolute;z-index:1100;left:50%;top:50%;transform:translate(-50%,-50%);display:none;padding:12px 20px;border-radius:20px;background:var(--chip);color:var(--fg);font-size:14px;font-weight:600;box-shadow:0 4px 18px rgba(0,0,0,.25);text-align:center;max-width:80%}
@@ -54,6 +56,7 @@ html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;background:v
 <body class="light">
 <div id="map"></div>
 <div id="legend"></div>
+<div id="scale"></div>
 <div id="note"></div>
 <svg width="0" height="0" style="position:absolute"><defs><pattern id="hz1" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="7" stroke="#ffb300" stroke-width="2.2"/></pattern><pattern id="hz2" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="7" stroke="#ff6d00" stroke-width="2.4"/></pattern><pattern id="hz3" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#e53935" stroke-width="2.6"/></pattern></defs></svg>
 <script>
@@ -75,14 +78,15 @@ var map = L.map('map', {zoomControl:false, attributionControl:false, minZoom:2, 
 L.control.attribution({position:'bottomright', prefix:false}).addTo(map)
   .addAttribution('© OpenStreetMap contributors · Open-Meteo · RainViewer · NASA GIBS · NASA FIRMS · NASA EONET');
 
-var state = {tile:false, canvas:false, dark:false, layer:'none', title:'', err:'', f:false, lat:0, lon:0, seq:0, busy:false, labels:{}};
+var state = {canvas:false, dark:false, layer:'none', title:'', err:'', f:false, lat:0, lon:0, seq:0, busy:false, labels:{}};
 var base = null, overlay = null, pin = null, grid = null, gridAt = 0, gridZoom = 0, timer = null, off = null;
 var cache = {storms:null, stormsAt:0, fires:null, firesAt:0};
 var legend = document.getElementById('legend');
+var scale = document.getElementById('scale');
 var EONET = 'https://eonet.gsfc.nasa.gov/api/v3/events?status=open&limit=500&category=';
 
 var RAMPS = {
-  temp: [[-30,[94,60,153]],[-15,[59,111,212]],[0,[79,195,247]],[10,[102,187,106]],[20,[253,216,53]],[30,[251,140,0]],[40,[211,47,47]],[50,[123,31,162]]],
+  temp: [[-30,[122,48,176]],[-15,[48,86,226]],[0,[34,196,226]],[10,[72,198,104]],[20,[250,222,52]],[30,[250,140,28]],[40,[226,52,40]],[50,[150,24,60]]],
   wind: [[0,[42,111,219]],[15,[38,198,218]],[30,[102,187,106]],[50,[253,216,53]],[75,[251,140,0]],[100,[211,47,47]],[140,[142,36,170]]],
   pressure: [[980,[123,50,148]],[995,[59,111,212]],[1005,[79,195,247]],[1013,[224,224,224]],[1022,[255,183,77]],[1030,[244,81,30]],[1045,[183,28,28]]]
 };
@@ -132,24 +136,26 @@ function fmtTemp(c) { return state.f ? Math.round(c * 9 / 5 + 32) + '°' : Math.
 
 function setLegend(extra) {
   var id = state.layer;
-  if (id === 'none') { legend.className = ''; return; }
-  var html = '<div class="t">' + esc(state.title) + '</div>';
+  if (id === 'none') { legend.className = ''; scale.className = ''; return; }
   var grad = null, lo = '', hi = '';
   if (id === 'temp') { grad = gradCss(RAMPS.temp); lo = fmtTemp(-30); hi = fmtTemp(50); }
   else if (id === 'wind') { grad = gradCss(RAMPS.wind); lo = '0'; hi = '140 km/h'; }
   else if (id === 'pressure') { grad = gradCss(RAMPS.pressure); lo = '980'; hi = '1045 hPa'; }
-  else if (id === 'clouds') { grad = 'linear-gradient(90deg,rgba(150,160,180,0),rgba(150,160,180,.95))'; lo = '0%'; hi = '100%'; }
+  else if (id === 'clouds') { grad = 'linear-gradient(90deg,rgba(150,160,180,0),rgba(235,240,250,.98))'; lo = '0%'; hi = '100%'; }
   else if (id === 'precip') { grad = 'linear-gradient(90deg,#8fd3f4,#2f80ed,#27ae60,#f2c94c,#eb5757,#9b51e0)'; lo = '·'; hi = '···'; }
   else if (id === 'sst') { grad = 'linear-gradient(90deg,#2b6cb0,#e6eef7,#e53e3e)'; lo = '-3°'; hi = '+3°'; }
   else if (id === 'fires') { grad = 'linear-gradient(90deg,#ffb300,#ff5722,#d50000)'; lo = '·'; hi = '···'; }
   else if (id === 'cyclones') { grad = gradCss(CAT_STOPS); lo = 'TD'; hi = 'C5'; }
-  if (state.tile && isGrid(id)) grad = null;
-  if (grad) {
-    html += '<div class="bar" style="--grad:' + grad + '"></div><div class="r"><span>' + lo + '</span><span>' + hi + '</span></div>';
-  }
+  var html = '<div class="t">' + esc(state.title) + '</div>';
   if (extra) html += '<div class="m">' + esc(extra) + '</div>';
   legend.innerHTML = html;
-  legend.className = 'on' + (state.busy ? ' busy' : '');
+  legend.className = 'on';
+  if (grad) {
+    scale.innerHTML = '<span>' + hi + '</span><div class="bar" style="--grad:' + grad.replace('90deg', '0deg') + '"></div><span>' + lo + '</span>';
+    scale.className = 'on' + (state.busy ? ' busy' : '');
+  } else {
+    scale.className = '';
+  }
 }
 
 var tileOk = false;
@@ -202,12 +208,8 @@ function getJson(url) {
 var FieldLayer = L.Layer.extend({
   onAdd: function (m) {
     this._fill = L.DomUtil.create('canvas', 'fc');
-    this._mark = L.DomUtil.create('canvas', 'fc');
     this._fill.style.opacity = 0;
-    this._mark.style.opacity = 0;
-    var p = m.getPane('fieldpane');
-    p.appendChild(this._fill);
-    p.appendChild(this._mark);
+    m.getPane('fieldpane').appendChild(this._fill);
     this._hide = this._hide.bind(this);
     this.refresh = this.refresh.bind(this);
     m.on('moveend zoomend resize', this.refresh);
@@ -216,7 +218,6 @@ var FieldLayer = L.Layer.extend({
   },
   onRemove: function (m) {
     L.DomUtil.remove(this._fill);
-    L.DomUtil.remove(this._mark);
     m.off('moveend zoomend resize', this.refresh);
     m.off('zoomstart', this._hide);
     if (this._raf) cancelAnimationFrame(this._raf);
@@ -224,7 +225,6 @@ var FieldLayer = L.Layer.extend({
   },
   _hide: function () {
     this._fill.style.opacity = 0;
-    this._mark.style.opacity = 0;
   },
   refresh: function () {
     var self = this;
@@ -234,19 +234,15 @@ var FieldLayer = L.Layer.extend({
   _paint: function () {
     var m = this._map;
     if (!m) return;
-    var size = m.getSize(), tl = m.containerPointToLayerPoint([0, 0]);
-    var cvs = [this._fill, this._mark];
-    for (var i = 0; i < cvs.length; i++) {
-      L.DomUtil.setPosition(cvs[i], tl);
-      if (cvs[i].width !== size.x || cvs[i].height !== size.y) { cvs[i].width = size.x; cvs[i].height = size.y; }
-    }
-    var fctx = this._fill.getContext('2d'), mctx = this._mark.getContext('2d');
-    fctx.clearRect(0, 0, size.x, size.y);
-    mctx.clearRect(0, 0, size.x, size.y);
+    var size = m.getSize(), cv = this._fill;
+    L.DomUtil.setPosition(cv, m.containerPointToLayerPoint([0, 0]));
+    if (cv.width !== size.x || cv.height !== size.y) { cv.width = size.x; cv.height = size.y; }
+    var ctx = cv.getContext('2d');
+    ctx.clearRect(0, 0, size.x, size.y);
     var id = state.layer;
     if (!grid || !isGrid(id)) return;
     var arr = id === 'temp' ? grid.t : (id === 'clouds' ? grid.c : (id === 'wind' ? grid.ws : grid.p));
-    var step = 6, sw = Math.ceil(size.x / step), sh = Math.ceil(size.y / step);
+    var step = 5, sw = Math.ceil(size.x / step), sh = Math.ceil(size.y / step);
     if (!this._small) this._small = document.createElement('canvas');
     this._small.width = sw; this._small.height = sh;
     var sctx = this._small.getContext('2d'), img = sctx.createImageData(sw, sh);
@@ -258,34 +254,10 @@ var FieldLayer = L.Layer.extend({
       }
     }
     sctx.putImageData(img, 0, 0);
-    fctx.imageSmoothingEnabled = true;
-    fctx.imageSmoothingQuality = 'high';
-    fctx.drawImage(this._small, 0, 0, sw * step, sh * step);
-    var ink = state.dark ? '#ffffff' : '#14161c', halo = state.dark ? 'rgba(10,12,18,.75)' : 'rgba(255,255,255,.85)';
-    var gap = id === 'wind' ? 58 : 96;
-    mctx.textAlign = 'center'; mctx.textBaseline = 'middle'; mctx.font = '600 13px sans-serif'; mctx.lineJoin = 'round';
-    for (var py = gap / 2; py < size.y; py += gap) {
-      for (var px = gap / 2; px < size.x; px += gap) {
-        var p = m.containerPointToLatLng([px, py]), lon = lonFor(p);
-        if (id === 'wind') {
-          var spd = sample(grid.ws, p.lat, lon);
-          var dir = sample(grid.wd, p.lat, lon) + 180;
-          var len = Math.min(22, 8 + spd * 0.28);
-          mctx.save(); mctx.translate(px, py); mctx.rotate(dir * Math.PI / 180);
-          mctx.strokeStyle = ink; mctx.fillStyle = ink; mctx.lineWidth = 2.2; mctx.lineCap = 'round';
-          mctx.beginPath(); mctx.moveTo(0, len); mctx.lineTo(0, -len); mctx.stroke();
-          mctx.beginPath(); mctx.moveTo(0, -len - 3); mctx.lineTo(-6, -len + 7); mctx.lineTo(6, -len + 7); mctx.closePath(); mctx.fill();
-          mctx.restore();
-        } else {
-          var val = sample(arr, p.lat, lon);
-          var label = id === 'temp' ? fmtTemp(val) : (id === 'clouds' ? Math.round(val) + '%' : String(Math.round(val)));
-          mctx.lineWidth = 4; mctx.strokeStyle = halo; mctx.strokeText(label, px, py);
-          mctx.fillStyle = ink; mctx.fillText(label, px, py);
-        }
-      }
-    }
-    this._fill.style.opacity = 1;
-    this._mark.style.opacity = 1;
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(this._small, 0, 0, sw * step, sh * step);
+    cv.style.opacity = 1;
   }
 });
 
@@ -460,50 +432,8 @@ function loadFires(seq) {
   });
 }
 
-var TILE_SRC = {
-  temp: ['https://weather.openportguide.de/tiles/actual/air_temperature/5/{z}/{x}/{y}.png'],
-  wind: ['https://weather.openportguide.de/tiles/actual/wind_stream/5/{z}/{x}/{y}.png'],
-  pressure: ['https://weather.openportguide.de/tiles/actual/surface_pressure/5/{z}/{x}/{y}.png', 'https://weather.openportguide.de/tiles/actual/mean_sea_level_pressure/5/{z}/{x}/{y}.png']
-};
-
-function tileCandidates(id) {
-  if (id !== 'clouds') return Promise.resolve(TILE_SRC[id]);
-  return getJson('https://api.rainviewer.com/public/weather-maps.json').then(function (d) {
-    var ir = d.satellite && d.satellite.infrared ? d.satellite.infrared : [];
-    return ir.length ? [d.host + ir[ir.length - 1].path + '/256/{z}/{x}/{y}/0/0_0.png'] : [];
-  }).catch(function () { return []; });
-}
-
-function useCanvas(seq) {
-  if (seq !== state.seq) return;
-  state.tile = false; state.canvas = true;
-  overlay = new FieldLayer().addTo(map);
-  loadGrid(true);
-}
-
-function loadTiles(seq, id) {
-  state.busy = true; setLegend('');
-  tileCandidates(id).then(function (list) {
-    var i = 0;
-    (function next() {
-      if (seq !== state.seq) return;
-      if (i >= list.length) { useCanvas(seq); return; }
-      var url = list[i++], im = new Image();
-      im.onload = function () {
-        if (seq !== state.seq) return;
-        state.tile = true;
-        overlay = L.tileLayer(url, {maxNativeZoom:6, opacity:id === 'clouds' ? 0.7 : 0.8, tileSize:256}).addTo(map);
-        overlay.setZIndex(5);
-        state.busy = false; setLegend('');
-      };
-      im.onerror = next;
-      im.src = url.replace('{z}', '3').replace('{x}', '3').replace('{y}', '3');
-    })();
-  });
-}
-
 function setLayer(id, title, err, f, labels) {
-  state.layer = id; state.title = title; state.err = err; state.f = f; state.busy = false; state.tile = false; state.canvas = false;
+  state.layer = id; state.title = title; state.err = err; state.f = f; state.busy = false; state.canvas = false;
   if (labels) state.labels = typeof labels === 'string' ? JSON.parse(labels) : labels;
   var seq = ++state.seq;
   clearOverlay();
@@ -525,13 +455,14 @@ function setLayer(id, title, err, f, labels) {
     loadFires(seq);
     return;
   } else if (isGrid(id)) {
-    loadTiles(seq, id);
-    return;
+    state.canvas = true;
+    overlay = new FieldLayer().addTo(map);
+    loadGrid(true);
   }
   setLegend('');
 }
 
-var COLS = 10, ROWS = 8;
+var COLS = 12, ROWS = 9;
 
 function wrapLon(x) { return ((x + 540) % 360) - 180; }
 
@@ -573,6 +504,7 @@ function sample(arr, lat, lon) {
   var fy = (lat - grid.s) / (grid.n - grid.s) * (ROWS - 1);
   fx = Math.min(COLS - 1.001, Math.max(0, fx)); fy = Math.min(ROWS - 1.001, Math.max(0, fy));
   var x0 = Math.floor(fx), y0 = Math.floor(fy), tx = fx - x0, ty = fy - y0;
+  tx = tx * tx * (3 - 2 * tx); ty = ty * ty * (3 - 2 * ty);
   var a = arr[y0 * COLS + x0], b = arr[y0 * COLS + x0 + 1], c = arr[(y0 + 1) * COLS + x0], d = arr[(y0 + 1) * COLS + x0 + 1];
   return (a * (1 - tx) + b * tx) * (1 - ty) + (c * (1 - tx) + d * tx) * ty;
 }
@@ -587,12 +519,12 @@ function lonFor(latlng) {
 
 function colorFor(id, v) {
   if (id === 'clouds') {
-    var a = Math.min(1, v / 100) * 0.78, b = state.dark ? [214, 222, 240] : [86, 98, 122];
+    var a = Math.min(1, v / 100) * 0.85, b = state.dark ? [236, 242, 252] : [255, 255, 255];
     return [b[0], b[1], b[2], Math.round(a * 255)];
   }
   var key = id === 'temp' ? 'temp' : (id === 'wind' ? 'wind' : 'pressure');
   var c = ramp(RAMPS[key], v);
-  return [Math.round(c[0]), Math.round(c[1]), Math.round(c[2]), 158];
+  return [Math.round(c[0]), Math.round(c[1]), Math.round(c[2]), 184];
 }
 
 map.on('moveend', function () {
