@@ -1,5 +1,6 @@
 package com.catsblock.weather.data
 
+import kotlinx.coroutines.withTimeoutOrNull
 import com.catsblock.weather.WeatherApp
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -221,8 +222,11 @@ class WeatherRepository {
         )
     }
 
-    suspend fun fetch(city: City, source: WeatherSource = WeatherSource.OpenMeteo): WeatherBundle =
-        WeatherDecisionEngine.apply(fetchRaw(city, source))
+    suspend fun fetch(city: City, source: WeatherSource = WeatherSource.OpenMeteo): WeatherBundle {
+        val raw = fetchRaw(city, source)
+        val radar = withTimeoutOrNull(5000) { RadarProbe.read(city.lat, city.lon) }
+        return WeatherDecisionEngine.apply(raw, radar)
+    }
 
     private suspend fun fetchRaw(city: City, source: WeatherSource): WeatherBundle {
         if (source == WeatherSource.OpenMeteo) return fetchOpenMeteo(city)
