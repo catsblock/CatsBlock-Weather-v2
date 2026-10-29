@@ -35,9 +35,7 @@ import com.catsblock.weather.data.CloudBand
 import com.catsblock.weather.data.Hour
 import com.catsblock.weather.data.cloudBand
 import com.catsblock.weather.i18n.tr
-import java.time.LocalDate
 import java.time.LocalDateTime
-import kotlin.math.roundToInt
 
 fun cloudBandLabel(percent: Int): String = tr(
     when (cloudBand(percent)) {
@@ -58,22 +56,6 @@ fun cloudAdvice(percent: Int): String = tr(
         CloudBand.Overcast -> "Dense cloud cover blocking most direct sun. Natural light will be soft and even throughout the day."
     }
 )
-
-fun cloudHistory(hours: List<Hour>, today: LocalDate, limit: Int = 7): List<HistoryDay> =
-    hours
-        .filter { it.cloud >= 0 && !it.time.toLocalDate().isBefore(today) }
-        .groupBy { it.time.toLocalDate() }
-        .entries
-        .take(limit)
-        .map { (date, list) ->
-            HistoryDay(
-                date = date,
-                low = list.minOf { it.cloud },
-                high = list.maxOf { it.cloud },
-                avg = list.map { it.cloud }.average().roundToInt(),
-                hourly = List(24) { hour -> list.firstOrNull { it.time.hour == hour }?.cloud ?: -1 }
-            )
-        }
 
 private fun cloudSeries(hours: List<Hour>, now: LocalDateTime): FloatArray {
     val start = now.withMinute(0).withSecond(0).withNano(0)
