@@ -2,15 +2,15 @@ package com.catsblock.weather.ui
 
 internal object MapPage {
 
-    const val BASE_URL = "https://weather.catsblock.app/"
+    const val BASE_URL = "https://github.com/catsblock/CatsBlock-Weather-v2/"
 
-    val html: String = """
+    private val html: String = """
 <!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" onerror="this.onerror=null;this.href='https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css'">
 <style>
 :root{--top:0px;--bottom:0px}
 body.light{--bg:#eef0f5;--fg:#1b1d24;--chip:rgba(255,255,255,.92);--sub:#5b6070;--edge:rgba(0,0,0,.08)}
@@ -29,6 +29,8 @@ html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;background:v
 @keyframes sh{0%{background-position:0 0}100%{background-position:-200% 0}}
 .leaflet-bottom{margin-bottom:var(--bottom)}
 .leaflet-control-attribution{background:var(--chip)!important;color:var(--sub)!important;font-size:10px;border-radius:10px 0 0 0;padding:2px 8px}
+#note{position:absolute;z-index:1100;left:50%;top:50%;transform:translate(-50%,-50%);display:none;padding:12px 20px;border-radius:20px;background:var(--chip);color:var(--fg);font-size:14px;font-weight:600;box-shadow:0 4px 18px rgba(0,0,0,.25);text-align:center;max-width:80%}
+.dim .leaflet-basepane-pane{filter:invert(1) hue-rotate(180deg) brightness(.82) contrast(.92)}
 .pin{width:22px;height:22px;border-radius:50%;background:#2979ff;border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.4);position:relative}
 .pin:after{content:"";position:absolute;inset:-12px;border-radius:50%;background:rgba(41,121,255,.28);animation:pp 2s ease-out infinite}
 @keyframes pp{0%{transform:scale(.4);opacity:1}100%{transform:scale(1.5);opacity:0}}
@@ -39,11 +41,25 @@ html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;background:v
 <canvas id="field"></canvas>
 <canvas id="marks"></canvas>
 <div id="legend"></div>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<div id="note"></div>
 <script>
+var INIT = __INIT__;
+(function () {
+var noteEl = document.getElementById('note');
+function note(t) { noteEl.textContent = t; noteEl.style.display = 'block'; }
+function hideNote() { noteEl.style.display = 'none'; }
+function loadScript(urls, i, ok, bad) {
+  var el = document.createElement('script');
+  el.src = urls[i];
+  el.onload = ok;
+  el.onerror = function () { if (i + 1 < urls.length) loadScript(urls, i + 1, ok, bad); else bad(); };
+  document.head.appendChild(el);
+}
+window.onerror = function (m) { console.log('MapError ' + m); };
+function start() {
 var map = L.map('map', {zoomControl:false, attributionControl:false, minZoom:2, maxZoom:12, zoomSnap:0.25, worldCopyJump:true}).setView([0, 0], 4);
 L.control.attribution({position:'bottomright', prefix:false}).addTo(map)
-  .addAttribution('© OpenStreetMap · CARTO · Open-Meteo · RainViewer · NASA GIBS · NOAA NHC');
+  .addAttribution('© OpenStreetMap contributors · Open-Meteo · RainViewer · NASA GIBS · NOAA NHC');
 
 var state = {dark:false, layer:'none', title:'', err:'', f:false, lat:0, lon:0, seq:0};
 var base = null, overlay = null, pin = null, grid = null, gridAt = 0, gridZoom = 0, timer = null, frame = 0;
@@ -68,7 +84,7 @@ function ramp(stops, v) {
   return stops[stops.length - 1][1];
 }
 
-function css(stops) {
+function gradCss(stops) {
   var lo = stops[0][0], hi = stops[stops.length - 1][0], out = [];
   for (var i = 0; i < stops.length; i++) {
     var c = stops[i][1];
@@ -86,9 +102,9 @@ function setLegend(extra) {
   if (id === 'none') { legend.className = ''; return; }
   var html = '<div class="t">' + state.title + '</div>';
   var grad = null, lo = '', hi = '';
-  if (id === 'temp') { grad = css(RAMPS.temp); lo = fmtTemp(-30); hi = fmtTemp(50); }
-  else if (id === 'wind') { grad = css(RAMPS.wind); lo = '0'; hi = '140 km/h'; }
-  else if (id === 'pressure') { grad = css(RAMPS.pressure); lo = '980'; hi = '1045 hPa'; }
+  if (id === 'temp') { grad = gradCss(RAMPS.temp); lo = fmtTemp(-30); hi = fmtTemp(50); }
+  else if (id === 'wind') { grad = gradCss(RAMPS.wind); lo = '0'; hi = '140 km/h'; }
+  else if (id === 'pressure') { grad = gradCss(RAMPS.pressure); lo = '980'; hi = '1045 hPa'; }
   else if (id === 'clouds') { grad = 'linear-gradient(90deg,rgba(150,160,180,0),rgba(150,160,180,.95))'; lo = '0%'; hi = '100%'; }
   else if (id === 'precip') { grad = 'linear-gradient(90deg,#8fd3f4,#2f80ed,#27ae60,#f2c94c,#eb5757,#9b51e0)'; lo = '·'; hi = '···'; }
   else if (id === 'sst') { grad = 'linear-gradient(90deg,#2b6cb0,#e6eef7,#e53e3e)'; lo = '-3°'; hi = '+3°'; }
@@ -102,12 +118,22 @@ function setLegend(extra) {
   legend.className = 'on' + (state.busy ? ' busy' : '');
 }
 
+var tileOk = false;
+map.createPane('basepane');
+map.getPane('basepane').style.zIndex = 190;
+
+function makeBase() {
+  if (base) map.removeLayer(base);
+  base = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:19, pane:'basepane'});
+  base.on('tileload', function () { tileOk = true; hideNote(); });
+  base.addTo(map);
+  document.getElementById('map').classList.toggle('dim', state.dark);
+}
+
 function setTheme(dark) {
   state.dark = dark;
   document.body.className = dark ? 'dark' : 'light';
-  if (base) map.removeLayer(base);
-  base = L.tileLayer('https://{s}.basemaps.cartocdn.com/' + (dark ? 'dark_all' : 'light_all') + '/{z}/{x}/{y}{r}.png', {subdomains:'abcd', maxZoom:19}).addTo(map);
-  base.setZIndex(1);
+  makeBase();
   redraw();
 }
 
@@ -303,8 +329,29 @@ map.on('moveend', function () {
 });
 
 window.MapApi = {setTheme:setTheme, setLayer:setLayer, setCity:setCity, setInsets:setInsets, locate:locate};
+
+if (window.ResizeObserver) new ResizeObserver(function () { map.invalidateSize(); redraw(); }).observe(document.getElementById('map'));
+window.addEventListener('resize', function () { map.invalidateSize(); redraw(); });
+[0, 200, 800, 2000].forEach(function (d) { setTimeout(function () { map.invalidateSize(); }, d); });
+
+state.err = INIT.err;
+setTheme(INIT.dark);
+setInsets(INIT.top, INIT.bottom);
+if (INIT.hasCity) setCity(INIT.lat, INIT.lon, false);
+setLayer(INIT.layer, INIT.title, INIT.err, INIT.f);
+
+setTimeout(function () { if (!tileOk) note(INIT.err); }, 8000);
+}
+loadScript([
+  'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js',
+  'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js',
+  'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'
+], 0, start, function () { note(INIT.err); });
+})();
 </script>
 </body>
 </html>
 """.trimIndent()
+
+    fun page(init: String): String = html.replace("__INIT__", init)
 }
