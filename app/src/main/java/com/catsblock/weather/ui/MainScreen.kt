@@ -61,7 +61,6 @@ import androidx.compose.material.icons.rounded.NearMe
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.Umbrella
-import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.WaterDrop
 import androidx.compose.material.icons.rounded.WbSunny
 import androidx.compose.material3.Button
@@ -149,6 +148,7 @@ private fun metricKindOf(sheet: Sheet?): MetricKind? = when (sheet) {
     Sheet.Humidity -> MetricKind.Humidity
     Sheet.Pressure -> MetricKind.Pressure
     Sheet.Cloud -> MetricKind.Cloud
+    Sheet.Visibility -> MetricKind.Visibility
     else -> null
 }
 
@@ -235,8 +235,6 @@ fun visibilityShort(km: Double): String = tr(
         else -> "Excellent visibility."
     }
 )
-
-private fun visibilityText(km: Double): String = if (km >= 10.0) km.roundToInt().toString() else f1(km)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -615,7 +613,6 @@ private fun WeatherDetails(
     }
     val pressureLow = next24.minOfOrNull { it.pressure } ?: cur.pressure
     val pressureHigh = next24.maxOfOrNull { it.pressure } ?: cur.pressure
-    val visibilityKm = cur.visibility / 1000.0
     val rainingNow = cur.kind.isWet
     val entrance = remember(city?.id) { EntranceCounter() }
     val heroIn = remember { Animatable(0f) }
@@ -758,6 +755,7 @@ private fun WeatherDetails(
                     Sheet.Moon -> Unit
                     Sheet.Sun -> Unit
                     Sheet.Cloud -> Unit
+                    Sheet.Visibility -> Unit
                     Sheet.Days -> {
                         Text(tr("Next 7 days"), style = MaterialTheme.typography.titleLarge)
                         Spacer(Modifier.height(12.dp))
@@ -901,23 +899,6 @@ private fun WeatherDetails(
                             maxY = pressureValue(pressureHigh + 2.0, settings.pressureUnit)
                         )
                         Text(pressureCaption(settings.pressureUnit), style = MaterialTheme.typography.labelMedium)
-                    }
-                    Sheet.Visibility -> {
-                        Text(tr("Visibility, next 24 hours"), style = MaterialTheme.typography.titleLarge)
-                        Text(
-                            visibilityShort(visibilityKm),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(Modifier.height(12.dp))
-                        SimpleChart(
-                            values = next24.map { it.visibility / 1000.0 },
-                            labels = next24.map { hourLabel(it.time) },
-                            valueLabel = { visibilityText(it) },
-                            minY = 0.0,
-                            maxY = (next24.maxOfOrNull { it.visibility / 1000.0 } ?: 10.0).coerceAtLeast(1.0)
-                        )
-                        Text(tr("Kilometers"), style = MaterialTheme.typography.labelMedium)
                     }
                 }
                 Spacer(Modifier.height(16.dp))
