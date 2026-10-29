@@ -249,13 +249,49 @@ private fun drawIcon(
     y: Float,
     size: Float
 ) {
-    val bitmap = WidgetIcons.cached(context, kind, day) ?: return
+    val bitmap = WidgetIcons.cached(context, kind, day)
+    if (bitmap == null) {
+        if (!day && (kind == Condition.Clear || kind == Condition.FewClouds)) drawMoon(canvas, x, y, size)
+        return
+    }
     val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
     canvas.drawBitmap(bitmap, null, RectF(x, y, x + size, y + size), paint)
 }
 
-private fun drawBackground(canvas: Canvas, w: Float, h: Float, density: Float, palette: Palette) {
-    val radius = 28f * density
+private fun drawMoon(canvas: Canvas, x: Float, y: Float, size: Float) {
+    val r = size * 0.36f
+    val cx = x + size / 2f
+    val cy = y + size / 2f
+    val glow = Paint(Paint.ANTI_ALIAS_FLAG)
+    glow.shader = RadialGradient(cx, cy, size * 0.5f, intArrayOf(0x55FFF3C4, Color.TRANSPARENT), floatArrayOf(0.4f, 1f), Shader.TileMode.CLAMP)
+    canvas.drawCircle(cx, cy, size * 0.5f, glow)
+    val moon = android.graphics.Path().apply { addCircle(cx, cy, r, android.graphics.Path.Direction.CW) }
+    val bite = android.graphics.Path().apply { addCircle(cx + r * 0.55f, cy - r * 0.2f, r * 0.86f, android.graphics.Path.Direction.CW) }
+    moon.op(bite, android.graphics.Path.Op.DIFFERENCE)
+    val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+    paint.shader = LinearGradient(cx - r, cy - r, cx + r, cy + r, 0xFFFFF8DC.toInt(), 0xFFE8D9A8.toInt(), Shader.TileMode.CLAMP)
+    canvas.drawPath(moon, paint)
+}
+
+private fun drawStars(canvas: Canvas, w: Float, h: Float, density: Float, radius: Float) {
+    val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+    var seed = 1234567L
+    for (i in 0 until 22) {
+        seed = (seed * 1103515245L + 12345L) and 0x7fffffffL
+        val px = (seed % 1000L) / 1000f
+        seed = (seed * 1103515245L + 12345L) and 0x7fffffffL
+        val py = (seed % 1000L) / 1000f
+        seed = (seed * 1103515245L + 12345L) and 0x7fffffffL
+        val rs = 0.5f + (seed % 100L) / 100f
+        val x = radius * 0.4f + px * (w - radius * 0.8f)
+        val y = radius * 0.4f + py * (h - radius * 0.8f)
+        paint.color = Color.argb((70 + (seed % 120L)).toInt(), 255, 255, 255)
+        canvas.drawCircle(x, y, rs * density, paint)
+    }
+}
+
+private fun drawBackground(canvas: Canvas, w: Float, h: Float, density: Float, palette: Palette, night: Boolean) {
+    val radius = 32f * density
     val rect = RectF(0f, 0f, w, h)
     val base = Paint(Paint.ANTI_ALIAS_FLAG)
     base.shader = LinearGradient(0f, 0f, w * 0.4f, h, palette.top, palette.bottom, Shader.TileMode.CLAMP)
@@ -272,6 +308,7 @@ private fun drawBackground(canvas: Canvas, w: Float, h: Float, density: Float, p
         )
         canvas.drawRoundRect(rect, radius, radius, glow)
     }
+    if (night) drawStars(canvas, w, h, density, radius)
     val sheen = Paint(Paint.ANTI_ALIAS_FLAG)
     sheen.shader = LinearGradient(0f, 0f, 0f, h, 0x22FFFFFF, 0x00FFFFFF, Shader.TileMode.CLAMP)
     canvas.drawRoundRect(rect, radius, radius, sheen)
@@ -358,8 +395,8 @@ private fun drawCompact(context: Context, canvas: Canvas, w: Float, h: Float, s:
     val iconX = w - pad - icon
     drawCity(canvas, s.city, pad, pad * 0.34f, h * 0.13f, iconX - pad * 1.3f)
     canvas.drawFit(tempText(s.temp, f), pad, tempBase, temp)
-    canvas.drawFit(s.kind.label(s.isDay), pad, tempBase + cond.textSize * 1.25f, cond, w * 0.45f)
-    drawIcon(context, canvas, s.kind, s.isDay, iconX, (h - icon) / 2f, icon)
+    canvas.drawFit(s.liveKind().label(s.liveDay()), pad, tempBase + cond.textSize * 1.25f, cond, w * 0.45f)
+    drawIcon(context, canvas, s.liveKind(), s.liveDay(), iconX, (h - icon) / 2f, icon)
     if (w > h * 2.8f) {
         val span = paintOf(h * 0.2f, regular, white(0.9f), Paint.Align.RIGHT)
         canvas.drawFit(range(s, f), iconX - pad * 0.4f, h / 2f + span.textSize * 0.35f, span)
@@ -372,13 +409,13 @@ private fun drawSquare(context: Context, canvas: Canvas, w: Float, h: Float, s: 
     val citySize = h * 0.11f
     val iconSize = h * 0.27f
     drawCity(canvas, s.city, pad, y, citySize, w - pad * 2f - iconSize * 1.05f)
-    drawIcon(context, canvas, s.kind, s.isDay, w - pad - iconSize, y + citySize * 0.45f, iconSize)
+    drawIcon(context, canvas, s.liveKind(), s.liveDay(), w - pad - iconSize, y + citySize * 0.45f, iconSize)
     y += citySize * 1.35f
     val temp = paintOf(h * 0.36f, light)
     canvas.drawFit(tempText(s.temp, f), pad, y + temp.textSize * 0.78f, temp, w * 0.7f)
     y += temp.textSize * 0.95f
     val cond = paintOf(h * 0.13f, medium)
-    canvas.drawFit(s.kind.label(s.isDay), pad, y + cond.textSize * 0.9f, cond, w - pad * 2f)
+    canvas.drawFit(s.liveKind().label(s.liveDay()), pad, y + cond.textSize * 0.9f, cond, w - pad * 2f)
     y += cond.textSize * 1.3f
     val span = paintOf(h * 0.115f, regular, white(0.88f))
     canvas.drawFit(range(s, f), pad, y + span.textSize * 0.9f, span, w - pad * 2f)
@@ -393,7 +430,7 @@ private fun drawTips(context: Context, canvas: Canvas, w: Float, h: Float, s: Wi
     canvas.drawFit(tempText, w - pad, bandTop + h * 0.2f * 0.8f, tempPaint)
     val icon = h * 0.2f
     val iconX = w - pad - tempWidth - icon * 1.1f
-    drawIcon(context, canvas, s.kind, s.isDay, iconX, bandTop, icon)
+    drawIcon(context, canvas, s.liveKind(), s.liveDay(), iconX, bandTop, icon)
     drawCity(canvas, s.city, pad, pad, h * 0.095f, iconX - pad * 1.5f)
 
     val gridTop = h * 0.30f
@@ -436,10 +473,10 @@ private fun drawHourly(context: Context, canvas: Canvas, w: Float, h: Float, s: 
 
     val icon = h * 0.2f
     val iconTop = pad * 0.7f
-    drawIcon(context, canvas, s.kind, s.isDay, w - pad - icon, iconTop, icon)
+    drawIcon(context, canvas, s.liveKind(), s.liveDay(), w - pad - icon, iconTop, icon)
     val cond = paintOf(h * 0.095f, regular, white(0.95f), Paint.Align.RIGHT)
     val condBase = iconTop + icon + cond.textSize * 1.05f
-    canvas.drawFit(s.kind.label(s.isDay), w - pad, condBase, cond, rightWidth)
+    canvas.drawFit(s.liveKind().label(s.liveDay()), w - pad, condBase, cond, rightWidth)
     canvas.drawFit(range(s, f), w - pad, condBase + cond.textSize * 1.25f, cond)
 
     val hours = s.upcomingHours(6)
@@ -498,8 +535,8 @@ object WidgetRenderer {
         val w = bitmap.width.toFloat()
         val h = bitmap.height.toFloat()
         val data = snapshot
-        val colors = if (data == null) palette(Condition.Clear, true) else palette(data.kind, data.isDay)
-        drawBackground(canvas, w, h, density, colors)
+        val colors = if (data == null) palette(Condition.Clear, true) else palette(data.liveKind(), data.liveDay())
+        drawBackground(canvas, w, h, density, colors, data != null && !data.liveDay())
         if (data == null) {
             drawEmpty(canvas, w, h)
             return bitmap
