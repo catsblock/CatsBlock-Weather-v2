@@ -38,7 +38,6 @@ class SettingsStore(private val context: Context) {
         val snowAlerts = booleanPreferencesKey("snow_alerts")
         val snowLead = intPreferencesKey("snow_lead_minutes")
         val updateAlerts = booleanPreferencesKey("update_alerts")
-        val disableShaders = booleanPreferencesKey("disable_shaders")
         val saved = stringPreferencesKey("saved_cities")
         val current = stringPreferencesKey("current_city")
     }
@@ -66,8 +65,7 @@ class SettingsStore(private val context: Context) {
             eclipseLeadMinutes = it[Keys.eclipseLead]?.takeIf { value -> value in EclipseLeadOptions } ?: 60,
             snowAlerts = it[Keys.snowAlerts] ?: true,
             snowLeadMinutes = it[Keys.snowLead]?.takeIf { value -> value in SnowLeadOptions } ?: 60,
-            updateAlerts = it[Keys.updateAlerts] ?: true,
-            disableShaders = it[Keys.disableShaders] ?: false
+            updateAlerts = it[Keys.updateAlerts] ?: true
         )
     }
 
@@ -145,10 +143,6 @@ class SettingsStore(private val context: Context) {
 
     suspend fun setSounds(value: Boolean) {
         context.dataStore.edit { it[Keys.sounds] = value }
-    }
-
-    suspend fun setDisableShaders(value: Boolean) {
-        context.dataStore.edit { it[Keys.disableShaders] = value }
     }
 
     suspend fun setLanguage(value: AppLanguage) {
