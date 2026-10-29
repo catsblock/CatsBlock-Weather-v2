@@ -77,14 +77,20 @@ import kotlin.math.roundToInt
 import kotlin.math.sin
 
 @Composable
-fun SunCardV2(sunrise: LocalDateTime, sunset: LocalDateTime, now: LocalDateTime, modifier: Modifier = Modifier) {
+fun SunCardV2(
+    sunrise: LocalDateTime,
+    sunset: LocalDateTime,
+    now: LocalDateTime,
+    modifier: Modifier = Modifier,
+    onClick: (() -> Unit)? = null
+) {
     val total = Duration.between(sunrise, sunset).toMinutes().coerceAtLeast(1)
     val elapsed = Duration.between(sunrise, now).toMinutes()
     val target = (elapsed.toFloat() / total.toFloat()).coerceIn(0f, 1f)
     val up = !now.isBefore(sunrise) && !now.isAfter(sunset)
     val progress by animateFloatAsState(target, tween(1100), label = "sun")
     val ink = MaterialTheme.colorScheme.onSurface
-    GlassCard(modifier, null, Modifier.fillMaxSize()) {
+    GlassCard(modifier, onClick, Modifier.fillMaxSize()) {
         CardHeader(Icons.Rounded.WbTwilight, tr("Sun"))
         Spacer(Modifier.weight(1f))
         BoxWithConstraints(Modifier.fillMaxWidth().height(78.dp)) {
@@ -140,7 +146,8 @@ private fun GradientBarCard(
     fraction: Float,
     colors: List<Color>,
     modifier: Modifier,
-    onClick: (() -> Unit)?
+    onClick: (() -> Unit)?,
+    unit: String? = null
 ) {
     var go by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { go = true }
@@ -154,6 +161,15 @@ private fun GradientBarCard(
                 style = MaterialTheme.typography.displaySmall.copy(fontWeight = FontWeight.Light, fontSize = 40.sp, lineHeight = 46.sp),
                 maxLines = 1
             )
+            if (unit != null) {
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    unit,
+                    Modifier.padding(bottom = 8.dp),
+                    style = MaterialTheme.typography.labelLarge,
+                    maxLines = 1
+                )
+            }
             if (status != null) {
                 Spacer(Modifier.width(8.dp))
                 Text(
@@ -184,6 +200,26 @@ private fun GradientBarCard(
             drawLine(Color.White, Offset(x, 1.dp.toPx()), Offset(x, size.height - 1.dp.toPx()), 3.dp.toPx(), StrokeCap.Round)
         }
     }
+}
+
+private fun visibilityGrade(km: Double): String = tr(
+    when {
+        km < 1.0 -> "Poor"
+        km < 4.0 -> "Fair"
+        km < 10.0 -> "Good"
+        else -> "Excellent"
+    }
+)
+
+@Composable
+fun VisibilityCardV2(km: Double, description: String, modifier: Modifier = Modifier, onClick: (() -> Unit)? = null) {
+    GradientBarCard(
+        tr("Visibility"), Icons.Rounded.Visibility,
+        if (km >= 10.0) km.roundToInt().toString() else f1(km),
+        visibilityGrade(km), description, (km / 20.0).toFloat(),
+        listOf(Color(0xFFF44336), Color(0xFFFF9800), Color(0xFFFFEB3B), Color(0xFF66BB6A), Color(0xFF29B6F6)),
+        modifier, onClick, "km"
+    )
 }
 
 @Composable
@@ -386,19 +422,17 @@ fun CardsDashboard(
             modifier = Modifier.weight(1f),
             onClick = { onOpen("Humidity") }
         )
-        SunCardV2(day.sunrise, day.sunset, cur.now, Modifier.weight(1f).then(tall))
+        SunCardV2(
+            day.sunrise,
+            day.sunset,
+            cur.now,
+            Modifier.weight(1f).then(tall),
+            if (city != null) ({ onOpen("Sun") }) else null
+        )
     }
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         PressureCardV2(cur.pressure, Modifier.weight(1f).then(tall)) { onOpen("Pressure") }
-        MetricCard(
-            title = tr("Visibility"),
-            icon = Icons.Rounded.Visibility,
-            value = if (km >= 10.0) km.roundToInt().toString() else f1(km),
-            unit = "km",
-            description = visibilityShort(km),
-            modifier = Modifier.weight(1f),
-            onClick = { onOpen("Visibility") }
-        )
+        VisibilityCardV2(km, visibilityShort(km), Modifier.weight(1f).then(tall)) { onOpen("Visibility") }
     }
     if (cur.cloud >= 0) {
         CloudCoverCard(cur.cloud, bundle.hours, cur.now, Modifier.fillMaxWidth()) { onOpen("Cloud") }
