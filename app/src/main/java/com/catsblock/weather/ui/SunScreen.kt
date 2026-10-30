@@ -408,14 +408,15 @@ private fun SunPathCard(day: SolarDay, now: LocalDateTime, live: Boolean) {
     val top = lerp(Color(0xFF0B1220), Color(0xFF2F7FD0), k)
     val bottom = lerp(lerp(Color(0xFF1B2740), Color(0xFFF2994A), if (up) 0.85f else 0f), Color(0xFF8CC8F4), k)
     val sunAlpha = if (up) 1f else 0.45f
-    Box(Modifier.fillMaxWidth().height(300.dp).clip(CardShape)) {
+    Box(Modifier.fillMaxWidth().height(252.dp).clip(CardShape)) {
         Canvas(Modifier.fillMaxSize()) {
             val w = size.width
             val h = size.height
             drawRect(Brush.verticalGradient(listOf(top, bottom)))
-            val horizon = h - 84.dp.toPx()
+            val horizon = h - 76.dp.toPx()
             val cx = w / 2f
-            val r = min(w / 2f - 36.dp.toPx(), horizon - 110.dp.toPx())
+            val rx = w / 2f - 28.dp.toPx()
+            val ry = (horizon - 118.dp.toPx()).coerceAtLeast(48.dp.toPx())
             for (i in 0 until 18) {
                 val sx = ((i * 53) % 100) / 100f * w
                 val sy = ((i * 37) % 100) / 100f * horizon * 0.7f
@@ -427,8 +428,8 @@ private fun SunPathCard(day: SolarDay, now: LocalDateTime, live: Boolean) {
                 180f,
                 180f,
                 false,
-                Offset(cx - r, horizon - r),
-                Size(2 * r, 2 * r),
+                Offset(cx - rx, horizon - ry),
+                Size(2 * rx, 2 * ry),
                 style = Stroke(2.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f)))
             )
             drawArc(
@@ -436,14 +437,14 @@ private fun SunPathCard(day: SolarDay, now: LocalDateTime, live: Boolean) {
                 180f,
                 180f * progress.value,
                 false,
-                Offset(cx - r, horizon - r),
-                Size(2 * r, 2 * r),
+                Offset(cx - rx, horizon - ry),
+                Size(2 * rx, 2 * ry),
                 style = Stroke(4.dp.toPx(), cap = StrokeCap.Round)
             )
             drawRect(Color.Black.copy(alpha = 0.28f), Offset(0f, horizon), Size(w, h - horizon))
             drawLine(Color.White.copy(alpha = 0.4f), Offset(0f, horizon), Offset(w, horizon), 1.5f.dp.toPx())
             val angle = PI * (1.0 - progress.value)
-            val c = Offset(cx + r * cos(angle).toFloat(), horizon - r * sin(angle).toFloat())
+            val c = Offset(cx + rx * cos(angle).toFloat(), horizon - ry * sin(angle).toFloat())
             val glow = 46.dp.toPx() * pulse
             drawCircle(
                 Brush.radialGradient(listOf(Amber.copy(alpha = 0.6f * sunAlpha), Color.Transparent), center = c, radius = glow),
@@ -479,7 +480,7 @@ private fun SunPathCard(day: SolarDay, now: LocalDateTime, live: Boolean) {
             Text(status, color = Color.White.copy(alpha = 0.75f), style = MaterialTheme.typography.bodyMedium)
         }
         Row(
-            Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(horizontal = 24.dp, vertical = 18.dp),
+            Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(horizontal = 24.dp, vertical = 14.dp),
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             SunTime(tr("Sunrise"), day.sunrise?.let { clockLabel(it) } ?: "—")
@@ -558,7 +559,7 @@ private fun PanoramaCard(
                         Box(
                             Modifier
                                 .fillMaxWidth()
-                                .height(124.dp)
+                                .height(84.dp)
                                 .clip(RoundedCornerShape(24.dp))
                                 .background(scheme.onSurface.copy(alpha = 0.07f)),
                             contentAlignment = Alignment.BottomCenter
@@ -660,7 +661,7 @@ private fun DaylightCurve(day: SolarDay, nowFraction: Float?) {
         animationSpec = infiniteRepeatable(tween(1600, easing = FastOutSlowInEasing), RepeatMode.Reverse),
         label = "now-halo-scale"
     )
-    Canvas(Modifier.fillMaxWidth().height(176.dp)) {
+    Canvas(Modifier.fillMaxWidth().height(120.dp)) {
         val w = size.width
         val h = size.height
         val noonFraction = minuteOfDay(day.noon) / 1440f
@@ -812,12 +813,12 @@ private fun AnnualCard(data: YearData, selected: LocalDate) {
         Column(Modifier.padding(horizontal = 18.dp, vertical = 20.dp)) {
             Text(tr("Annual daylight"), style = MaterialTheme.typography.titleMedium, color = scheme.onSurfaceVariant)
             Spacer(Modifier.height(12.dp))
-            Canvas(Modifier.fillMaxWidth().height(150.dp)) {
+            Canvas(Modifier.fillMaxWidth().height(110.dp)) {
                 val w = size.width
                 val h = size.height
                 val n = data.minutes.size
                 val span = (data.max - data.min).coerceAtLeast(1).toFloat()
-                fun yOf(m: Int): Float = h * 0.08f + (1f - (m - data.min) / span) * h * 0.3f
+                fun yOf(m: Int): Float = h * 0.1f + (1f - (m - data.min) / span) * h * 0.5f
                 val curve = Path()
                 val fill = Path()
                 for (i in 0 until n) {
