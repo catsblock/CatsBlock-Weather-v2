@@ -41,15 +41,10 @@ html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;background:v
 .leaflet-popup-content{margin:10px 14px;font-size:13px;line-height:1.45}
 .cyw{background:none;border:0}
 .cy{position:relative;width:var(--s);height:var(--s)}
-.cy .sw{position:absolute;inset:0;filter:drop-shadow(0 0 10px var(--c)) drop-shadow(0 3px 6px rgba(0,0,0,.35))}
-.cy.s .sw{transform:scaleX(-1)}
-.cy svg{width:100%;height:100%;overflow:visible;animation:spin var(--d) linear infinite;animation-direction:reverse;will-change:transform}
-.cy:after{content:"";position:absolute;inset:-8px;border-radius:50%;border:1.5px solid var(--c);opacity:0;animation:cp 3s ease-out infinite}
-.cy .tint{fill:var(--c);fill-opacity:.24}
-.cy .rg{fill:none;stroke:var(--c);stroke-width:1.6;stroke-opacity:.6}
-.cn{position:absolute;left:50%;top:100%;transform:translate(-50%,6px);white-space:nowrap;display:flex;align-items:center;gap:5px;padding:3px 9px 3px 6px;border-radius:12px;background:var(--chip);color:var(--fg);font-size:11px;font-weight:700;box-shadow:0 2px 8px rgba(0,0,0,.28);border:1px solid var(--edge)}
+.cy .bd{position:absolute;inset:0;box-sizing:border-box;border-radius:50%;display:flex;align-items:center;justify-content:center;background:var(--c);color:var(--t);font-weight:800;font-size:calc(var(--s) * .36);line-height:1;letter-spacing:-.02em;border:2px solid rgba(255,255,255,.92);box-shadow:0 0 0 3px var(--g),0 3px 10px rgba(0,0,0,.4);transition:background-color .6s}
+.cy:after{content:"";position:absolute;inset:-6px;border-radius:50%;border:1.5px solid var(--c);opacity:0;animation:cp 3s ease-out infinite}
+.cn{position:absolute;left:50%;top:100%;transform:translate(-50%,8px);white-space:nowrap;display:flex;align-items:center;gap:5px;padding:3px 9px 3px 6px;border-radius:12px;background:var(--chip);color:var(--fg);font-size:11px;font-weight:700;box-shadow:0 2px 8px rgba(0,0,0,.28);border:1px solid var(--edge)}
 .cn i{width:8px;height:8px;border-radius:50%;background:var(--c);box-shadow:0 0 6px var(--c)}
-@keyframes spin{to{transform:rotate(360deg)}}
 @keyframes cp{0%{transform:scale(.8);opacity:.7}100%{transform:scale(1.6);opacity:0}}
 </style>
 </head>
@@ -92,13 +87,13 @@ var RAMPS = {
 };
 
 var CATS = [
-  {k:'td', kt:0, c:[79,195,247], s:44, d:9},
-  {k:'ts', kt:34, c:[102,187,106], s:52, d:7},
-  {k:'c1', kt:64, c:[253,216,53], s:60, d:5.5},
-  {k:'c2', kt:83, c:[255,179,0], s:68, d:4.5},
-  {k:'c3', kt:96, c:[251,140,0], s:76, d:3.7},
-  {k:'c4', kt:113, c:[229,57,53], s:86, d:3},
-  {k:'c5', kt:137, c:[213,0,249], s:96, d:2.4}
+  {k:'td', kt:0, c:[79,195,247]},
+  {k:'ts', kt:34, c:[102,187,106]},
+  {k:'c1', kt:64, c:[253,216,53]},
+  {k:'c2', kt:83, c:[255,179,0]},
+  {k:'c3', kt:96, c:[251,140,0]},
+  {k:'c4', kt:113, c:[229,57,53]},
+  {k:'c5', kt:137, c:[213,0,249]}
 ];
 var CAT_STOPS = CATS.map(function (c) { return [c.kt, c.c]; });
 
@@ -114,6 +109,8 @@ function ramp(stops, v) {
 }
 
 function rgb(c) { return 'rgb(' + Math.round(c[0]) + ',' + Math.round(c[1]) + ',' + Math.round(c[2]) + ')'; }
+
+function rgba(c, a) { return 'rgba(' + Math.round(c[0]) + ',' + Math.round(c[1]) + ',' + Math.round(c[2]) + ',' + a + ')'; }
 
 function gradCss(stops) {
   var lo = stops[0][0], hi = stops[stops.length - 1][0], out = [];
@@ -298,26 +295,14 @@ function smooth(pts) {
   return out;
 }
 
-function spiral(off, turns, r0, r1) {
-  var pts = [], n = 28;
-  for (var i = 0; i <= n; i++) {
-    var t = i / n, r = r0 + (r1 - r0) * t, a = off + t * turns * 2 * Math.PI;
-    pts.push((50 + r * Math.cos(a)).toFixed(1) + ' ' + (50 + r * Math.sin(a)).toFixed(1));
-  }
-  return 'M' + pts.join('L');
-}
+function badgeSize(kt) { return Math.round(36 + Math.min(1, Math.max(0, kt) / 140) * 18); }
 
-var ARMS = '';
-for (var ai = 0; ai < 5; ai++) {
-  var ad = spiral(ai * 2 * Math.PI / 5, 0.8, 10, 47);
-  ARMS += '<path d="' + ad + '" fill="none" stroke="#fff" stroke-width="9" stroke-linecap="round" opacity=".38" filter="url(#cb)"/><path d="' + ad + '" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" opacity=".9" filter="url(#cs)"/>';
-}
+function inkFor(c) { return (0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]) / 255 > 0.6 ? '#10141c' : '#ffffff'; }
 
-var CY_SVG = '<svg viewBox="0 0 100 100"><defs><radialGradient id="cg"><stop offset="0" stop-color="#fff" stop-opacity=".95"/><stop offset=".45" stop-color="#eef3fa" stop-opacity=".6"/><stop offset="1" stop-color="#dfe8f5" stop-opacity="0"/></radialGradient><filter id="cb" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="3"/></filter><filter id="cs" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation=".8"/></filter></defs><circle class="tint" cx="50" cy="50" r="48"/><circle cx="50" cy="50" r="48" fill="url(#cg)"/>' + ARMS + '<circle class="rg" cx="50" cy="50" r="47"/><circle cx="50" cy="50" r="11" fill="none" stroke="#fff" stroke-width="3" opacity=".8" filter="url(#cs)"/><circle cx="50" cy="50" r="8" fill="#0b1220" fill-opacity=".85" filter="url(#cs)"/></svg>';
-
-function stormIcon(cat, north, name) {
-  var html = '<div class="cy ' + (north ? 'n' : 's') + '" style="--c:' + rgb(cat.c) + ';--s:' + cat.s + 'px;--d:' + cat.d + 's"><div class="sw">' + CY_SVG + '</div><span class="cn"><i></i>' + esc(name) + ' · ' + cat.k.toUpperCase() + '</span></div>';
-  return L.divIcon({className:'cyw', html:html, iconSize:[cat.s, cat.s], iconAnchor:[cat.s / 2, cat.s / 2]});
+function stormIcon(cat, kt, name) {
+  var c = ramp(CAT_STOPS, kt), s = badgeSize(kt);
+  var html = '<div class="cy" style="--c:' + rgb(c) + ';--g:' + rgba(c, 0.3) + ';--t:' + inkFor(c) + ';--s:' + s + 'px"><div class="bd">' + esc(cat.k.toUpperCase()) + '</div><span class="cn"><i></i>' + esc(name) + '</span></div>';
+  return L.divIcon({className:'cyw', html:html, iconSize:[s, s], iconAnchor:[s / 2, s / 2]});
 }
 
 function buildStorms(events) {
@@ -344,10 +329,10 @@ function buildStorms(events) {
       }
     }
     var last = pts[pts.length - 1], cat = catOf(last.kt);
-    var m = L.marker([last.lat, last.lon], {icon:stormIcon(cat, last.lat >= 0, ev.title), pane:'stormpane', keyboard:false});
+    var m = L.marker([last.lat, last.lon], {icon:stormIcon(cat, last.kt, ev.title), pane:'stormpane', keyboard:false});
     var info = '<b>' + esc(ev.title) + '</b><br>' + esc(lbl(cat.k, cat.k.toUpperCase()));
     if (last.kt > 0) info += '<br>' + esc(lbl('winds', 'Max winds')) + ': ' + Math.round(last.kt * 1.852) + ' km/h (' + Math.round(last.kt) + ' kt)';
-    m.bindPopup(info, {closeButton:false, offset:[0, -cat.s / 3]});
+    m.bindPopup(info, {closeButton:false, offset:[0, -badgeSize(last.kt) / 3]});
     marks.addLayer(m);
     count++;
   });
