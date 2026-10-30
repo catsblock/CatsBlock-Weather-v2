@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="alerts_entry_title">Alerts &amp; warnings</string>
+    <string name="alerts_entry_desc">Clothing, UV, pollen, frost, pressure, air quality and official warnings.</string>
+    <string name="alerts_title">Alerts &amp; warnings</string>
+    <string name="alerts_back">Back</string>
+    <string name="alerts_expand">Expand</string>
+    <string name="alerts_collapse">Collapse</string>
+    <string name="alerts_ok">OK</string>
+    <string name="alerts_cancel">Cancel</string>
+    <string name="alerts_alert_time">Alert time</string>
+    <string name="alerts_active_months">Active months</string>
+    <string name="alerts_no_data">Forecast data is not available yet.</string>
+
+    <string name="clothing_title">Clothing consultant</string>
+    <string name="clothing_summary_off">Outfit suggestions are off</string>
+    <string name="clothing_summary_on">Daily outfit tip at %1$s</string>
+    <string name="clothing_tab_today">Today</string>
+    <string name="clothing_tab_tomorrow">Tomorrow</string>
+    <string name="clothing_weather_summary">High %1$s, low %2$s, %3$d%% chance of rain</string>
+    <string name="clothing_recommended">Recommended for you</string>
+    <string name="clothing_tag_waterproof">Waterproof jacket</string>
+    <string name="clothing_tag_heavy">Heavy coat, gloves and scarf</string>
+    <string name="clothing_tag_warm">Warm jacket</string>
+    <string name="clothing_tag_sweater">Light sweater</string>
+    <string name="clothing_tag_light">Light pieces</string>
+    <string name="clothing_tag_layers">Breathable layers</string>
+    <string name="clothing_tag_sun">Sunglasses and sunscreen</string>
+    <string name="clothing_thermal">Thermal sensitivity</string>
+    <string name="clothing_thermal_cold">Feel cold easily</string>
+    <string name="clothing_thermal_neutral">Neutral</string>
+    <string name="clothing_thermal_warm">Feel warm easily</string>
+    <string name="clothing_home">Home location</string>
+    <string name="clothing_work">Work location</string>
+    <string name="clothing_hours">Working hours</string>
+    <string name="clothing_hours_start">Starts</string>
+    <string name="clothing_hours_end">Ends</string>
+    <string name="clothing_commute">Daily commute</string>
+    <string name="commute_walk">Walk</string>
+    <string name="commute_bike">Bike</string>
+    <string name="commute_car">Car</string>
+    <string name="commute_transit">Transit</string>
+
+    <string name="uv_title">UV index alerts</string>
+    <string name="uv_summary_on">Above UV %1$d at %2$s</string>
+    <string name="uv_summary_off">UV alerts are off</string>
+    <string name="uv_graph">Hourly UV index</string>
+    <string name="uv_threshold">UV threshold</string>
+    <string name="uv_threshold_value">UV %1$d · %2$s</string>
+    <string name="uv_low">Low</string>
+    <string name="uv_moderate">Moderate</string>
+    <string name="uv_high">High</string>
+    <string name="uv_very_high">Very high</string>
+    <string name="uv_extreme">Extreme</string>
+
+    <string name="pollen_title">Pollen alerts</string>
+    <string name="pollen_summary_on">%1$s sensitivity at %2$s</string>
+    <string name="pollen_summary_off">Pollen alerts are off</string>
+    <string name="pollen_availability">Pollen forecasts are only available in parts of Europe. Alerts stay silent where no pollen data exists.</string>
+    <string name="pollen_pill">Allergy pill reminder</string>
+    <string name="pollen_pill_desc">Get a reminder to take your medication on high pollen days.</string>
+    <string name="pollen_pill_time">Reminder time</string>
+    <string name="pollen_allergens">Allergens</string>
+    <string name="pollen_grasses">Grasses</string>
+    <string name="pollen_trees">Trees</string>
+    <string name="pollen_weeds">Weeds</string>
+    <string name="pollen_sensitivity">Sensitivity</string>
+    <string name="sensitivity_low">Low</string>
+    <string name="sensitivity_medium">Medium</string>
+    <string name="sensitivity_high">High</string>
+
+    <string name="frost_title">Frost alerts</string>
+    <string name="frost_summary_on">Freezing night warning at %1$s</string>
+    <string name="frost_summary_off">Frost alerts are off</string>
+    <string name="frost_graph">Nighttime temperature</string>
+    <string name="frost_line">Freezing</string>
+
+    <string name="briefing_title">Tomorrow weather briefing</string>
+    <string name="briefing_summary_on">Evening summary at %1$s</string>
+    <string name="briefing_summary_off">Evening briefing is off</string>
+    <string name="briefing_desc">Get tomorrow\'s forecast every evening before you plan your day.</string>
+    <string name="briefing_style">Summary style</string>
+    <string name="briefing_short">Short</string>
+    <string name="briefing_detailed">Detailed</string>
+
+    <string name="pressure_title">Pressure forecast alerts</string>
+    <string name="pressure_summary_on">Drops of %1$d hPa in 3 h at %2$s</string>
+    <string name="pressure_summary_off">Pressure alerts are off</string>
+    <string name="pressure_graph">Pressure trend</string>
+    <string name="pressure_drop">Drop sensitivity</string>
+    <string name="pressure_drop_value">%1$d hPa / 3 h</string>
+    <string name="pressure_drop_hint">Lower values warn earlier. Rapid drops often come before storms and headaches.</string>
+
+    <string name="aqi_title">Air quality alerts</string>
+    <string name="aqi_summary_on">%1$s or worse at %2$s</string>
+    <string name="aqi_summary_off">Air quality alerts are off</string>
+    <string name="aqi_graph">Hourly European AQI</string>
+    <string name="aqi_threshold">AQI threshold</string>
+    <string name="aqi_threshold_value">%1$s · from %2$d</string>
+    <string name="aqi_hint">Based on the European Air Quality Index.</string>
+    <string name="aqi_good">Good</string>
+    <string name="aqi_fair">Fair</string>
+    <string name="aqi_moderate">Moderate</string>
+    <string name="aqi_poor">Poor</string>
+    <string name="aqi_very_poor">Very poor</string>
+    <string name="aqi_extremely_poor">Extremely poor</string>
+
+    <string name="official_title">Official meteorological warnings</string>
+    <string name="official_summary_on">%1$d of 3 levels active</string>
+    <string name="official_summary_off">Official warnings are off</string>
+    <string name="official_yellow">Yellow · Potential severe weather</string>
+    <string name="official_yellow_desc">Be aware: conditions could become dangerous.</string>
+    <string name="official_yellow_detail">Local, short-lived hazards such as gusty winds, heavy showers or fog.</string>
+    <string name="official_orange">Orange · Probable very severe weather</string>
+    <string name="official_orange_desc">Be prepared: dangerous weather is likely.</string>
+    <string name="official_orange_detail">Widespread hazards such as damaging winds, flooding rain, severe storms or heavy snow.</string>
+    <string name="official_red">Red · Extreme weather with risk to life</string>
+    <string name="official_red_desc">Take action: exceptional and life-threatening weather.</string>
+    <string name="official_red_detail">Rare, extreme events such as violent storms, major floods or extreme heat and cold. Follow official instructions.</string>
+</resources>
