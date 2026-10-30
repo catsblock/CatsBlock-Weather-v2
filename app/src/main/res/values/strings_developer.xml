@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="dev_entry_title">Developer options</string>
+    <string name="dev_entry_desc">Diagnostics, logs and maintenance tools.</string>
+    <string name="dev_title">Developer options</string>
+    <string name="dev_unlocked">Developer options unlocked.</string>
+    <string name="dev_already">Developer options are already enabled.</string>
+    <string name="dev_taps_left">%1$d more taps to unlock developer options.</string>
+    <string name="dev_privacy">API keys, tokens and precise coordinates are always masked in everything shown or copied here.</string>
+    <string name="dev_section_diagnostics">Diagnostics</string>
+    <string name="dev_app_version">App version</string>
+    <string name="dev_package">Package</string>
+    <string name="dev_android">Android</string>
+    <string name="dev_device">Device</string>
+    <string name="dev_language">Language</string>
+    <string name="dev_source">Weather provider</string>
+    <string name="dev_keys">Personal keys</string>
+    <string name="dev_keys_value">%1$d configured</string>
+    <string name="dev_background">Background updates</string>
+    <string name="dev_mobile_data">Mobile data updates</string>
+    <string name="dev_on">On</string>
+    <string name="dev_off">Off</string>
+    <string name="dev_copy_diagnostics">Copy diagnostics</string>
+    <string name="dev_section_logs">Logs</string>
+    <string name="dev_level_info">Info</string>
+    <string name="dev_level_warn">Warnings</string>
+    <string name="dev_level_error">Errors</string>
+    <string name="dev_refresh">Refresh</string>
+    <string name="dev_copy_logs">Copy</string>
+    <string name="dev_clear_logs">Clear view</string>
+    <string name="dev_logs_empty">No log lines to show.</string>
+    <string name="dev_copied">Copied to clipboard.</string>
+    <string name="dev_section_actions">Maintenance</string>
+    <string name="dev_reset_alerts">Reset alert settings</string>
+    <string name="dev_reset_alerts_desc">Restore every alert and warning option to its default.</string>
+    <string name="dev_reset_confirm_title">Reset alert settings?</string>
+    <string name="dev_reset_confirm_text">All alert and warning options will return to their defaults.</string>
+    <string name="dev_reset_confirm">Reset</string>
+    <string name="dev_reset_done">Alert settings restored.</string>
+    <string name="dev_hide">Hide developer options</string>
+    <string name="dev_hide_desc">Lock this menu again. Tap the app version five times to unlock it.</string>
+</resources>
