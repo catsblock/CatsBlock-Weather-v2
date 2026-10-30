@@ -2,6 +2,7 @@ package com.catsblock.weather.data
 
 import kotlinx.coroutines.withTimeoutOrNull
 import com.catsblock.weather.WeatherApp
+import com.catsblock.weather.ui.developer.AppLog
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -225,6 +226,7 @@ class WeatherRepository {
     suspend fun fetch(city: City, source: WeatherSource = WeatherSource.OpenMeteo): WeatherBundle {
         val raw = fetchRaw(city, source)
         val radar = withTimeoutOrNull(5000) { RadarProbe.read(city.lat, city.lon) }
+        AppLog.info("Weather", "Forecast loaded via ${source.name}: ${raw.hours.size} hours, ${raw.days.size} days, radar=${radar != null}")
         return WeatherDecisionEngine.apply(raw, radar)
     }
 
@@ -238,6 +240,7 @@ class WeatherRepository {
             throw e
         } catch (e: Exception) {
             _usageStatus.value = _usageStatus.value.copy(usingFallback = true)
+            AppLog.warn("Weather", "Provider ${source.name} failed, falling back to Open-Meteo", e)
             fetchOpenMeteo(city)
         }
     }
