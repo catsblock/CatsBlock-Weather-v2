@@ -19,6 +19,7 @@ import com.catsblock.weather.alerts.EclipseAlerts
 import com.catsblock.weather.alerts.RainAlerts
 import com.catsblock.weather.alerts.SnowAlerts
 import com.catsblock.weather.data.NetworkPolicy
+import com.catsblock.weather.ui.developer.AppLog
 import com.catsblock.weather.update.AppUpdates
 import com.catsblock.weather.data.SettingsStore
 import com.catsblock.weather.data.WeatherBus
@@ -88,10 +89,12 @@ class WeatherWorker(context: Context, params: WorkerParameters) : CoroutineWorke
             runCatching { SnowAlerts.onFresh(app, city, bundle) }
             runCatching { EclipseAlerts.onFresh(app, city) }
             WeatherBus.emit(city, bundle)
+            AppLog.info("Worker", "Background update completed")
             Result.success()
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
+            AppLog.warn("Worker", "Background update failed on attempt ${runAttemptCount + 1}", e)
             if (runAttemptCount < 3) Result.retry() else Result.success()
         }
     }
