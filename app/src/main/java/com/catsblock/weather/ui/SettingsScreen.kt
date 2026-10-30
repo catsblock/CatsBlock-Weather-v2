@@ -123,6 +123,7 @@ import com.catsblock.weather.data.SnowLeadOptions
 import com.catsblock.weather.data.SettingsStore
 import com.catsblock.weather.i18n.AppLanguage
 import com.catsblock.weather.i18n.leadFull
+import com.catsblock.weather.i18n.I18n
 import com.catsblock.weather.i18n.tr
 import com.catsblock.weather.ui.alerts.AlertSettingsScreen
 import com.catsblock.weather.ui.developer.DeveloperSettingsScreen
@@ -193,7 +194,7 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
 
     fun tapVersion() {
         if (developerEnabled) {
-            Toast.makeText(ctx, ctx.getString(R.string.dev_already), Toast.LENGTH_SHORT).show()
+            Toast.makeText(ctx, tr("Developer options are already enabled."), Toast.LENGTH_SHORT).show()
             return
         }
         val now = SystemClock.elapsedRealtime()
@@ -202,9 +203,9 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
         if (versionTaps >= 5) {
             versionTaps = 0
             scope.launch { developerStore.setEnabled(true) }
-            Toast.makeText(ctx, ctx.getString(R.string.dev_unlocked), Toast.LENGTH_SHORT).show()
+            Toast.makeText(ctx, tr("Developer options unlocked."), Toast.LENGTH_SHORT).show()
         } else if (versionTaps >= 2) {
-            Toast.makeText(ctx, ctx.getString(R.string.dev_taps_left, 5 - versionTaps), Toast.LENGTH_SHORT).show()
+            Toast.makeText(ctx, String.format(I18n.lang.locale, tr("%1\$d more taps to unlock developer options."), 5 - versionTaps), Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -736,8 +737,8 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
                     GroupDivider()
                     NavRow(
                         Icons.Rounded.Code,
-                        stringResource(R.string.dev_entry_title),
-                        stringResource(R.string.dev_entry_desc),
+                        tr("Developer options"),
+                        tr("Diagnostics, logs and maintenance tools."),
                         { developerOpen = true }
                     )
                 }
