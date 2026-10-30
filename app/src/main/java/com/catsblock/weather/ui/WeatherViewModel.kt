@@ -15,6 +15,7 @@ import androidx.lifecycle.viewModelScope
 import com.catsblock.weather.alerts.EclipseAlerts
 import com.catsblock.weather.alerts.RainAlerts
 import com.catsblock.weather.alerts.SnowAlerts
+import com.catsblock.weather.ui.developer.AppLog
 import com.catsblock.weather.update.AppUpdates
 import com.catsblock.weather.data.AppSettings
 import com.catsblock.weather.data.City
@@ -354,6 +355,7 @@ class WeatherViewModel(private val app: Application) : AndroidViewModel(app) {
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                AppLog.warn("Location", "Could not determine the current location", e)
                 weather.value = WeatherState.Error("Could not determine your location.")
             }
         }
@@ -390,6 +392,7 @@ class WeatherViewModel(private val app: Application) : AndroidViewModel(app) {
         if (!silent || !hasData) weather.value = WeatherState.Loading
         val current = store.settings.first()
         if (!NetworkPolicy.foregroundAllowed(app, current)) {
+            AppLog.warn("Weather", "Refresh skipped because mobile data updates are disabled")
             if (!silent || !hasData) {
                 weather.value = WeatherState.Error("Mobile data updates are disabled. Connect to Wi-Fi or enable them in Settings.")
             }
@@ -409,6 +412,7 @@ class WeatherViewModel(private val app: Application) : AndroidViewModel(app) {
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
+            AppLog.error("Weather", "Forecast request failed", e)
             if (!silent || !hasData) {
                 weather.value = WeatherState.Error("Could not load the weather. Check your connection and try again.")
             }
