@@ -11,7 +11,9 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
+import android.os.SystemClock
 import android.provider.Settings
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateContentSize
@@ -27,7 +29,9 @@ import androidx.compose.animation.core.tween
 import android.net.Uri
 import androidx.compose.foundation.Canvas
 import androidx.compose.material.icons.rounded.Business
+import androidx.compose.material.icons.rounded.Code
 import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.PrivacyTip
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
@@ -86,6 +90,8 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -101,6 +107,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
@@ -109,6 +116,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.catsblock.weather.R
 import com.catsblock.weather.data.EclipseLeadOptions
 import com.catsblock.weather.data.RainLeadOptions
 import com.catsblock.weather.data.SnowLeadOptions
@@ -116,6 +124,9 @@ import com.catsblock.weather.data.SettingsStore
 import com.catsblock.weather.i18n.AppLanguage
 import com.catsblock.weather.i18n.leadFull
 import com.catsblock.weather.i18n.tr
+import com.catsblock.weather.ui.alerts.AlertSettingsScreen
+import com.catsblock.weather.ui.developer.DeveloperSettingsScreen
+import com.catsblock.weather.ui.developer.DeveloperStore
 import com.catsblock.weather.update.UpdateInfo
 import com.catsblock.weather.update.UpdateState
 import com.catsblock.weather.update.UpdateViewModel
@@ -146,6 +157,12 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
     val scope = rememberCoroutineScope()
     var langDialog by remember { mutableStateOf(false) }
     var companyDialog by remember { mutableStateOf(false) }
+    var alertsOpen by remember { mutableStateOf(false) }
+    var developerOpen by remember { mutableStateOf(false) }
+    val developerStore = remember { DeveloperStore(ctx.applicationContext) }
+    val developerEnabled by developerStore.enabled.collectAsStateWithLifecycle(initialValue = false)
+    var versionTaps by remember { mutableIntStateOf(0) }
+    var lastVersionTap by remember { mutableLongStateOf(0L) }
     val versionName = remember {
         runCatching { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName }.getOrNull() ?: "1.0"
     }
@@ -174,6 +191,23 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
         }
     }
 
+    fun tapVersion() {
+        if (developerEnabled) {
+            Toast.makeText(ctx, ctx.getString(R.string.dev_already), Toast.LENGTH_SHORT).show()
+            return
+        }
+        val now = SystemClock.elapsedRealtime()
+        versionTaps = if (now - lastVersionTap < 1500L) versionTaps + 1 else 1
+        lastVersionTap = now
+        if (versionTaps >= 5) {
+            versionTaps = 0
+            scope.launch { developerStore.setEnabled(true) }
+            Toast.makeText(ctx, ctx.getString(R.string.dev_unlocked), Toast.LENGTH_SHORT).show()
+        } else if (versionTaps >= 2) {
+            Toast.makeText(ctx, ctx.getString(R.string.dev_taps_left, 5 - versionTaps), Toast.LENGTH_SHORT).show()
+        }
+    }
+
     DisposableEffect(owner) {
         val o = LifecycleEventObserver { _, e ->
             if (e == Lifecycle.Event.ON_RESUME) {
@@ -183,6 +217,14 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
         }
         owner.lifecycle.addObserver(o)
         onDispose { owner.lifecycle.removeObserver(o) }
+    }
+
+    if (alertsOpen) {
+        AlertSettingsScreen(vm) { alertsOpen = false }
+    }
+
+    if (developerOpen) {
+        DeveloperSettingsScreen(vm) { developerOpen = false }
     }
 
     if (langDialog) {
@@ -584,6 +626,16 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
             CategoryTitle(tr("Notifications"))
 
             Group {
+                NavRow(
+                    Icons.Rounded.NotificationsActive,
+                    stringResource(R.string.alerts_entry_title),
+                    stringResource(R.string.alerts_entry_desc),
+                    { alertsOpen = true }
+                )
+            }
+            Spacer(Modifier.height(12.dp))
+
+            Group {
                 SwitchRow(
                     tr("Rain alerts"),
                     tr("Get notified before rain arrives."),
@@ -674,11 +726,21 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
                 )
                 GroupDivider()
                 ListItem(
+                    modifier = Modifier.clickable { tapVersion() },
                     leadingContent = { Icon(Icons.Rounded.Info, null, tint = MaterialTheme.colorScheme.primary) },
                     headlineContent = { Text(tr("App version")) },
                     trailingContent = { Text(versionName, color = MaterialTheme.colorScheme.onSurfaceVariant) },
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                 )
+                if (developerEnabled) {
+                    GroupDivider()
+                    NavRow(
+                        Icons.Rounded.Code,
+                        stringResource(R.string.dev_entry_title),
+                        stringResource(R.string.dev_entry_desc),
+                        { developerOpen = true }
+                    )
+                }
                 GroupDivider()
                 NavRow(
                     Icons.Rounded.Business,
