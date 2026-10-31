@@ -76,7 +76,6 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
@@ -157,7 +156,7 @@ internal fun AlertCard(
                 }
                 Icon(
                     Icons.Rounded.ExpandMore,
-                    stringResource(if (expanded) R.string.alerts_collapse else R.string.alerts_expand),
+                    alertText(if (expanded) R.string.alerts_collapse else R.string.alerts_expand),
                     Modifier.rotate(rotation),
                     tint = scheme.onSurfaceVariant
                 )
@@ -246,9 +245,9 @@ private fun TimeDialog(label: String, minutes: Int, onDismiss: () -> Unit, onCon
                 TimePicker(state)
                 Spacer(Modifier.height(12.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    TextButton(onClick = onDismiss) { Text(stringResource(R.string.alerts_cancel)) }
+                    TextButton(onClick = onDismiss) { Text(alertText(R.string.alerts_cancel)) }
                     TextButton(onClick = { onConfirm(state.hour * 60 + state.minute) }) {
-                        Text(stringResource(R.string.alerts_ok))
+                        Text(alertText(R.string.alerts_ok))
                     }
                 }
             }
@@ -384,7 +383,7 @@ internal fun LineChart(
             contentAlignment = Alignment.Center
         ) {
             Text(
-                stringResource(R.string.alerts_no_data),
+                alertText(R.string.alerts_no_data),
                 style = MaterialTheme.typography.bodyMedium,
                 color = scheme.onSurfaceVariant
             )
