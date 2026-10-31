@@ -60,6 +60,9 @@ import com.catsblock.weather.ui.cloudBandLabel
 import com.catsblock.weather.ui.dateLabel
 import com.catsblock.weather.ui.dayLabel
 import com.catsblock.weather.ui.f1
+import com.catsblock.weather.ui.precipNumber
+import com.catsblock.weather.ui.precipText
+import com.catsblock.weather.data.PrecipUnit
 import com.catsblock.weather.ui.glass.snowIntensity
 import com.catsblock.weather.ui.hourLabel
 import com.catsblock.weather.ui.pressureFormat
@@ -92,7 +95,8 @@ private class Ctx(
     val windUnit: WindUnit,
     val pressureUnit: PressureUnit,
     val fahrenheit: Boolean,
-    val bundle: WeatherBundle
+    val bundle: WeatherBundle,
+    val precipUnit: PrecipUnit
 )
 
 private class TabSpec(
@@ -177,11 +181,12 @@ fun MetricDetailScreen(
     windUnit: WindUnit,
     pressureUnit: PressureUnit,
     fahrenheit: Boolean,
+    precipUnit: PrecipUnit,
     onBack: () -> Unit
 ) {
     val now = bundle.current.now
-    val ctx = remember(bundle, windUnit, pressureUnit, fahrenheit) {
-        Ctx(now.toLocalDate(), now.hour, windUnit, pressureUnit, fahrenheit, bundle)
+    val ctx = remember(bundle, windUnit, pressureUnit, fahrenheit, precipUnit) {
+        Ctx(now.toLocalDate(), now.hour, windUnit, pressureUnit, fahrenheit, bundle, precipUnit)
     }
     val tabs = remember(kind, ctx) { buildTabs(kind, groupDays(bundle, ctx.today), ctx) }
     if (tabs.isEmpty() || tabs.first().pills.isEmpty()) {
@@ -268,7 +273,7 @@ private fun precipTab(days: List<DayData>, ctx: Ctx): TabSpec? {
     val pills = days.mapIndexed { i, d ->
         val raw = (totals[i] / maxTotal).toFloat().coerceIn(0f, 1f)
         Pill(
-            top = chances[i]?.let { "$it%" } ?: f1(totals[i]),
+            top = chances[i]?.let { "$it%" } ?: precipNumber(totals[i], ctx.precipUnit),
             bottom = bottomLabel(i, d, lead),
             low = 0f,
             high = if (totals[i] > 0.0) max(raw, 0.08f) else 0f
@@ -277,7 +282,7 @@ private fun precipTab(days: List<DayData>, ctx: Ctx): TabSpec? {
     return TabSpec(
         label = tr("Precipitation"),
         outlookLabel = tr("Rain outlook"),
-        headline = "${f1(totals.sum())} mm ${tr("total")}",
+        headline = "${precipText(totals.sum(), ctx.precipUnit)} ${tr("total")}",
         sub = null,
         accent = Blue,
         floating = false,
@@ -296,7 +301,7 @@ private fun PrecipBody(day: DayData, total: Double, chance: Int?, ctx: Ctx) {
             {
                 GaugeRow(
                     label = tr("Precipitation"),
-                    value = "${f1(total)} mm",
+                    value = precipText(total, ctx.precipUnit),
                     sub = chance?.let { "$it% ${tr("chance")}" } ?: precipLabel(total)
                 ) { ArcGauge((chance ?: 0) / 100f, Blue, center = chance?.let { "$it%" }) }
             },
@@ -310,22 +315,22 @@ private fun PrecipBody(day: DayData, total: Double, chance: Int?, ctx: Ctx) {
             style = HourlyStyle.Bars,
             yMin = 0f,
             yMax = max(3f, series.peak() * 1.25f),
-            thresholds = listOf(Threshold(2.5f, "2.5 mm")),
+            thresholds = listOf(Threshold(2.5f, precipText(2.5, ctx.precipUnit))),
             nowHour = day.marker(ctx),
-            format = { _, v -> "${f1(v.toDouble())} mm" }
+            format = { _, v -> precipText(v.toDouble(), ctx.precipUnit) }
         )
     }
     if (total > 0.0) {
         val snow = day.hours.filter { snowIntensity(it.kind) > 0f }.sumOf { it.precip }
         val rain = (total - snow).coerceAtLeast(0.0)
         ChartCard(tr("Breakdown by type"), 4) {
-            Text("${f1(total)} mm", color = MaterialTheme.colorScheme.onSurface, fontSize = 34.sp, fontWeight = FontWeight.SemiBold)
+            Text(precipText(total, ctx.precipUnit), color = MaterialTheme.colorScheme.onSurface, fontSize = 34.sp, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.size(12.dp))
             StackedBar(listOf(rain.toFloat() to Blue, snow.toFloat() to IceBlue))
             Spacer(Modifier.size(14.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-                if (rain > 0.0) Legend(Blue, tr("Rain"), "${f1(rain)} mm")
-                if (snow > 0.0) Legend(IceBlue, tr("Snow"), "${f1(snow)} mm")
+                if (rain > 0.0) Legend(Blue, tr("Rain"), precipText(rain, ctx.precipUnit))
+                if (snow > 0.0) Legend(IceBlue, tr("Snow"), precipText(snow, ctx.precipUnit))
             }
         }
     }
