@@ -1,6 +1,5 @@
 package com.catsblock.weather.ui
 
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -45,22 +44,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.StrokeJoin
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.drawText
-import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.Density
@@ -81,8 +73,6 @@ import com.catsblock.weather.ui.detail.DetailDialog
 import com.catsblock.weather.ui.detail.entrance
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
-import kotlin.math.cos
-import kotlin.math.min
 import kotlin.math.roundToInt
 
 private sealed interface TravelUi {
@@ -317,12 +307,6 @@ private fun SummaryTile(icon: ImageVector, label: String, value: String, modifie
 @Composable
 private fun RouteMapCard(plan: TravelPlan) {
     val scheme = MaterialTheme.colorScheme
-    val measurer = rememberTextMeasurer()
-    val labelStyle = MaterialTheme.typography.labelLarge.copy(color = scheme.onPrimary, fontWeight = FontWeight.Bold)
-    val line = scheme.primary
-    val halo = scheme.primary.copy(alpha = 0.22f)
-    val start = scheme.tertiary
-    val end = scheme.secondary
     Surface(
         shape = RoundedCornerShape(32.dp),
         color = scheme.surfaceContainerHigh,
@@ -342,50 +326,13 @@ private fun RouteMapCard(plan: TravelPlan) {
                 }
             }
             Spacer(Modifier.height(10.dp))
-            Canvas(
+            TravelMap(
+                plan,
                 Modifier
                     .fillMaxWidth()
-                    .height(240.dp)
+                    .height(280.dp)
                     .clip(RoundedCornerShape(24.dp))
-                    .background(scheme.surfaceContainer)
-            ) {
-                val lats = plan.path.map { it.lat }
-                val lons = plan.path.map { it.lon }
-                val minLat = lats.min()
-                val maxLat = lats.max()
-                val minLon = lons.min()
-                val maxLon = lons.max()
-                val kx = cos(Math.toRadians((minLat + maxLat) / 2.0)).coerceAtLeast(0.2)
-                val spanX = ((maxLon - minLon) * kx).coerceAtLeast(1e-6)
-                val spanY = (maxLat - minLat).coerceAtLeast(1e-6)
-                val pad = 34.dp.toPx()
-                val scale = min((size.width - 2 * pad) / spanX, (size.height - 2 * pad) / spanY)
-                val ox = (size.width - spanX * scale) / 2.0
-                val oy = (size.height - spanY * scale) / 2.0
-                fun project(lat: Double, lon: Double) = Offset(
-                    (ox + (lon - minLon) * kx * scale).toFloat(),
-                    (oy + (maxLat - lat) * scale).toFloat()
-                )
-                val path = Path()
-                plan.path.forEachIndexed { i, p ->
-                    val o = project(p.lat, p.lon)
-                    if (i == 0) path.moveTo(o.x, o.y) else path.lineTo(o.x, o.y)
-                }
-                drawPath(path, halo, style = Stroke(14.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
-                drawPath(path, line, style = Stroke(6.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
-                plan.stops.forEach { stop ->
-                    val center = project(stop.point.lat, stop.point.lon)
-                    val color = when (stop.index) {
-                        0 -> start
-                        plan.stops.lastIndex -> end
-                        else -> line
-                    }
-                    drawCircle(Color.White, 15.dp.toPx(), center)
-                    drawCircle(color, 12.dp.toPx(), center)
-                    val layout = measurer.measure("${stop.index + 1}", labelStyle)
-                    drawText(layout, topLeft = Offset(center.x - layout.size.width / 2f, center.y - layout.size.height / 2f))
-                }
-            }
+            )
         }
     }
 }
@@ -416,7 +363,7 @@ private fun StopBubble(plan: TravelPlan, stop: TravelStop, unit: com.catsblock.w
     val title = when (stop.index) {
         0 -> plan.from.label
         plan.stops.lastIndex -> plan.to.label
-        else -> String.format(I18n.lang.locale, tr("%1\$d km from start"), stop.distanceKm.roundToInt())
+        else -> stop.name ?: String.format(I18n.lang.locale, tr("%1\$d km from start"), stop.distanceKm.roundToInt())
     }
     Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min).entrance(stop.index + 3)) {
         Column(Modifier.width(44.dp), horizontalAlignment = Alignment.CenterHorizontally) {
