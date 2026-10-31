@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -66,7 +67,7 @@ fun WelcomeScreen(vm: WeatherViewModel) {
             .background(Brush.verticalGradient(listOf(scheme.primaryContainer, scheme.surface)))
     ) {
         Column(
-            Modifier.fillMaxSize().safeDrawingPadding().padding(32.dp),
+            Modifier.align(Alignment.Center).widthIn(max = 520.dp).fillMaxSize().safeDrawingPadding().padding(32.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
