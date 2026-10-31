@@ -1,6 +1,5 @@
 package com.catsblock.weather.ui.alerts
 
-import androidx.annotation.StringRes
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
@@ -48,7 +47,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
@@ -80,6 +78,17 @@ import com.catsblock.weather.ui.WeatherState
 import com.catsblock.weather.ui.WeatherViewModel
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
+import com.catsblock.weather.i18n.I18n
+import com.catsblock.weather.data.WindUnit
+import com.catsblock.weather.alerts.DailyAlerts
+import com.catsblock.weather.alerts.ClothingConsultant
+import androidx.core.content.ContextCompat
+import androidx.compose.runtime.LaunchedEffect
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.compose.rememberLauncherForActivityResult
+import android.os.Build
+import android.content.pm.PackageManager
+import android.Manifest
 
 private typealias Updater = ((AlertState) -> AlertState) -> Unit
 
@@ -105,7 +114,20 @@ private fun AlertSettingsContent(vm: WeatherViewModel, onDismiss: () -> Unit) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val weather by vm.weather.collectAsStateWithLifecycle()
     val bundle = (weather as? WeatherState.Success)?.bundle
-    val update: Updater = { block -> scope.launch { store.update(block) } }
+    val update: Updater = { block ->
+        scope.launch {
+            store.update(block)
+            DailyAlerts.reschedule(ctx.applicationContext)
+        }
+    }
+    val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
+    LaunchedEffect(Unit) {
+        if (Build.VERSION.SDK_INT >= 33 &&
+            ContextCompat.checkSelfPermission(ctx, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     Scaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
@@ -131,7 +153,7 @@ private fun AlertSettingsContent(vm: WeatherViewModel, onDismiss: () -> Unit) {
                 .navigationBarsPadding(),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            ClothingCard(s, bundle, settings.fahrenheit, update)
+            ClothingCard(s, bundle, settings.fahrenheit, settings.windUnit, update)
             UvCard(s, bundle, update)
             PollenCard(s, update)
             FrostCard(s, bundle, settings.fahrenheit, update)
@@ -165,35 +187,9 @@ private fun nightHours(bundle: WeatherBundle?): List<Hour> {
     return bundle.hours.dropWhile { !night(it) }.takeWhile { night(it) }
 }
 
-@StringRes
-private fun clothingTags(
-    rainy: Boolean,
-    mean: Double,
-    uvMax: Double,
-    thermal: Int
-): List<Int> {
-    val shift = when (thermal) {
-        0 -> -3.0
-        2 -> 3.0
-        else -> 0.0
-    }
-    val effective = mean + shift
-    val tags = mutableListOf<Int>()
-    if (rainy) tags += R.string.clothing_tag_waterproof
-    tags += when {
-        effective <= 2.0 -> R.string.clothing_tag_heavy
-        effective <= 10.0 -> R.string.clothing_tag_warm
-        effective <= 17.0 -> R.string.clothing_tag_sweater
-        effective >= 18.0 -> R.string.clothing_tag_light
-        else -> R.string.clothing_tag_layers
-    }
-    if (uvMax >= 6.0) tags += R.string.clothing_tag_sun
-    return tags
-}
-
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun ClothingCard(s: AlertState, bundle: WeatherBundle?, fahrenheit: Boolean, update: Updater) {
+private fun ClothingCard(s: AlertState, bundle: WeatherBundle?, fahrenheit: Boolean, windUnit: WindUnit, update: Updater) {
     var tab by rememberSaveable { mutableIntStateOf(0) }
     AlertCard(
         icon = Icons.Rounded.Checkroom,
@@ -227,11 +223,15 @@ private fun ClothingCard(s: AlertState, bundle: WeatherBundle?, fahrenheit: Bool
                 ),
                 style = MaterialTheme.typography.titleMedium
             )
+            val hours = bundle?.hours?.filter { it.time.toLocalDate() == day.date }.orEmpty()
+            val advice = remember(day, hours, s.thermal, s.commute, s.workStart, s.workEnd, windUnit, fahrenheit, I18n.lang) {
+                ClothingConsultant.advise(day, hours, s.thermal, s.commute, s.workStart, s.workEnd, windUnit, fahrenheit)
+            }
             GroupTitle(alertText(R.string.clothing_recommended))
-            val rainy = day.rainChance >= 40 || day.precipSum >= 1.0
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                clothingTags(rainy, (day.max + day.min) / 2.0, day.uvMax, s.thermal).forEach { tag ->
-                    SuggestionChip(onClick = {}, label = { Text(alertText(tag)) })
+            advice.items.groupBy { it.section }.forEach { (section, lines) ->
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(section, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                    lines.forEach { line -> Text(line.text, style = MaterialTheme.typography.bodyMedium) }
                 }
             }
         }
