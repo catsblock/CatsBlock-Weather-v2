@@ -1,6 +1,20 @@
 package com.catsblock.weather.ui
 
 import com.catsblock.weather.ui.components.ExpressiveLoader
+import androidx.compose.foundation.border
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.material.icons.rounded.Insights
+import androidx.compose.material.icons.rounded.TipsAndUpdates
+import androidx.compose.material.icons.rounded.UploadFile
+import androidx.compose.material3.Slider
+import androidx.compose.ui.text.font.FontFamily
+import com.catsblock.weather.data.ColorStyle
+import com.catsblock.weather.data.FontChoice
+import com.catsblock.weather.data.MaxTextScale
+import com.catsblock.weather.data.MinTextScale
+import com.catsblock.weather.data.PrecipUnit
+import com.catsblock.weather.ui.typography.AppFonts
+import kotlin.math.roundToInt
 import com.catsblock.weather.data.SecretKeys
 import com.catsblock.weather.data.WeatherSource
 import com.catsblock.weather.data.WindUnit
@@ -159,6 +173,21 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
     var langDialog by remember { mutableStateOf(false) }
     var companyDialog by remember { mutableStateOf(false) }
     var alertsOpen by remember { mutableStateOf(false) }
+    var activityOpen by remember { mutableStateOf(false) }
+    val activityStats by vm.activityStats.collectAsStateWithLifecycle()
+    var scaleDraft by remember(settings.textScale) { mutableStateOf(settings.textScale) }
+    val fontPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            scope.launch {
+                val stored = AppFonts.import(ctx.applicationContext, uri)
+                if (stored != null) {
+                    vm.setCustomFont(stored)
+                } else {
+                    Toast.makeText(ctx, tr("That file is not a valid font."), Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
     var developerOpen by remember { mutableStateOf(false) }
     val developerStore = remember { DeveloperStore(ctx.applicationContext) }
     val developerEnabled by developerStore.enabled.collectAsStateWithLifecycle(initialValue = false)
@@ -222,6 +251,10 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
 
     if (alertsOpen) {
         AlertSettingsScreen(vm) { alertsOpen = false }
+    }
+
+    if (activityOpen) {
+        ActivityDialog(activityStats, settings.fahrenheit) { activityOpen = false }
     }
 
     if (developerOpen) {
@@ -420,6 +453,137 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
                         }
                     }
                 }
+                GroupDivider()
+                SwitchRow(
+                    tr("AMOLED black"),
+                    tr("Use a pure black background when the dark theme is active."),
+                    settings.amoled,
+                    vm::setAmoled
+                )
+            }
+
+            GroupLabel(tr("Color"))
+            Group {
+                Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
+                    SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                        ColorStyle.entries.forEachIndexed { index, style ->
+                            SegmentedButton(
+                                selected = settings.colorStyle == style,
+                                onClick = { vm.setColorStyle(style) },
+                                shape = SegmentedButtonDefaults.itemShape(index, ColorStyle.entries.size)
+                            ) { Text(colorStyleLabel(style), maxLines = 1) }
+                        }
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        colorStyleNote(settings.colorStyle),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    if (settings.colorStyle == ColorStyle.Custom) {
+                        Spacer(Modifier.height(14.dp))
+                        Row(
+                            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            CustomSwatches.forEach { argb ->
+                                val selected = settings.customColor == argb
+                                Box(
+                                    Modifier
+                                        .size(44.dp)
+                                        .clip(CircleShape)
+                                        .background(Color(argb))
+                                        .border(
+                                            if (selected) 3.dp else 0.dp,
+                                            MaterialTheme.colorScheme.onSurface,
+                                            CircleShape
+                                        )
+                                        .clickable { vm.setCustomColor(argb) },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (selected) Icon(Icons.Rounded.Check, null, tint = Color.White)
+                                }
+                            }
+                        }
+                        Spacer(Modifier.height(12.dp))
+                        var hexInput by remember(settings.customColor) {
+                            mutableStateOf(String.format(Locale.US, "%06X", settings.customColor and 0xFFFFFF))
+                        }
+                        OutlinedTextField(
+                            value = hexInput,
+                            onValueChange = { raw ->
+                                val cleaned = raw.filter { it.isDigit() || it in 'a'..'f' || it in 'A'..'F' }.take(6).uppercase()
+                                hexInput = cleaned
+                                if (cleaned.length == 6) vm.setCustomColor(0xFF000000.toInt() or cleaned.toInt(16))
+                            },
+                            singleLine = true,
+                            prefix = { Text("#") },
+                            label = { Text(tr("Hex color")) },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                }
+            }
+
+            GroupLabel(tr("Text"))
+            Group {
+                Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(tr("Text size"), style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                        Text(
+                            "${(scaleDraft * 100).roundToInt()}%",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    Slider(
+                        value = scaleDraft,
+                        onValueChange = { scaleDraft = it },
+                        onValueChangeFinished = { vm.setTextScale(scaleDraft) },
+                        valueRange = MinTextScale..MaxTextScale,
+                        steps = 5
+                    )
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text(tr("Small"), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(tr("Large"), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    if (settings.textScale != 1f) {
+                        TextButton(onClick = { scaleDraft = 1f; vm.setTextScale(1f) }) { Text(tr("Reset")) }
+                    }
+                }
+                GroupDivider()
+                FontChoice.entries.forEachIndexed { index, choice ->
+                    if (index > 0) GroupDivider()
+                    val isCustom = choice == FontChoice.Custom
+                    val hasCustom = settings.customFontName.isNotBlank()
+                    ListItem(
+                        modifier = Modifier.clickable {
+                            if (isCustom && !hasCustom) fontPicker.launch(AppFonts.pickerMimeTypes)
+                            else vm.setFontChoice(choice)
+                        },
+                        leadingContent = { RadioButton(selected = settings.fontChoice == choice, onClick = null) },
+                        headlineContent = {
+                            Text(
+                                if (isCustom && hasCustom) AppFonts.displayName(settings.customFontName) else fontTitle(choice),
+                                fontFamily = if (isCustom && !hasCustom) FontFamily.Default
+                                else AppFonts.family(ctx, choice, settings.customFontName)
+                            )
+                        },
+                        supportingContent = if (isCustom) {
+                            { Text(if (hasCustom) tr("Custom font file") else tr("Only .ttf and .otf font files are supported.")) }
+                        } else null,
+                        trailingContent = if (isCustom) {
+                            {
+                                TextButton(onClick = { fontPicker.launch(AppFonts.pickerMimeTypes) }) {
+                                    Icon(Icons.Rounded.UploadFile, null, Modifier.size(18.dp))
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(tr("Choose file"))
+                                }
+                            }
+                        } else null,
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                    )
+                }
             }
 
             GroupLabel(tr("Layout"))
@@ -450,6 +614,13 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
                     tr("Play ambient sounds that match the current weather."),
                     settings.sounds,
                     vm::setSounds
+                )
+                GroupDivider()
+                SwitchRow(
+                    tr("Disable all weather effects if battery saver mode is enabled."),
+                    tr("Rain, snow and storm animations and weather sounds are turned off while battery saver is on."),
+                    settings.disableEffectsOnSaver,
+                    vm::setDisableEffectsOnSaver
                 )
             }
 
@@ -533,6 +704,20 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
                                 selected = settings.pressureUnit == unit,
                                 onClick = { vm.setPressureUnit(unit) },
                                 shape = SegmentedButtonDefaults.itemShape(index, PressureUnit.entries.size)
+                            ) { Text(unit.label) }
+                        }
+                    }
+                }
+                GroupDivider()
+                Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
+                    Text(tr("Precipitation"), style = MaterialTheme.typography.titleMedium)
+                    Spacer(Modifier.height(10.dp))
+                    SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                        PrecipUnit.entries.forEachIndexed { index, unit ->
+                            SegmentedButton(
+                                selected = settings.precipUnit == unit,
+                                onClick = { vm.setPrecipUnit(unit) },
+                                shape = SegmentedButtonDefaults.itemShape(index, PrecipUnit.entries.size)
                             ) { Text(unit.label) }
                         }
                     }
@@ -720,6 +905,20 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
             Spacer(Modifier.height(12.dp))
             Group {
                 NavRow(
+                    Icons.Rounded.Insights,
+                    tr("Activity"),
+                    tr("Your history with the app on this device."),
+                    { activityOpen = true }
+                )
+                GroupDivider()
+                NavRow(
+                    Icons.Rounded.TipsAndUpdates,
+                    tr("About this app"),
+                    tr("How it works, what makes it different and why Play Protect may warn."),
+                    { vm.openInfo(Screen.Settings) }
+                )
+                GroupDivider()
+                NavRow(
                     Icons.Rounded.PrivacyTip,
                     tr("Privacy Policy"),
                     tr("How CatsBlock Weather handles your data."),
@@ -775,6 +974,34 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
             Spacer(Modifier.height(16.dp))
         }
     }
+}
+
+private val CustomSwatches = listOf(
+    0xFF1565C0.toInt(), 0xFF00897B.toInt(), 0xFF43A047.toInt(), 0xFFF9A825.toInt(), 0xFFEF6C00.toInt(),
+    0xFFE53935.toInt(), 0xFFD81B60.toInt(), 0xFF8E24AA.toInt(), 0xFF5E35B1.toInt(), 0xFF546E7A.toInt()
+)
+
+private fun colorStyleLabel(style: ColorStyle): String = when (style) {
+    ColorStyle.Weather -> tr("Weather")
+    ColorStyle.Material -> "Material"
+    ColorStyle.Custom -> tr("Custom")
+}
+
+private fun colorStyleNote(style: ColorStyle): String = when (style) {
+    ColorStyle.Weather -> tr("Colors follow the current weather. This is the default.")
+    ColorStyle.Material -> tr("Colors follow your wallpaper on Android 12 and newer.")
+    ColorStyle.Custom -> tr("Pick your own accent color.")
+}
+
+private fun fontTitle(choice: FontChoice): String = when (choice) {
+    FontChoice.GoogleSans -> "Google Sans Flex"
+    FontChoice.System -> tr("System default")
+    FontChoice.Condensed -> tr("Condensed")
+    FontChoice.Serif -> tr("Serif")
+    FontChoice.Monospace -> tr("Monospace")
+    FontChoice.Casual -> tr("Casual")
+    FontChoice.Cursive -> tr("Cursive")
+    FontChoice.Custom -> tr("Custom font file")
 }
 
 private fun keyNote(source: WeatherSource): String = when (source) {
