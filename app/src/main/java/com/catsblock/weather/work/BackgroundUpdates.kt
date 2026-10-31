@@ -15,6 +15,7 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
+import com.catsblock.weather.alerts.DailyAlerts
 import com.catsblock.weather.alerts.EclipseAlerts
 import com.catsblock.weather.alerts.RainAlerts
 import com.catsblock.weather.alerts.SnowAlerts
@@ -88,6 +89,7 @@ class WeatherWorker(context: Context, params: WorkerParameters) : CoroutineWorke
             runCatching { RainAlerts.onFresh(app, city, bundle) }
             runCatching { SnowAlerts.onFresh(app, city, bundle) }
             runCatching { EclipseAlerts.onFresh(app, city) }
+            runCatching { DailyAlerts.onFresh(app, city, bundle) }
             WeatherBus.emit(city, bundle)
             AppLog.info("Worker", "Background update completed")
             Result.success()
