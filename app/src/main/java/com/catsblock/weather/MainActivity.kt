@@ -55,10 +55,12 @@ import com.catsblock.weather.ui.AppShell
 import com.catsblock.weather.ui.BackgroundKitScreen
 import com.catsblock.weather.ui.CityPickerScreen
 import com.catsblock.weather.ui.IconKitScreen
+import com.catsblock.weather.ui.InfoScreen
 import com.catsblock.weather.ui.LiveMoonScreen
 import com.catsblock.weather.ui.PrivacyPolicyScreen
 import com.catsblock.weather.ui.Screen
 import com.catsblock.weather.ui.WeatherTheme
+import com.catsblock.weather.ui.WeatherState
 import com.catsblock.weather.ui.WeatherViewModel
 import com.catsblock.weather.ui.WelcomeScreen
 import java.util.Locale
@@ -75,7 +77,9 @@ class MainActivity : ComponentActivity() {
         setContent {
             val vm: WeatherViewModel = viewModel()
             val settings by vm.settings.collectAsStateWithLifecycle()
-            WeatherTheme(settings.theme) {
+            val weather by vm.weather.collectAsStateWithLifecycle()
+            val current = (weather as? WeatherState.Success)?.bundle?.current
+            WeatherTheme(settings, current?.kind, current?.isDay ?: true) {
                 I18n.lang = settings.language
                 key(settings.language) { AppRoot(vm) }
             }
@@ -176,6 +180,7 @@ private fun AppRoot(vm: WeatherViewModel) {
             Screen.AppIcon -> AppIconScreen(vm)
             Screen.LiveMoon -> LiveMoonScreen(vm)
             Screen.Privacy -> PrivacyPolicyScreen(vm)
+            Screen.Info -> InfoScreen(vm)
         }
     }
 }
