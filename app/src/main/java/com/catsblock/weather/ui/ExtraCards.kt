@@ -205,7 +205,7 @@ private fun BoxScope.MapLabels(text: String) {
 @Composable
 fun PrecipMapCard(city: City, snow: Boolean, rate: Double, modifier: Modifier = Modifier) {
     val label = tr(if (snow) "Snow" else "Rain")
-    val text = "$label · ${f1(rate)} mm/h"
+    val text = "$label · ${precipRateText(rate, LocalUnits.current.precip)}"
     var radar by remember { mutableStateOf<String?>(null) }
     var expanded by remember { mutableStateOf(false) }
 
