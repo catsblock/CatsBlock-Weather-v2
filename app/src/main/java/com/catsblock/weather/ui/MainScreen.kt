@@ -48,6 +48,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -595,9 +596,16 @@ private fun WeatherDetails(
             hubAlerts = runCatching { AlertHub.fetch(target.lat, target.lon) }.getOrDefault(hubAlerts)
         }
     }
+    val layout = LocalWindowLayout.current
     val screenHeight = LocalConfiguration.current.screenHeightDp
-    val heroHeight = ((screenHeight * (if (settings.compactHero) 0.46f else 0.66f)).dp - headerHeight)
+    val heroFactor = (if (settings.compactHero) 0.46f else 0.66f) * (if (layout.isWide && layout.landscape) 0.78f else 1f)
+    val heroHeight = ((screenHeight * heroFactor).dp - headerHeight)
         .coerceAtLeast(if (settings.compactHero) 240.dp else 320.dp)
+    val tempSize = when {
+        !layout.isWide -> 150.sp
+        layout.landscape -> 168.sp
+        else -> 200.sp
+    }
     val alert = remember(bundle, fahrenheit) { buildAlert(bundle, fahrenheit) }
     val baseScheme = MaterialTheme.colorScheme
     val glassScheme = remember(baseScheme) {
@@ -641,8 +649,8 @@ private fun WeatherDetails(
             Text(
                 tempText(cur.temp, fahrenheit),
                 style = MaterialTheme.typography.displayLarge.merge(textShadow),
-                fontSize = 150.sp,
-                lineHeight = 160.sp,
+                fontSize = tempSize,
+                lineHeight = tempSize * 1.07f,
                 fontWeight = FontWeight.W200,
                 color = Color.White
             )
@@ -667,10 +675,22 @@ private fun WeatherDetails(
             LocalSnowIntensity provides snowIntensity(cur.kind)
         ) {
             MaterialTheme(colorScheme = glassScheme, typography = MaterialTheme.typography, shapes = MaterialTheme.shapes) {
-                Column(
-                    Modifier.padding(horizontal = 16.dp).padding(bottom = LocalBottomInset.current + 24.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
+                val onOpenMetric: (String) -> Unit = { key ->
+                    sheet = when (key) {
+                        "Precip" -> Sheet.Precip
+                        "Wind" -> Sheet.Wind
+                        "Air" -> Sheet.Air
+                        "Uv" -> Sheet.Uv
+                        "Humidity" -> Sheet.Humidity
+                        "Pressure" -> Sheet.Pressure
+                        "Visibility" -> Sheet.Visibility
+                        "Cloud" -> Sheet.Cloud
+                        "Sun" -> Sheet.Sun
+                        "Travel" -> Sheet.Travel
+                        else -> Sheet.Moon
+                    }
+                }
+                val feedCards: @Composable () -> Unit = {
                     alert?.let { AlertCard(it) }
                     if (bundle.alerts.isNotEmpty()) GovAlertCard(bundle.alerts, bundle.utcOffsetSeconds)
                     if (settings.showPrecipitation && bundle.rain.isNotEmpty()) PrecipitationCard(bundle)
@@ -683,21 +703,11 @@ private fun WeatherDetails(
                         onDayClick = { sheet = Sheet.DaySheet(it) },
                         onMore = { sheet = Sheet.Days }
                     )
-                    CardsDashboard(bundle, city, todayDay, mode) { key ->
-                        sheet = when (key) {
-                            "Precip" -> Sheet.Precip
-                            "Wind" -> Sheet.Wind
-                            "Air" -> Sheet.Air
-                            "Uv" -> Sheet.Uv
-                            "Humidity" -> Sheet.Humidity
-                            "Pressure" -> Sheet.Pressure
-                            "Visibility" -> Sheet.Visibility
-                            "Cloud" -> Sheet.Cloud
-                            "Sun" -> Sheet.Sun
-                            "Travel" -> Sheet.Travel
-                            else -> Sheet.Moon
-                        }
-                    }
+                }
+                val dashboardCards: @Composable () -> Unit = {
+                    CardsDashboard(bundle, city, todayDay, mode, onOpenMetric)
+                }
+                val lifeCard: @Composable () -> Unit = {
                     if (settings.showLifeIndex) LifeIndexCard(
                         lifeIndex(
                             temp = cur.temp,
@@ -712,6 +722,36 @@ private fun WeatherDetails(
                             dayMin = todayDay.min
                         )
                     )
+                }
+                val sideInset = if (layout.isWide) 24.dp else 16.dp
+                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
+                    if (layout.twoColumns) {
+                        Row(
+                            Modifier
+                                .widthIn(max = layout.contentMaxWidth)
+                                .fillMaxWidth()
+                                .padding(horizontal = sideInset)
+                                .padding(bottom = LocalBottomInset.current + 24.dp),
+                            horizontalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                feedCards()
+                                lifeCard()
+                            }
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                dashboardCards()
+                            }
+                        }
+                    } else {
+                        Column(
+                            Modifier.padding(horizontal = sideInset).padding(bottom = LocalBottomInset.current + 24.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            feedCards()
+                            dashboardCards()
+                            lifeCard()
+                        }
+                    }
                 }
             }
         }
