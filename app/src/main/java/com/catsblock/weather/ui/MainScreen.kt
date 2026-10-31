@@ -165,6 +165,7 @@ private sealed interface Sheet {
     data object Cloud : Sheet
     data object Moon : Sheet
     data object Sun : Sheet
+    data object Travel : Sheet
 }
 
 private val textShadow = TextStyle(
@@ -290,6 +291,8 @@ fun MainScreen(vm: WeatherViewModel) {
     val headerHeight = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 112.dp
 
     val sound = remember { WeatherSoundPlayer() }
+    val powerSaver = rememberPowerSaveMode()
+    val effectsOff = settings.disableEffectsOnSaver && powerSaver
     val lifecycleOwner = LocalLifecycleOwner.current
     var started by remember { mutableStateOf(true) }
     DisposableEffect(lifecycleOwner) {
@@ -303,8 +306,8 @@ fun MainScreen(vm: WeatherViewModel) {
             sound.stop()
         }
     }
-    LaunchedEffect(bundle != null, kind, settings.sounds, started) {
-        if (bundle != null && settings.sounds && started) sound.play(kind) else sound.stop()
+    LaunchedEffect(bundle != null, kind, settings.sounds, started, effectsOff) {
+        if (bundle != null && settings.sounds && started && !effectsOff) sound.play(kind) else sound.stop()
     }
     LaunchedEffect(city) {
         while (true) {
@@ -380,7 +383,7 @@ fun MainScreen(vm: WeatherViewModel) {
             ) {
             when {
                 bundle != null -> CompositionLocalProvider(
-                    LocalUnits provides UnitPrefs(settings.windUnit, settings.pressureUnit)
+                    LocalUnits provides UnitPrefs(settings.windUnit, settings.pressureUnit, settings.precipUnit)
                 ) {
                     WeatherDetails(
                         bundle = bundle,
@@ -421,7 +424,7 @@ fun MainScreen(vm: WeatherViewModel) {
 
             ParticleOverlay(
                 when {
-                    bundle == null -> ParticleWeather.None
+                    bundle == null || effectsOff -> ParticleWeather.None
                     kind == Condition.Storm -> ParticleWeather.Storm
                     kind == Condition.Rain || kind == Condition.Hail -> ParticleWeather.HeavyRain
                     kind == Condition.Drizzle -> ParticleWeather.Rain
@@ -691,6 +694,7 @@ private fun WeatherDetails(
                             "Visibility" -> Sheet.Visibility
                             "Cloud" -> Sheet.Cloud
                             "Sun" -> Sheet.Sun
+                            "Travel" -> Sheet.Travel
                             else -> Sheet.Moon
                         }
                     }
@@ -725,6 +729,10 @@ private fun WeatherDetails(
         SunScreen(city, bundle.utcOffsetSeconds, cur.now) { sheet = null }
     }
 
+    if (sheet is Sheet.Travel) {
+        TravelWeatherScreen(city, settings) { sheet = null }
+    }
+
     if (sheet is Sheet.Moon && city != null) {
         MoonCalendarSheet(city, bundle.utcOffsetSeconds, cur.now, cur.cloud, onLiveMoon) { sheet = null }
     }
@@ -736,11 +744,12 @@ private fun WeatherDetails(
             windUnit = settings.windUnit,
             pressureUnit = settings.pressureUnit,
             fahrenheit = settings.fahrenheit,
+            precipUnit = settings.precipUnit,
             onBack = { sheet = null }
         )
     }
 
-    sheet?.takeIf { it !is Sheet.DaySheet && it !is Sheet.Moon && it !is Sheet.Sun && metricKindOf(it) == null }?.let { current ->
+    sheet?.takeIf { it !is Sheet.DaySheet && it !is Sheet.Moon && it !is Sheet.Sun && it !is Sheet.Travel && metricKindOf(it) == null }?.let { current ->
         val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         ModalBottomSheet(onDismissRequest = { sheet = null }, sheetState = sheetState) {
             Column(
@@ -752,6 +761,7 @@ private fun WeatherDetails(
                     Sheet.Moon -> Unit
                     Sheet.Sun -> Unit
                     Sheet.Cloud -> Unit
+                    Sheet.Travel -> Unit
                     Sheet.Visibility -> Unit
                     Sheet.Days -> {
                         Text(tr("Next 7 days"), style = MaterialTheme.typography.titleLarge)
