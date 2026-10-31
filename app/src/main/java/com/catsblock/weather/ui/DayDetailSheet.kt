@@ -309,7 +309,7 @@ private fun DayBody(day: Day, dayHours: List<Hour>, fahrenheit: Boolean, now: Lo
             {
                 GaugeRow(
                     label = tr("Precipitation"),
-                    value = "${f1(day.precipSum)} mm",
+                    value = precipText(day.precipSum, LocalUnits.current.precip),
                     sub = if (day.precipSum <= 0.0) tr("No precipitation expected.") else "${day.rainChance}% ${tr("chance")}"
                 ) { ArcGauge(day.rainChance / 100f, RainBlue, center = "${day.rainChance}%") }
                 Spacer(Modifier.height(14.dp))
@@ -363,15 +363,16 @@ private fun DayBody(day: Day, dayHours: List<Hour>, fahrenheit: Boolean, now: Lo
     DaySunCard(day, now, live)
 
     val precipSeries = dayHours.hourly { it.precip }
+    val precipUnit = LocalUnits.current.precip
     ChartCard(tr("Hourly precipitation"), 5) {
         HourlyChart(
             lines = listOf(ChartLine(precipSeries, RainBlue, tr("Precipitation"))),
             style = HourlyStyle.Bars,
             yMin = 0f,
             yMax = max(3f, precipSeries.top() * 1.25f),
-            thresholds = listOf(Threshold(2.5f, "2.5 mm")),
+            thresholds = listOf(Threshold(2.5f, precipText(2.5, precipUnit))),
             nowHour = marker,
-            format = { _, v -> "${f1(v.toDouble())} mm" }
+            format = { _, v -> precipText(v.toDouble(), precipUnit) }
         )
     }
 
