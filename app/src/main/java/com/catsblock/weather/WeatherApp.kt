@@ -9,10 +9,14 @@ import android.net.NetworkCapabilities
 import android.os.Build
 import android.os.Bundle
 import coil.ImageLoader
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import coil.ImageLoaderFactory
 import coil.decode.GifDecoder
 import coil.decode.ImageDecoderDecoder
 import coil.decode.SvgDecoder
+import com.catsblock.weather.alerts.DailyAlerts
 import com.catsblock.weather.alerts.EclipseAlerts
 import com.catsblock.weather.alerts.RainAlerts
 import com.catsblock.weather.alerts.SnowAlerts
@@ -32,6 +36,8 @@ class WeatherApp : Application(), ImageLoaderFactory {
         EclipseAlerts.ensureChannel(this)
         SnowAlerts.ensureChannel(this)
         AppUpdates.ensureChannel(this)
+        DailyAlerts.ensureChannels(this)
+        CoroutineScope(Dispatchers.IO).launch { runCatching { DailyAlerts.reschedule(this@WeatherApp, replace = false) } }
         BackgroundUpdates.schedule(this)
         if (RadarWidgetUpdater.hasWidgets(this)) RadarWidgetWork.schedule(this)
     }
