@@ -474,8 +474,8 @@ fun CardsDashboard(
         MetricCard(
             title = tr("Precipitation"),
             icon = Icons.Rounded.Umbrella,
-            value = f1(day.precipSum),
-            unit = "mm",
+            value = precipNumber(day.precipSum, LocalUnits.current.precip),
+            unit = LocalUnits.current.precip.label,
             description = precipToday(day.precipSum),
             modifier = Modifier.weight(1f),
             onClick = { onOpen("Precip") }
@@ -519,4 +519,5 @@ fun CardsDashboard(
         CloudCoverCard(cur.cloud, bundle.hours, cur.now, Modifier.fillMaxWidth()) { onOpen("Cloud") }
     }
     if (city != null) MoonCard(city, bundle.utcOffsetSeconds, cur.now) { onOpen("Moon") }
+    TravelCard { onOpen("Travel") }
 }
