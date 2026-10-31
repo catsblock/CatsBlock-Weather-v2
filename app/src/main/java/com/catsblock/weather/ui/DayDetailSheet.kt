@@ -151,6 +151,7 @@ fun DayDetailSheet(
     val collapsePx = with(density) { 110.dp.toPx() }
     val collapse by remember { derivedStateOf { (scroll.value / collapsePx).coerceIn(0f, 1f) } }
     val live = day.date == today
+    val side = detailSidePadding()
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -164,7 +165,7 @@ fun DayDetailSheet(
                     .statusBarsPadding()
                     .padding(top = 64.dp)
                     .navigationBarsPadding()
-                    .padding(start = 16.dp, end = 16.dp, bottom = 40.dp),
+                    .padding(start = side, end = side, bottom = 40.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
                 DayHero(day, fahrenheit)
