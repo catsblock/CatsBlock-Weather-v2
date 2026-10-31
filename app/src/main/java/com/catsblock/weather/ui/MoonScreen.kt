@@ -200,7 +200,7 @@ private fun MoonContent(
                 CloudLayer(activeCloud, Modifier.fillMaxSize())
             }
             Column(
-                Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+                Modifier.fillMaxWidth().padding(horizontal = detailSidePadding(base = 20.dp)),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
                 Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
