@@ -212,7 +212,7 @@ private fun SunContent(city: City, offsetSeconds: Int, now: LocalDateTime, onDis
         LazyColumn(
             Modifier.fillMaxSize(),
             state = listState,
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 16.dp, end = 16.dp, top = statusTop + 64.dp),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(start = detailSidePadding(), end = detailSidePadding(), top = statusTop + 64.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             item {
