@@ -36,6 +36,33 @@ enum class PressureUnit(val label: String, val title: String, val factor: Double
     InHg("inHg", "Inches of mercury (inHg)", 0.02953, 2),
     MmHg("mmHg", "Millimeters of mercury (mmHg)", 0.750062, 0)
 }
+enum class PrecipUnit(val label: String, val title: String, val factor: Double, val decimals: Int) {
+    Mm("mm", "Millimeters (mm)", 1.0, 1),
+    In("in", "Inches (in)", 0.0393701, 2),
+    Cm("cm", "Centimeters (cm)", 0.1, 2)
+}
+
+enum class ColorStyle(val title: String) {
+    Weather("Weather (default)"),
+    Material("Material"),
+    Custom("Custom")
+}
+
+enum class FontChoice(val title: String) {
+    GoogleSans("Google Sans Flex"),
+    System("System default"),
+    Condensed("Condensed"),
+    Serif("Serif"),
+    Monospace("Monospace"),
+    Casual("Casual"),
+    Cursive("Cursive"),
+    Custom("Custom font file")
+}
+
+const val DefaultCustomColor: Int = 0xFF1565C0.toInt()
+const val MinTextScale: Float = 0.8f
+const val MaxTextScale: Float = 1.4f
+
 val EclipseLeadOptions: List<Int> = listOf(1440, 720, 360, 180, 120, 60, 30, 15)
 val SnowLeadOptions: List<Int> = listOf(120, 60, 30, 15)
 
@@ -236,7 +263,15 @@ data class AppSettings(
     val eclipseLeadMinutes: Int = 60,
     val snowAlerts: Boolean = true,
     val snowLeadMinutes: Int = 60,
-    val updateAlerts: Boolean = true
+    val updateAlerts: Boolean = true,
+    val amoled: Boolean = false,
+    val colorStyle: ColorStyle = ColorStyle.Weather,
+    val customColor: Int = DefaultCustomColor,
+    val textScale: Float = 1f,
+    val fontChoice: FontChoice = FontChoice.GoogleSans,
+    val customFontName: String = "",
+    val precipUnit: PrecipUnit = PrecipUnit.Mm,
+    val disableEffectsOnSaver: Boolean = true
 )
 
 data class Continent(val title: String, val cities: List<City>)
