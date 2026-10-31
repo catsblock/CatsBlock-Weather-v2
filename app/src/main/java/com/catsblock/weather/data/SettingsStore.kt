@@ -3,6 +3,7 @@ package com.catsblock.weather.data
 import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -38,6 +39,14 @@ class SettingsStore(private val context: Context) {
         val snowAlerts = booleanPreferencesKey("snow_alerts")
         val snowLead = intPreferencesKey("snow_lead_minutes")
         val updateAlerts = booleanPreferencesKey("update_alerts")
+        val amoled = booleanPreferencesKey("amoled")
+        val colorStyle = stringPreferencesKey("color_style")
+        val customColor = intPreferencesKey("custom_color")
+        val textScale = floatPreferencesKey("text_scale")
+        val fontChoice = stringPreferencesKey("font_choice")
+        val customFontName = stringPreferencesKey("custom_font_name")
+        val precipUnit = stringPreferencesKey("precip_unit")
+        val disableEffectsOnSaver = booleanPreferencesKey("disable_effects_on_saver")
         val saved = stringPreferencesKey("saved_cities")
         val current = stringPreferencesKey("current_city")
     }
@@ -65,7 +74,15 @@ class SettingsStore(private val context: Context) {
             eclipseLeadMinutes = it[Keys.eclipseLead]?.takeIf { value -> value in EclipseLeadOptions } ?: 60,
             snowAlerts = it[Keys.snowAlerts] ?: true,
             snowLeadMinutes = it[Keys.snowLead]?.takeIf { value -> value in SnowLeadOptions } ?: 60,
-            updateAlerts = it[Keys.updateAlerts] ?: true
+            updateAlerts = it[Keys.updateAlerts] ?: true,
+            amoled = it[Keys.amoled] ?: false,
+            colorStyle = runCatching { ColorStyle.valueOf(it[Keys.colorStyle] ?: "") }.getOrDefault(ColorStyle.Weather),
+            customColor = it[Keys.customColor] ?: DefaultCustomColor,
+            textScale = (it[Keys.textScale] ?: 1f).coerceIn(MinTextScale, MaxTextScale),
+            fontChoice = runCatching { FontChoice.valueOf(it[Keys.fontChoice] ?: "") }.getOrDefault(FontChoice.GoogleSans),
+            customFontName = it[Keys.customFontName].orEmpty(),
+            precipUnit = runCatching { PrecipUnit.valueOf(it[Keys.precipUnit] ?: "") }.getOrDefault(PrecipUnit.Mm),
+            disableEffectsOnSaver = it[Keys.disableEffectsOnSaver] ?: true
         )
     }
 
@@ -175,6 +192,41 @@ class SettingsStore(private val context: Context) {
 
     suspend fun setUpdateAlerts(value: Boolean) {
         context.dataStore.edit { it[Keys.updateAlerts] = value }
+    }
+
+    suspend fun setAmoled(value: Boolean) {
+        context.dataStore.edit { it[Keys.amoled] = value }
+    }
+
+    suspend fun setColorStyle(value: ColorStyle) {
+        context.dataStore.edit { it[Keys.colorStyle] = value.name }
+    }
+
+    suspend fun setCustomColor(value: Int) {
+        context.dataStore.edit { it[Keys.customColor] = value }
+    }
+
+    suspend fun setTextScale(value: Float) {
+        context.dataStore.edit { it[Keys.textScale] = value.coerceIn(MinTextScale, MaxTextScale) }
+    }
+
+    suspend fun setFontChoice(value: FontChoice) {
+        context.dataStore.edit { it[Keys.fontChoice] = value.name }
+    }
+
+    suspend fun setCustomFont(name: String) {
+        context.dataStore.edit {
+            it[Keys.customFontName] = name
+            it[Keys.fontChoice] = FontChoice.Custom.name
+        }
+    }
+
+    suspend fun setPrecipUnit(value: PrecipUnit) {
+        context.dataStore.edit { it[Keys.precipUnit] = value.name }
+    }
+
+    suspend fun setDisableEffectsOnSaver(value: Boolean) {
+        context.dataStore.edit { it[Keys.disableEffectsOnSaver] = value }
     }
 
     suspend fun saveCities(cities: List<City>) {
