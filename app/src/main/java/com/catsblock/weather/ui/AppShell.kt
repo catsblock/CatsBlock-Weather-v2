@@ -27,7 +27,16 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -39,6 +48,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Cloud
 import androidx.compose.material.icons.outlined.Map
@@ -69,6 +79,8 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.catsblock.weather.i18n.tr
@@ -95,6 +107,7 @@ enum class AppTab(
 
 private val BarHeight = 68.dp
 private val BarGap = 12.dp
+private val RailWidth = 96.dp
 private val Emphasized = CubicBezierEasing(0.2f, 0f, 0f, 1f)
 
 @Composable
@@ -103,10 +116,21 @@ fun AppShell(vm: WeatherViewModel, screen: Screen?) {
     val tab = AppTab.of(screen) ?: last
     SideEffect { last = tab }
 
+    val layout = LocalWindowLayout.current
     val navBottom: Dp = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-    val inset = navBottom + BarHeight + BarGap * 2
+    val inset = if (layout.useRail) navBottom + 16.dp else navBottom + BarHeight + BarGap * 2
 
-    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+    val onSelect: (AppTab) -> Unit = {
+        if (it != tab) {
+            when (it) {
+                AppTab.Weather -> vm.openWeather()
+                AppTab.WeatherMap -> vm.openMap()
+                AppTab.Settings -> vm.openSettings()
+            }
+        }
+    }
+
+    val content: @Composable () -> Unit = {
         CompositionLocalProvider(LocalBottomInset provides inset) {
             AnimatedContent(
                 targetState = tab,
@@ -132,18 +156,108 @@ fun AppShell(vm: WeatherViewModel, screen: Screen?) {
                 }
             }
         }
-        ExpressiveNavigationBar(
-            selected = tab,
-            onSelect = {
-                if (it != tab) {
-                    when (it) {
-                        AppTab.Weather -> vm.openWeather()
-                        AppTab.WeatherMap -> vm.openMap()
-                        AppTab.Settings -> vm.openSettings()
-                    }
-                }
-            },
-            modifier = Modifier.align(Alignment.BottomCenter)
+    }
+
+    if (layout.useRail) {
+        Row(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+            ExpressiveNavigationRail(selected = tab, onSelect = onSelect)
+            Box(Modifier.weight(1f).fillMaxHeight()) { content() }
+        }
+    } else {
+        Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+            content()
+            ExpressiveNavigationBar(
+                selected = tab,
+                onSelect = onSelect,
+                modifier = Modifier.align(Alignment.BottomCenter)
+            )
+        }
+    }
+}
+
+@Composable
+private fun ExpressiveNavigationRail(
+    selected: AppTab,
+    onSelect: (AppTab) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val scheme = MaterialTheme.colorScheme
+    val onWeather = selected == AppTab.Weather
+    val container by animateColorAsState(
+        if (onWeather) Color(0xFF0E141C) else scheme.surfaceContainer, tween(280), label = "railContainer"
+    )
+    val idleTint by animateColorAsState(
+        if (onWeather) Color(0xB3FFFFFF) else scheme.onSurfaceVariant, tween(280), label = "railIdle"
+    )
+    val pill by animateColorAsState(
+        if (onWeather) Color(0x33FFFFFF) else scheme.secondaryContainer, tween(280), label = "railPill"
+    )
+    val activeTint by animateColorAsState(
+        if (onWeather) Color.White else scheme.onSecondaryContainer, tween(280), label = "railActive"
+    )
+    Box(
+        modifier
+            .fillMaxHeight()
+            .width(RailWidth)
+            .background(container)
+            .windowInsetsPadding(
+                WindowInsets.systemBars.union(WindowInsets.displayCutout)
+                    .only(WindowInsetsSides.Start + WindowInsetsSides.Vertical)
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            AppTab.entries.forEach { tab ->
+                RailItem(tab, tab == selected, idleTint, activeTint, pill) { onSelect(tab) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RailItem(
+    tab: AppTab,
+    selected: Boolean,
+    idleTint: Color,
+    activeTint: Color,
+    pill: Color,
+    onClick: () -> Unit
+) {
+    val haptics = LocalHapticFeedback.current
+    val indicator by animateColorAsState(if (selected) pill else Color.Transparent, tween(240), label = "indicator")
+    val tint = if (selected) activeTint else idleTint
+    Column(
+        Modifier
+            .width(RailWidth - 8.dp)
+            .clip(RoundedCornerShape(22.dp))
+            .clickable(role = Role.Tab) {
+                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                onClick()
+            }
+            .padding(vertical = 6.dp, horizontal = 2.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Box(
+            Modifier
+                .width(60.dp)
+                .height(34.dp)
+                .background(indicator, CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            AnimatedNavigationIcon(tab, selected, tint)
+        }
+        Spacer(Modifier.height(4.dp))
+        Text(
+            tr(tab.label),
+            color = tint,
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+            textAlign = TextAlign.Center,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
         )
     }
 }
