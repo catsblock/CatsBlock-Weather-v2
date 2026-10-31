@@ -1,6 +1,10 @@
 package com.catsblock.weather.data
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
@@ -31,7 +35,8 @@ data class TravelStop(
     val isDay: Boolean,
     val precipMm: Double,
     val visibilityKm: Double,
-    val cloudPercent: Int
+    val cloudPercent: Int,
+    val name: String? = null
 )
 
 data class TravelPlan(
@@ -61,7 +66,7 @@ object TravelPlanner {
         val route = route(from.point, to.point)
         val samples = sample(route.path, route.distanceKm)
         val departure = Instant.now()
-        val stops = forecast(samples, route.durationMinutes, departure)
+        val stops = withNames(forecast(samples, route.durationMinutes, departure))
         return TravelPlan(from, to, route.path, route.distanceKm, route.durationMinutes, stops)
     }
 
@@ -174,6 +179,28 @@ object TravelPlanner {
                 cloudPercent = hourly.getJSONArray("cloud_cover").optInt(slot, 0)
             )
         }
+    }
+
+    private suspend fun withNames(stops: List<TravelStop>): List<TravelStop> = coroutineScope {
+        stops.mapIndexed { index, stop ->
+            async {
+                if (index == 0 || index == stops.lastIndex) stop else stop.copy(name = placeName(stop.point))
+            }
+        }.awaitAll()
+    }
+
+    private suspend fun placeName(point: RoutePoint): String? = try {
+        val url = "https://api.bigdatacloud.net/data/reverse-geocode-client".toHttpUrl().newBuilder()
+            .addQueryParameter("latitude", "%.4f".format(java.util.Locale.US, point.lat))
+            .addQueryParameter("longitude", "%.4f".format(java.util.Locale.US, point.lon))
+            .addQueryParameter("localityLanguage", "en")
+            .build()
+        val json = JSONObject(get(url.toString()))
+        listOf(json.optString("city"), json.optString("locality")).firstOrNull { it.isNotBlank() }
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        null
     }
 
     private suspend fun get(url: String): String = withContext(Dispatchers.IO) {
