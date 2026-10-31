@@ -421,6 +421,10 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
         )
     }
 
+    val windowLayout = LocalWindowLayout.current
+    val settingsSide = if (windowLayout.isWide) {
+        ((windowLayout.widthDp - 96 - 720) / 2).coerceAtLeast(24).dp
+    } else 16.dp
     Scaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
@@ -435,7 +439,7 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
                 .padding(padding)
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp, vertical = 8.dp)
+                .padding(horizontal = settingsSide, vertical = 8.dp)
                 .padding(bottom = LocalBottomInset.current)
         ) {
             CategoryTitle(tr("Appearance"))
