@@ -346,6 +346,7 @@ fun DetailDialog(
     }
     val statusTop = with(density) { WindowInsets.statusBars.getTop(density).toDp() }
     val navBottom = with(density) { WindowInsets.navigationBars.getBottom(density).toDp() }
+    val side = detailSidePadding()
 
     Dialog(
         onDismissRequest = onBack,
@@ -360,8 +361,8 @@ fun DetailDialog(
                 state = listState,
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(
-                    start = 16.dp,
-                    end = 16.dp,
+                    start = side,
+                    end = side,
                     top = statusTop + 64.dp,
                     bottom = navBottom + 40.dp
                 ),
