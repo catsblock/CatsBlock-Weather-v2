@@ -12,6 +12,7 @@ import android.location.Geocoder
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.catsblock.weather.alerts.DailyAlerts
 import com.catsblock.weather.alerts.EclipseAlerts
 import com.catsblock.weather.alerts.RainAlerts
 import com.catsblock.weather.alerts.SnowAlerts
@@ -424,6 +425,7 @@ class WeatherViewModel(private val app: Application) : AndroidViewModel(app) {
             runCatching { RainAlerts.onFresh(app, target, bundle) }
             runCatching { SnowAlerts.onFresh(app, target, bundle) }
             runCatching { EclipseAlerts.onFresh(app, target) }
+            runCatching { DailyAlerts.onFresh(app, target, bundle) }
             runCatching { AppUpdates.check(app) }
         } catch (e: CancellationException) {
             throw e
