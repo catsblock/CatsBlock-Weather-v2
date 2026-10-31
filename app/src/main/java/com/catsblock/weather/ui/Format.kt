@@ -4,6 +4,7 @@ import com.catsblock.weather.data.WeatherSource
 import com.catsblock.weather.i18n.tr
 import com.catsblock.weather.data.WindUnit
 import com.catsblock.weather.data.PressureUnit
+import com.catsblock.weather.data.PrecipUnit
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -69,7 +70,8 @@ fun tempText(celsius: Double, fahrenheit: Boolean): String =
 
 data class UnitPrefs(
     val wind: WindUnit = WindUnit.Kmh,
-    val pressure: PressureUnit = PressureUnit.Hpa
+    val pressure: PressureUnit = PressureUnit.Hpa,
+    val precip: PrecipUnit = PrecipUnit.Mm
 )
 
 val LocalUnits = compositionLocalOf { UnitPrefs() }
@@ -89,6 +91,15 @@ fun pressureFormat(value: Double, unit: PressureUnit): String =
 fun pressureNumber(hpa: Double, unit: PressureUnit): String = pressureFormat(pressureValue(hpa, unit), unit)
 
 fun pressureCaption(unit: PressureUnit): String = tr(unit.title)
+
+fun precipValue(mm: Double, unit: PrecipUnit): Double = mm * unit.factor
+
+fun precipNumber(mm: Double, unit: PrecipUnit): String =
+    String.format(Locale.US, "%.${unit.decimals}f", precipValue(mm, unit))
+
+fun precipText(mm: Double, unit: PrecipUnit): String = "${precipNumber(mm, unit)} ${unit.label}"
+
+fun precipRateText(mm: Double, unit: PrecipUnit): String = "${precipText(mm, unit)}/h"
 
 fun sourceTitle(source: WeatherSource): String = when (source) {
     WeatherSource.OpenMeteo -> tr("Open-Meteo (free, no key)")
