@@ -121,7 +121,6 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
@@ -140,6 +139,7 @@ import com.catsblock.weather.i18n.leadFull
 import com.catsblock.weather.i18n.I18n
 import com.catsblock.weather.i18n.tr
 import com.catsblock.weather.ui.alerts.AlertSettingsScreen
+import com.catsblock.weather.ui.alerts.alertText
 import com.catsblock.weather.ui.developer.DeveloperSettingsScreen
 import com.catsblock.weather.ui.developer.DeveloperStore
 import com.catsblock.weather.update.UpdateInfo
@@ -814,8 +814,8 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
             Group {
                 NavRow(
                     Icons.Rounded.NotificationsActive,
-                    stringResource(R.string.alerts_entry_title),
-                    stringResource(R.string.alerts_entry_desc),
+                    alertText(R.string.alerts_entry_title),
+                    alertText(R.string.alerts_entry_desc),
                     { alertsOpen = true }
                 )
             }
