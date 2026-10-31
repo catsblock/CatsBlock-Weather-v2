@@ -23,6 +23,10 @@ import com.catsblock.weather.data.CitySummary
 import com.catsblock.weather.data.Condition
 import com.catsblock.weather.data.NetworkPolicy
 import com.catsblock.weather.data.SettingsStore
+import com.catsblock.weather.data.ActivityStore
+import com.catsblock.weather.data.ColorStyle
+import com.catsblock.weather.data.FontChoice
+import com.catsblock.weather.data.PrecipUnit
 import com.catsblock.weather.data.ThemeMode
 import com.catsblock.weather.data.WeatherBundle
 import com.catsblock.weather.data.WeatherBus
@@ -57,7 +61,7 @@ import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 import java.util.Locale
 
-enum class Screen { Welcome, Picker, Main, Map, Settings, IconKit, BackgroundKit, AppIcon, LiveMoon, Privacy }
+enum class Screen { Welcome, Picker, Main, Map, Settings, IconKit, BackgroundKit, AppIcon, LiveMoon, Privacy, Info }
 
 sealed interface WeatherState {
     data object Idle : WeatherState
@@ -74,6 +78,7 @@ class WeatherViewModel(private val app: Application) : AndroidViewModel(app) {
     }
 
     private val store = SettingsStore(app)
+    private val activity = ActivityStore(app)
     private val repo = WeatherRepository()
     private var loadJob: Job? = null
 
@@ -85,13 +90,17 @@ class WeatherViewModel(private val app: Application) : AndroidViewModel(app) {
     private val cache = HashMap<String, WeatherBundle>()
     private val lastUpdated = HashMap<String, Long>()
     private var privacyReturn = Screen.Settings
+    private var infoReturn = Screen.Settings
     val city = MutableStateFlow<City?>(null)
     val weather = MutableStateFlow<WeatherState>(WeatherState.Idle)
     val summaries = MutableStateFlow<Map<String, CitySummary>>(emptyMap())
     val settings = store.settings.stateIn(viewModelScope, SharingStarted.Eagerly, AppSettings())
 
+    val activityStats = activity.stats.stateIn(viewModelScope, SharingStarted.Eagerly, com.catsblock.weather.data.ActivityStats())
+
     init {
         viewModelScope.launch { settings.collect { UserKeys.update(it.apiKeys) } }
+        viewModelScope.launch { runCatching { activity.checkIn() } }
     }
     val savedCities = store.savedCities.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
@@ -225,6 +234,11 @@ class WeatherViewModel(private val app: Application) : AndroidViewModel(app) {
         screen.value = Screen.Privacy
     }
 
+    fun openInfo(from: Screen) {
+        infoReturn = from
+        screen.value = Screen.Info
+    }
+
     fun openSettings() {
         screen.value = Screen.Settings
     }
@@ -250,6 +264,7 @@ class WeatherViewModel(private val app: Application) : AndroidViewModel(app) {
             Screen.Picker -> if (city.value != null) Screen.Main else Screen.Welcome
             Screen.Settings, Screen.Map, Screen.LiveMoon -> Screen.Main
             Screen.Privacy -> privacyReturn
+            Screen.Info -> infoReturn
             Screen.IconKit, Screen.BackgroundKit, Screen.AppIcon -> Screen.Settings
             else -> screen.value
         }
@@ -404,6 +419,7 @@ class WeatherViewModel(private val app: Application) : AndroidViewModel(app) {
             lastUpdated[target.id] = SystemClock.elapsedRealtime()
             weather.value = WeatherState.Success(bundle)
             notifyUsageLimitIfNeeded()
+            runCatching { activity.record(target, bundle) }
             runCatching { WidgetUpdater.publish(app, target, bundle) }
             runCatching { RainAlerts.onFresh(app, target, bundle) }
             runCatching { SnowAlerts.onFresh(app, target, bundle) }
@@ -448,6 +464,38 @@ class WeatherViewModel(private val app: Application) : AndroidViewModel(app) {
 
     fun setTheme(value: ThemeMode) {
         viewModelScope.launch { store.setTheme(value) }
+    }
+
+    fun setAmoled(value: Boolean) {
+        viewModelScope.launch { store.setAmoled(value) }
+    }
+
+    fun setColorStyle(value: ColorStyle) {
+        viewModelScope.launch { store.setColorStyle(value) }
+    }
+
+    fun setCustomColor(value: Int) {
+        viewModelScope.launch { store.setCustomColor(value) }
+    }
+
+    fun setTextScale(value: Float) {
+        viewModelScope.launch { store.setTextScale(value) }
+    }
+
+    fun setFontChoice(value: FontChoice) {
+        viewModelScope.launch { store.setFontChoice(value) }
+    }
+
+    fun setCustomFont(name: String) {
+        viewModelScope.launch { store.setCustomFont(name) }
+    }
+
+    fun setPrecipUnit(value: PrecipUnit) {
+        viewModelScope.launch { store.setPrecipUnit(value) }
+    }
+
+    fun setDisableEffectsOnSaver(value: Boolean) {
+        viewModelScope.launch { store.setDisableEffectsOnSaver(value) }
     }
 
     fun setCompactHero(value: Boolean) {
