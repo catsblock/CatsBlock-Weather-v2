@@ -66,6 +66,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.catsblock.weather.i18n.tr
+import com.catsblock.weather.ui.detailSidePadding
 import com.catsblock.weather.ui.typography.GoogleSansFlex
 import kotlinx.coroutines.delay
 
