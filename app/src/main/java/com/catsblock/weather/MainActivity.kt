@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -51,6 +52,7 @@ import com.catsblock.weather.i18n.AppLanguage
 import com.catsblock.weather.i18n.I18n
 import com.catsblock.weather.i18n.tr
 import com.catsblock.weather.ui.AppIconScreen
+import com.catsblock.weather.ui.AdaptivePage
 import com.catsblock.weather.ui.AppShell
 import com.catsblock.weather.ui.BackgroundKitScreen
 import com.catsblock.weather.ui.CityPickerScreen
@@ -58,11 +60,13 @@ import com.catsblock.weather.ui.IconKitScreen
 import com.catsblock.weather.ui.InfoScreen
 import com.catsblock.weather.ui.LiveMoonScreen
 import com.catsblock.weather.ui.PrivacyPolicyScreen
+import com.catsblock.weather.ui.LocalWindowLayout
 import com.catsblock.weather.ui.Screen
 import com.catsblock.weather.ui.WeatherTheme
 import com.catsblock.weather.ui.WeatherState
 import com.catsblock.weather.ui.WeatherViewModel
 import com.catsblock.weather.ui.WelcomeScreen
+import com.catsblock.weather.ui.rememberWindowLayout
 import java.util.Locale
 
 class MainActivity : ComponentActivity() {
@@ -81,7 +85,9 @@ class MainActivity : ComponentActivity() {
             val current = (weather as? WeatherState.Success)?.bundle?.current
             WeatherTheme(settings, current?.kind, current?.isDay ?: true) {
                 I18n.lang = settings.language
-                key(settings.language) { AppRoot(vm) }
+                CompositionLocalProvider(LocalWindowLayout provides rememberWindowLayout()) {
+                    key(settings.language) { AppRoot(vm) }
+                }
             }
         }
     }
@@ -172,15 +178,15 @@ private fun AppRoot(vm: WeatherViewModel) {
         when (target) {
             null -> Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background))
             Screen.Welcome -> WelcomeScreen(vm)
-            Screen.Picker -> CityPickerScreen(vm)
+            Screen.Picker -> AdaptivePage(640.dp) { CityPickerScreen(vm) }
             Screen.Main -> AppShell(vm, screen)
             Screen.Map, Screen.Settings -> AppShell(vm, screen)
             Screen.IconKit -> IconKitScreen(vm)
             Screen.BackgroundKit -> BackgroundKitScreen(vm)
-            Screen.AppIcon -> AppIconScreen(vm)
+            Screen.AppIcon -> AdaptivePage { AppIconScreen(vm) }
             Screen.LiveMoon -> LiveMoonScreen(vm)
-            Screen.Privacy -> PrivacyPolicyScreen(vm)
-            Screen.Info -> InfoScreen(vm)
+            Screen.Privacy -> AdaptivePage { PrivacyPolicyScreen(vm) }
+            Screen.Info -> AdaptivePage { InfoScreen(vm) }
         }
     }
 }
