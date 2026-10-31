@@ -55,6 +55,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.coerceAtLeast
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
 import com.catsblock.weather.data.City
@@ -108,9 +109,10 @@ fun CitiesOverlay(
     val topInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val bottomInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     val cardTop = topInset + 72.dp
-    val side = 16.dp
+    val baseSide = 16.dp
 
     BoxWithConstraints(Modifier.fillMaxSize()) {
+        val side = if (maxWidth >= 600.dp) ((maxWidth - 640.dp) / 2).coerceAtLeast(baseSide) else baseSide
         val scrollDp = with(density) { scroll.value.toDp() }
         val first = ordered.firstOrNull()
         val firstSummary = if (first != null && first.id == selectedId) current ?: summaries[first.id] else first?.let { summaries[it.id] }
@@ -194,7 +196,7 @@ fun CitiesOverlay(
         Row(
             Modifier
                 .fillMaxWidth()
-                .padding(top = topInset + 12.dp, start = 24.dp, end = 12.dp)
+                .padding(top = topInset + 12.dp, start = side + 8.dp, end = side - 4.dp)
                 .graphicsLayer {
                     alpha = ((t - 0.3f) / 0.5f).coerceIn(0f, 1f)
                     translationY = (1f - alpha) * -16.dp.toPx()
