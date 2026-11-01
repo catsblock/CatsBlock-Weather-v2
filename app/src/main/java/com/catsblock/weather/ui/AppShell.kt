@@ -53,9 +53,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Cloud
 import androidx.compose.material.icons.outlined.Map
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.Stars
 import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material.icons.rounded.Map
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Stars
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -98,6 +100,7 @@ enum class AppTab(
 ) {
     Weather(Screen.Main, "Weather", Icons.Outlined.Cloud, Icons.Rounded.Cloud),
     WeatherMap(Screen.Map, "Weather map", Icons.Outlined.Map, Icons.Rounded.Map),
+    Agent(Screen.Agent, "Agent", Icons.Outlined.Stars, Icons.Rounded.Stars),
     Settings(Screen.Settings, "Settings", Icons.Outlined.Settings, Icons.Rounded.Settings);
 
     companion object {
@@ -125,6 +128,7 @@ fun AppShell(vm: WeatherViewModel, screen: Screen?) {
             when (it) {
                 AppTab.Weather -> vm.openWeather()
                 AppTab.WeatherMap -> vm.openMap()
+                AppTab.Agent -> vm.openAgent()
                 AppTab.Settings -> vm.openSettings()
             }
         }
@@ -152,6 +156,7 @@ fun AppShell(vm: WeatherViewModel, screen: Screen?) {
                 when (target) {
                     AppTab.Weather -> MainScreen(vm)
                     AppTab.WeatherMap -> MapScreen(vm)
+                    AppTab.Agent -> AgentScreen(vm)
                     AppTab.Settings -> SettingsScreen(vm)
                 }
             }
@@ -299,7 +304,7 @@ private fun RowScope.NavigationItem(tab: AppTab, selected: Boolean, onClick: () 
     val scheme = MaterialTheme.colorScheme
     val haptics = LocalHapticFeedback.current
     val weight by animateFloatAsState(
-        if (selected) 2.3f else 1f,
+        if (selected) 2.6f else 1f,
         spring(dampingRatio = 0.74f, stiffness = Spring.StiffnessMediumLow),
         label = "weight"
     )
@@ -361,7 +366,8 @@ private fun RowScope.NavigationItem(tab: AppTab, selected: Boolean, onClick: () 
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
-                    softWrap = false
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
         }
@@ -403,6 +409,11 @@ private fun AnimatedNavigationIcon(tab: AppTab, selected: Boolean, tint: Color) 
                         rotationZ = 24f * sin(t * PI * 3.0).toFloat() * decay
                         scaleX *= 1f + 0.12f * arc
                         scaleY *= 1f + 0.12f * arc
+                    }
+                    AppTab.Agent -> {
+                        rotationZ = 144f * t
+                        scaleX *= 1f + 0.22f * arc
+                        scaleY *= 1f + 0.22f * arc
                     }
                     AppTab.Settings -> rotationZ = 180f * t
                 }
