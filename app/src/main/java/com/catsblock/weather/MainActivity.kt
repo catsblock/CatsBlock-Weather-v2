@@ -61,6 +61,7 @@ import com.catsblock.weather.ui.InfoScreen
 import com.catsblock.weather.ui.LiveMoonScreen
 import com.catsblock.weather.ui.PrivacyPolicyScreen
 import com.catsblock.weather.ui.LocalWindowLayout
+import com.catsblock.weather.ui.RegionGate
 import com.catsblock.weather.ui.Screen
 import com.catsblock.weather.ui.WeatherTheme
 import com.catsblock.weather.ui.WeatherState
@@ -86,7 +87,7 @@ class MainActivity : ComponentActivity() {
             WeatherTheme(settings, current?.kind, current?.isDay ?: true) {
                 I18n.lang = settings.language
                 CompositionLocalProvider(LocalWindowLayout provides rememberWindowLayout()) {
-                    key(settings.language) { AppRoot(vm) }
+                    key(settings.language) { RegionGate { AppRoot(vm) } }
                 }
             }
         }
