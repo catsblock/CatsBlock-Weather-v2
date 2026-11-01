@@ -8,6 +8,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import okio.BufferedSource
 import org.json.JSONObject
 import java.io.IOException
 import java.time.LocalDate
@@ -22,9 +23,18 @@ object AgentMessages {
     const val FAILED = "Something went wrong while trying to send your message."
     const val REFUSED = "I can't help with this."
     const val LIMIT = "You have reached the limit of 5 messages. Please wait 24 hours before trying again."
+    const val REGION = "Our service is not available in your region."
 
-    val known: Set<String> = setOf(TOO_LONG, FAILED, REFUSED, LIMIT)
+    val known: Set<String> = setOf(TOO_LONG, FAILED, REFUSED, LIMIT, REGION)
 }
+
+enum class StepStatus { Run, Done, Fail }
+
+data class AgentStep(
+    val id: String,
+    val status: StepStatus,
+    val command: String
+)
 
 data class AgentDay(
     val date: LocalDate,
@@ -63,7 +73,12 @@ class AgentClient {
         .callTimeout(45, TimeUnit.SECONDS)
         .build()
 
-    suspend fun ask(message: String, city: City, settings: AppSettings): AgentOutcome = withContext(Dispatchers.IO) {
+    suspend fun ask(
+        message: String,
+        city: City,
+        settings: AppSettings,
+        onStep: (AgentStep) -> Unit = {}
+    ): AgentOutcome = withContext(Dispatchers.IO) {
         val base = SecretKeys.baseUrl()
         if (base.isEmpty()) return@withContext AgentOutcome.Failure(AgentMessages.FAILED)
         try {
@@ -77,18 +92,17 @@ class AgentClient {
                 .toString()
             val builder = Request.Builder()
                 .url("$base/v1/agent")
+                .header("X-Agent-Stream", "1")
                 .post(payload.toRequestBody("application/json; charset=utf-8".toMediaType()))
             SecretKeys.appToken().takeIf { it.isNotEmpty() }?.let { builder.header("X-App-Token", it) }
             client.newCall(builder.build()).execute().use { response ->
-                val raw = response.body?.string().orEmpty()
-                val root = runCatching { JSONObject(raw) }.getOrNull()
-                if (!response.isSuccessful || root == null) {
-                    val known = root?.optString("message").orEmpty()
-                    return@use AgentOutcome.Failure(if (known in AgentMessages.known) known else AgentMessages.FAILED)
+                val body = response.body
+                val streaming = response.header("Content-Type").orEmpty().startsWith("application/x-ndjson")
+                if (streaming && body != null) {
+                    readStream(body.source(), onStep)
+                } else {
+                    outcomeOf(response.isSuccessful, runCatching { JSONObject(body?.string().orEmpty()) }.getOrNull())
                 }
-                val reply = root.optString("reply").trim()
-                val cards = parseCards(root)
-                if (reply.isEmpty() && cards.isEmpty()) AgentOutcome.Failure(AgentMessages.FAILED) else AgentOutcome.Reply(reply, cards)
             }
         } catch (e: CancellationException) {
             throw e
@@ -99,6 +113,46 @@ class AgentClient {
             AppLog.warn("Agent", "Unexpected failure", e)
             AgentOutcome.Failure(AgentMessages.FAILED)
         }
+    }
+
+    private fun readStream(source: BufferedSource, onStep: (AgentStep) -> Unit): AgentOutcome {
+        var outcome: AgentOutcome = AgentOutcome.Failure(AgentMessages.FAILED)
+        while (true) {
+            val line = source.readUtf8Line() ?: break
+            if (line.isBlank()) continue
+            val event = runCatching { JSONObject(line) }.getOrNull() ?: continue
+            when (event.optString("type")) {
+                "step" -> parseStep(event)?.let(onStep)
+                "final" -> outcome = outcomeOf(event.optInt("status") in 200..299, event.optJSONObject("body"))
+            }
+        }
+        return outcome
+    }
+
+    private fun parseStep(item: JSONObject): AgentStep? {
+        val id = item.optString("id")
+        if (id.isEmpty()) return null
+        val status = when (item.optString("status")) {
+            "run" -> StepStatus.Run
+            "done" -> StepStatus.Done
+            "fail" -> StepStatus.Fail
+            else -> return null
+        }
+        return AgentStep(id, status, item.optString("command"))
+    }
+
+    private fun outcomeOf(success: Boolean, root: JSONObject?): AgentOutcome {
+        if (root != null && root.optString("error") == "region_blocked") {
+            RegionGuard.report()
+            return AgentOutcome.Failure(AgentMessages.REGION)
+        }
+        if (!success || root == null) {
+            val message = root?.optString("message").orEmpty()
+            return AgentOutcome.Failure(if (message in AgentMessages.known) message else AgentMessages.FAILED)
+        }
+        val reply = root.optString("reply").trim()
+        val cards = parseCards(root)
+        return if (reply.isEmpty() && cards.isEmpty()) AgentOutcome.Failure(AgentMessages.FAILED) else AgentOutcome.Reply(reply, cards)
     }
 
     private fun parseCards(root: JSONObject): List<AgentCard> {
