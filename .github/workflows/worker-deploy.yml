@@ -85,6 +85,14 @@ jobs:
           [[kv_namespaces]]
           binding = "APP_KV"
           id = "${KV_ID}"
+
+          [[durable_objects.bindings]]
+          name = "RATE_LIMITER"
+          class_name = "RateLimiter"
+
+          [[migrations]]
+          tag = "v1"
+          new_sqlite_classes = ["RateLimiter"]
           EOF
 
       - name: Deploy Worker
