@@ -2,7 +2,7 @@ package com.catsblock.weather.i18n
 
 private fun row(key: String, vararg values: String): Pair<String, Array<out String>> = key to values
 
-internal val agentStrings: Map<String, Array<out String>> = mapOf(
+private val agentBaseStrings: Map<String, Array<out String>> = mapOf(
     row("Agent", "Agente", "Agente", "Agente", "Agent", "Агент", "Agent", "Agente", "에이전트", "Agen"),
     row("Ask the Agent about the weather", "Pergunte ao Agente sobre o clima", "Pergunte ao Agente sobre o tempo", "Pregunta al Agente sobre el clima", "Posez une question à l'Agent sur la météo", "Спросите агента о погоде", "Frag den Agenten nach dem Wetter", "Chiedi all'Agente del meteo", "에이전트에게 날씨를 물어보세요", "Tanya Agen tentang cuaca"),
     row("What will the weather be like in New York?", "Como vai estar o clima em Nova York?", "Como vai estar o tempo em Nova Iorque?", "¿Cómo estará el clima en Nueva York?", "Quel temps fera-t-il à New York ?", "Какая погода будет в Нью-Йорке?", "Wie wird das Wetter in New York?", "Che tempo farà a New York?", "뉴욕 날씨는 어떨까요?", "Bagaimana cuaca di New York nanti?"),
@@ -19,3 +19,5 @@ internal val agentStrings: Map<String, Array<out String>> = mapOf(
     row("Forecast", "Previsão", "Previsão", "Pronóstico", "Prévisions", "Прогноз", "Vorhersage", "Previsioni", "예보", "Prakiraan"),
     row("Past days", "Dias anteriores", "Dias anteriores", "Días anteriores", "Jours passés", "Прошлые дни", "Vergangene Tage", "Giorni passati", "지난 며칠", "Hari-hari lalu")
 )
+
+internal val agentStrings: Map<String, Array<out String>> = agentBaseStrings + complianceStrings
