@@ -149,7 +149,7 @@ private fun AppRoot(vm: WeatherViewModel) {
         ThemeMode.Light -> false
         ThemeMode.Dark -> true
     }
-    val inShell = screen == Screen.Main || screen == Screen.Map || screen == Screen.Settings
+    val inShell = screen == Screen.Main || screen == Screen.Map || screen == Screen.Agent || screen == Screen.Settings
     val onMain = screen == Screen.Main
     val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
@@ -180,7 +180,7 @@ private fun AppRoot(vm: WeatherViewModel) {
             Screen.Welcome -> WelcomeScreen(vm)
             Screen.Picker -> AdaptivePage(640.dp) { CityPickerScreen(vm) }
             Screen.Main -> AppShell(vm, screen)
-            Screen.Map, Screen.Settings -> AppShell(vm, screen)
+            Screen.Map, Screen.Agent, Screen.Settings -> AppShell(vm, screen)
             Screen.IconKit -> IconKitScreen(vm)
             Screen.BackgroundKit -> BackgroundKitScreen(vm)
             Screen.AppIcon -> AdaptivePage { AppIconScreen(vm) }
