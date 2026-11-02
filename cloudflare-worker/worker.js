@@ -684,16 +684,35 @@ function parseHistory(raw) {
   return out;
 }
 
-function agentApiKey(env) {
-  for (const name of AGENT_KEY_NAMES) {
-    const value = env[name];
-    if (typeof value === "string" && value.trim().length > 0) return value.trim();
+const AGENT_KEY_NAME_PATTERN = /(GEMINI|GOOGLE|GENAI|GENERATIVE).*(KEY|TOKEN|SECRET)|^AGENT.*KEY/i;
+
+async function readEnvSecret(value) {
+  try {
+    if (typeof value === "string") return value.trim();
+    if (value && typeof value.get === "function") {
+      const resolved = await value.get();
+      return typeof resolved === "string" ? resolved.trim() : "";
+    }
+  } catch (err) {
+    return "";
   }
   return "";
 }
 
-function configuredAgentModels(env) {
-  return agentApiKey(env) ? AGENT_MODELS : [];
+async function agentApiKey(env) {
+  const names = AGENT_KEY_NAMES.concat(Object.keys(env).filter((name) => AGENT_KEY_NAME_PATTERN.test(name) && AGENT_KEY_NAMES.indexOf(name) < 0));
+  let fallback = "";
+  for (const name of names) {
+    const value = await readEnvSecret(env[name]);
+    if (value.length < 20) continue;
+    if (value.startsWith("AIza")) return value;
+    if (!fallback) fallback = value;
+  }
+  return fallback;
+}
+
+async function configuredAgentModels(env) {
+  return (await agentApiKey(env)) ? AGENT_MODELS : [];
 }
 
 function agentModelFlag(entry) {
@@ -711,12 +730,15 @@ async function agentModelDown(env, entry) {
 async function agentAvailability(env) {
   if (!env.APP_KV) return { available: false, reason: "storage_missing" };
   if (!env.RATE_LIMITER) return { available: false, reason: "limiter_missing" };
-  const models = configuredAgentModels(env);
-  if (models.length === 0) return { available: false, reason: "api_key_missing" };
+  const models = await configuredAgentModels(env);
+  if (models.length === 0) {
+    console.warn("agent_api_key_missing", JSON.stringify({ envNames: Object.keys(env) }));
+    return { available: false, reason: "api_key_missing" };
+  }
   for (const entry of models) {
     if (!(await agentModelDown(env, entry))) return { available: true, reason: "ok" };
   }
-  return { available: false, reason: "models_down" };
+  return { available: true, reason: "models_recovering" };
 }
 
 async function agentAvailable(env) {
@@ -1195,7 +1217,7 @@ async function readErrorDetail(response) {
 }
 
 async function callGemini(env, input, weather, entry, maxOutputTokens) {
-  const apiKey = agentApiKey(env);
+  const apiKey = await agentApiKey(env);
   const model = entry.model;
   const userText = buildAgentUserText(input, weather);
   const outputLimit = Math.min(entry.maxOutputTokens, maxOutputTokens);
@@ -1410,13 +1432,18 @@ async function runAgent(request, env, read, emit, id) {
       }
       step("limiter", "done", "limiter.reserve --scope client");
 
-      const models = configuredAgentModels(env);
+      const models = await configuredAgentModels(env);
       let result = null;
       let charge = { used: 0, reserved: 0, resetSeconds: 0 };
       let failedTokens = 0;
       let chargedFailures = 0;
+      let usable = [];
       for (const entry of models) {
-        if (await agentModelDown(env, entry)) continue;
+        if (!(await agentModelDown(env, entry))) usable.push(entry);
+      }
+      if (usable.length === 0) usable = models;
+      let lastCode = "no_model_tried";
+      for (const entry of usable) {
         if (codePointLength(input.message) > entry.maxChars) continue;
         const outputLimit = Math.min(entry.maxOutputTokens, maxOutputTokens);
         const modelCommand = "model.generate --name \"" + entry.name + "\" --max-input " + entry.maxChars + " --max-output " + outputLimit;
@@ -1432,6 +1459,7 @@ async function runAgent(request, env, read, emit, id) {
             http: err && err.httpStatus ? err.httpStatus : 0,
             api: err && err.geminiStatus ? err.geminiStatus : "",
           }));
+          lastCode = entry.model + ":" + (err && err.httpStatus ? err.httpStatus : err && err.message ? err.message : "error") + (err && err.geminiStatus ? ":" + err.geminiStatus : "");
           if (err && err.downSeconds > 0) await markAgentModelDown(env, entry, err.downSeconds);
           step("model", "fail", modelCommand);
           if (err && Number.isInteger(err.chargeTokens) && err.chargeTokens > 0) {
@@ -1463,7 +1491,7 @@ async function runAgent(request, env, read, emit, id) {
           return agentLimited(ipReset);
         }
       }
-      if (!result) return (await agentAvailable(env)) ? agentFailure(502) : agentUnavailable();
+      if (!result) return agentResult(502, { error: "agent_failed", message: MSG_FAILED, code: lastCode });
 
       step("format", "run", "format --cards " + result.cards.length);
       const remaining = Math.max(0, AGENT_TOKEN_LIMIT - (Number(charge.used) || 0) - (Number(charge.reserved) || 0));
