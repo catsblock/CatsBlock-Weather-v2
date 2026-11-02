@@ -9,32 +9,17 @@ import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -42,11 +27,8 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -60,8 +42,8 @@ import org.json.JSONObject
 import java.io.ByteArrayInputStream
 import kotlin.math.roundToInt
 
-private const val ProbeAttempts = 40
-private const val ProbeDelayMs = 250L
+private const val MapMinZoom = 1.0
+private val MapHeight = 320.dp
 
 private fun metricText(metric: AgentMetric, value: Double, settings: AppSettings): String = when (metric) {
     AgentMetric.Humidity, AgentMetric.Clouds -> "${value.roundToInt()}%"
@@ -155,72 +137,51 @@ private fun MetricChart(card: AgentCard.Metric, content: Color) {
 @SuppressLint("SetJavaScriptEnabled", "ClickableViewAccessibility")
 @Composable
 internal fun AgentMapCard(card: AgentCard.MapView, settings: AppSettings, content: Color) {
-    val scheme = MaterialTheme.colorScheme
     val systemDark = isSystemInDarkTheme()
     val dark = when (settings.theme) {
         ThemeMode.System -> systemDark
         ThemeMode.Light -> false
         ThemeMode.Dark -> true
     }
-    var selectedId by rememberSaveable(card.lat, card.lon) { mutableStateOf(MapLayer.None.id) }
-    var appliedId by remember(card.lat, card.lon) { mutableStateOf(MapLayer.None.id) }
-    var ready by remember(card.lat, card.lon) { mutableStateOf(false) }
-    val selected = MapLayer.entries.firstOrNull { it.id == selectedId } ?: MapLayer.None
-    val background = scheme.surface.toArgb()
+    val layer = MapLayer.entries.firstOrNull { it.id == card.layer } ?: MapLayer.None
     val fahrenheit = settings.fahrenheit
-    val initJson = remember(card, dark, fahrenheit) {
+    val title = tr(if (layer == MapLayer.None) "Weather map" else layer.label)
+    val initJson = remember(card, dark, fahrenheit, title) {
         JSONObject()
             .put("dark", dark)
             .put("top", 0.0)
             .put("bottom", 0.0)
             .put("hasCity", true)
+            .put("round", true)
+            .put("minZoom", MapMinZoom)
             .put("lat", card.lat)
             .put("lon", card.lon)
-            .put("layer", MapLayer.None.id)
-            .put("title", tr(MapLayer.None.label))
+            .put("centerLat", card.centerLat)
+            .put("centerLon", card.centerLon)
+            .put("zoom", card.zoom)
+            .put("layer", layer.id)
+            .put("title", tr(layer.label))
             .put("err", tr("Map data unavailable"))
             .put("f", fahrenheit)
             .put("labels", mapLabels())
             .toString()
     }
-    val webRef = remember { arrayOfNulls<WebView>(1) }
-
-    LaunchedEffect(ready, selectedId) {
-        val web = webRef[0]
-        if (ready && web != null && selectedId != appliedId) {
-            appliedId = selectedId
-            web.evaluateJavascript(
-                "MapApi.setLayer(" + JSONObject.quote(selected.id) + "," + JSONObject.quote(tr(selected.label)) + "," +
-                    JSONObject.quote(tr("Map data unavailable")) + "," + fahrenheit + "," + mapLabels() + ")",
-                null
-            )
-        }
-    }
-
-    DisposableEffect(card) {
-        onDispose { webRef[0] = null }
-    }
 
     CardPanel(content) {
-        CardTitle(tr("Weather map"), card.place, content)
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .height(280.dp)
-                .clip(RoundedCornerShape(20.dp))
-        ) {
+        CardTitle(title, card.place, content)
+        key(initJson) {
             AndroidView(
-                modifier = Modifier.fillMaxWidth().height(280.dp),
+                modifier = Modifier.fillMaxWidth().height(MapHeight),
                 factory = { ctx ->
                     WebView(ctx).also { web ->
-                        webRef[0] = web
                         web.settings.javaScriptEnabled = true
                         web.settings.domStorageEnabled = true
                         web.settings.cacheMode = WebSettings.LOAD_DEFAULT
+                        web.setLayerType(View.LAYER_TYPE_HARDWARE, null)
                         web.isVerticalScrollBarEnabled = false
                         web.isHorizontalScrollBarEnabled = false
                         web.overScrollMode = View.OVER_SCROLL_NEVER
-                        web.setBackgroundColor(background)
+                        web.setBackgroundColor(android.graphics.Color.TRANSPARENT)
                         web.setOnTouchListener { view, event ->
                             when (event.actionMasked) {
                                 MotionEvent.ACTION_DOWN -> view.parent?.requestDisallowInterceptTouchEvent(true)
@@ -240,10 +201,6 @@ internal fun AgentMapCard(card: AgentCard.MapView, settings: AppSettings, conten
                                     WebResourceResponse("application/json", "utf-8", 503, "Unavailable", headers, ByteArrayInputStream(ByteArray(0)))
                                 }
                             }
-
-                            override fun onPageFinished(view: WebView?, url: String?) {
-                                view?.let { probe(it, 0) { ready = true } }
-                            }
                         }
                         web.loadDataWithBaseURL(MapPage.BASE_URL, MapPage.page(initJson), "text/html", "utf-8", null)
                     }
@@ -253,33 +210,6 @@ internal fun AgentMapCard(card: AgentCard.MapView, settings: AppSettings, conten
                     web.destroy()
                 }
             )
-        }
-        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            MapLayer.entries.filter { it != MapLayer.None }.forEach { layer ->
-                FilterChip(
-                    selected = layer.id == selectedId,
-                    onClick = { selectedId = layer.id },
-                    label = { Text(tr(layer.label), maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                    leadingIcon = { Icon(layer.icon, contentDescription = null, modifier = Modifier.size(18.dp)) },
-                    colors = FilterChipDefaults.filterChipColors(
-                        containerColor = Color.Transparent,
-                        labelColor = content,
-                        iconColor = content,
-                        selectedContainerColor = content.copy(alpha = 0.28f),
-                        selectedLabelColor = content,
-                        selectedLeadingIconColor = content
-                    )
-                )
-            }
-        }
-    }
-}
-
-private fun probe(web: WebView, attempt: Int, onReady: () -> Unit) {
-    web.evaluateJavascript("typeof window.MapApi") { result ->
-        when {
-            result?.contains("object") == true -> onReady()
-            attempt < ProbeAttempts -> web.postDelayed({ probe(web, attempt + 1, onReady) }, ProbeDelayMs)
         }
     }
 }
