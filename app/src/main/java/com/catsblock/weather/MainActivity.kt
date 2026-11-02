@@ -55,7 +55,6 @@ import com.catsblock.weather.ui.AppIconScreen
 import com.catsblock.weather.ui.AdaptivePage
 import com.catsblock.weather.ui.AppShell
 import com.catsblock.weather.ui.BackgroundKitScreen
-import com.catsblock.weather.ui.AgeScreen
 import com.catsblock.weather.ui.CityPickerScreen
 import com.catsblock.weather.ui.TermsScreen
 import com.catsblock.weather.ui.IconKitScreen
@@ -174,14 +173,13 @@ private fun AppRoot(vm: WeatherViewModel) {
         }
     }
 
-    BackHandler(enabled = screen != null && screen != Screen.Main && screen != Screen.Welcome && screen != Screen.Age) {
+    BackHandler(enabled = screen != null && screen != Screen.Main && screen != Screen.Welcome) {
         vm.back()
     }
     Crossfade(targetState = if (inShell) Screen.Main else screen, animationSpec = tween(320), label = "screen") { target ->
         when (target) {
             null -> Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background))
             Screen.Welcome -> WelcomeScreen(vm)
-            Screen.Age -> AgeScreen(vm)
             Screen.Terms -> AdaptivePage { TermsScreen(vm) }
             Screen.Picker -> AdaptivePage(640.dp) { CityPickerScreen(vm) }
             Screen.Main -> AppShell(vm, screen)
