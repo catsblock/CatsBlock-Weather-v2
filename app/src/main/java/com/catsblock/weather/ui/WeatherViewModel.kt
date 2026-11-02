@@ -1,7 +1,6 @@
 package com.catsblock.weather.ui
 
 import com.catsblock.weather.i18n.tr
-import com.catsblock.weather.data.AgeGroup
 import java.time.LocalDate
 import com.catsblock.weather.data.UserKeys
 import com.catsblock.weather.data.WeatherSource
@@ -64,7 +63,7 @@ import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 import java.util.Locale
 
-enum class Screen { Welcome, Picker, Main, Map, Agent, Settings, IconKit, BackgroundKit, AppIcon, LiveMoon, Privacy, Info, Age, Terms }
+enum class Screen { Welcome, Picker, Main, Map, Agent, Settings, IconKit, BackgroundKit, AppIcon, LiveMoon, Privacy, Info, Terms }
 
 sealed interface WeatherState {
     data object Idle : WeatherState
@@ -78,7 +77,6 @@ class WeatherViewModel(private val app: Application) : AndroidViewModel(app) {
 
     private companion object {
         const val FRESH_MS = 120_000L
-        const val DEFAULT_AGE = 18
         const val USAGE_FLUSH_TICKS = 10
     }
 
@@ -89,7 +87,6 @@ class WeatherViewModel(private val app: Application) : AndroidViewModel(app) {
 
     val screen = MutableStateFlow<Screen?>(null)
     val agent = AgentChat(viewModelScope, onBlockChanged = { until -> viewModelScope.launch { store.setAgentBlockedUntil(until) } })
-    val pendingAge = MutableStateFlow(DEFAULT_AGE)
     val agentUsedSeconds = MutableStateFlow(0)
     private var agentUsageDay = ""
     private var agentUnsaved = 0
@@ -134,10 +131,9 @@ class WeatherViewModel(private val app: Application) : AndroidViewModel(app) {
         }
         viewModelScope.launch {
             val saved = store.currentCity.first()
-            val group = store.settings.first().ageGroup
             if (saved != null) {
                 city.value = saved
-                screen.value = if (group == AgeGroup.Unknown) Screen.Age else Screen.Main
+                screen.value = Screen.Main
                 refresh()
             } else {
                 screen.value = Screen.Welcome
@@ -299,20 +295,7 @@ class WeatherViewModel(private val app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private fun gateScreen(): Screen =
-        if (settings.value.ageGroup == AgeGroup.Unknown) Screen.Age else Screen.Main
-
-    fun setPendingAge(value: Int) {
-        pendingAge.value = value
-    }
-
-    fun confirmAge(age: Int): Boolean {
-        val group = AgeGroup.of(age)
-        if (group == AgeGroup.Unknown) return false
-        viewModelScope.launch { store.setAgeGroup(group) }
-        screen.value = Screen.Main
-        return true
-    }
+    private fun gateScreen(): Screen = Screen.Main
 
     fun setAgentLimit(minutes: Int) {
         viewModelScope.launch { store.setAgentLimit(minutes) }
