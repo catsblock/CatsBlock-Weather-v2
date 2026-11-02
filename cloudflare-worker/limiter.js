@@ -13,6 +13,11 @@ export const BURST_LOCK_MS = 60 * 1000;
 export const IP_SHARED_LIMIT = 4000;
 export const IP_SHARED_WINDOW_MS = 10 * 60 * 1000;
 export const AGENT_WINDOW_MS = 24 * 60 * 60 * 1000;
+export const SPAM_WINDOW_MS = 15 * 60 * 1000;
+export const SPAM_LIMIT = 30;
+export const SPAM_LOCK_MS = 30 * 60 * 1000;
+export const AGENT_CONCURRENCY = 3;
+export const AGENT_LEASE_MS = 60 * 1000;
 
 const KEY_PATTERN = /^[a-f0-9]{64}$/;
 const SAFETY_MARGIN_S = 5;
@@ -35,6 +40,14 @@ function prune(data, now) {
   }
   if (typeof data.u === "number" && data.u > now) next.u = data.u;
   if (typeof data.bl === "number" && data.bl > now) next.bl = data.bl;
+  if (Array.isArray(data.sp)) {
+    const hits = data.sp.filter((t) => typeof t === "number" && t > now - SPAM_WINDOW_MS);
+    if (hits.length) next.sp = hits;
+  }
+  if (Array.isArray(data.ls)) {
+    const leases = data.ls.filter((t) => typeof t === "number" && t > now);
+    if (leases.length) next.ls = leases;
+  }
   return next;
 }
 
@@ -45,6 +58,13 @@ function expiry(data) {
   }
   if (typeof data.u === "number" && data.u > latest) latest = data.u;
   if (typeof data.bl === "number" && data.bl > latest) latest = data.bl;
+  if (Array.isArray(data.sp) && data.sp.length) {
+    const last = Math.max(...data.sp) + SPAM_WINDOW_MS;
+    if (last > latest) latest = last;
+  }
+  if (Array.isArray(data.ls)) {
+    for (const t of data.ls) if (typeof t === "number" && t > latest) latest = t;
+  }
   return latest;
 }
 
@@ -114,14 +134,34 @@ function agentBurst(data, now) {
   if (typeof data.bl === "number" && data.bl > now) {
     return { ok: false, lockSeconds: Math.ceil((data.bl - now) / 1000) };
   }
-  const window = freshWindow(data.bu, now, BURST_WINDOW_MS);
-  window.c += 1;
-  data.bu = window;
-  if (window.c > BURST_LIMIT) {
-    data.bl = now + BURST_LOCK_MS;
-    return { ok: false, lockSeconds: Math.ceil(BURST_LOCK_MS / 1000) };
+  const hits = (Array.isArray(data.sp) ? data.sp : []).filter((t) => typeof t === "number" && t > now - SPAM_WINDOW_MS);
+  hits.push(now);
+  data.sp = hits;
+  if (hits.length >= SPAM_LIMIT) {
+    data.bl = now + SPAM_LOCK_MS;
+    data.sp = [];
+    return { ok: false, lockSeconds: Math.ceil(SPAM_LOCK_MS / 1000) };
   }
   return { ok: true, lockSeconds: 0 };
+}
+
+function acquireSlot(data, now) {
+  const live = (Array.isArray(data.ls) ? data.ls : []).filter((t) => typeof t === "number" && t > now);
+  if (live.length < AGENT_CONCURRENCY) {
+    live.push(now + AGENT_LEASE_MS);
+    data.ls = live;
+    return { ok: true, active: live.length };
+  }
+  data.ls = live;
+  return { ok: false, active: live.length };
+}
+
+function releaseSlot(data, now) {
+  const live = (Array.isArray(data.ls) ? data.ls : []).filter((t) => typeof t === "number" && t > now);
+  live.sort((a, b) => a - b);
+  live.shift();
+  data.ls = live;
+  return { ok: true };
 }
 
 function reply(payload, status) {
@@ -229,6 +269,12 @@ export class RateLimiter {
         break;
       case "agent.burst":
         result = agentBurst(this.data, now);
+        break;
+      case "queue.enter":
+        result = acquireSlot(this.data, now);
+        break;
+      case "queue.leave":
+        result = releaseSlot(this.data, now);
         break;
       case "ip.guard":
         result = sharedGuard(this.data, now);
