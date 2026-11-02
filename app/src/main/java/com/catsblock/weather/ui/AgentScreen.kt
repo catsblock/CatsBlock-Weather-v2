@@ -55,6 +55,12 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.Stars
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.IconButton
+import androidx.compose.material.icons.rounded.FamilyRestroom
+import androidx.compose.runtime.DisposableEffect
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -160,7 +166,14 @@ fun AgentScreen(vm: WeatherViewModel) {
     val city by vm.city.collectAsStateWithLifecycle()
     val settings by vm.settings.collectAsStateWithLifecycle()
     var text by rememberSaveable { mutableStateOf("") }
-    val canSend = text.isNotBlank() && !sending
+    val usedSeconds by vm.agentUsedSeconds.collectAsStateWithLifecycle()
+    val family = settings.ageGroup.familyControls
+    val locked = family && settings.agentLimitMinutes > 0 && usedSeconds >= settings.agentLimitMinutes * 60
+    var familyOpen by rememberSaveable { mutableStateOf(true) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val blockedUntil by chat.blockedUntil.collectAsStateWithLifecycle()
+    val limited = blockedUntil > 0L
+    val canSend = text.isNotBlank() && !locked && !limited
     val submit = {
         if (canSend && chat.send(text, city, settings)) text = ""
     }
@@ -171,6 +184,30 @@ fun AgentScreen(vm: WeatherViewModel) {
     val live = messages.lastOrNull()?.takeIf { it.pending }
     val status = if (sending) liveLabel(live?.steps.orEmpty()) else null
 
+    LaunchedEffect(family, locked) {
+        if (family && !locked) {
+            lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                while (true) {
+                    delay(1000L)
+                    vm.tickAgentUsage()
+                }
+            }
+        }
+    }
+    LaunchedEffect(locked) {
+        if (locked) vm.flushAgentUsage()
+    }
+    LaunchedEffect(blockedUntil) {
+        if (blockedUntil > 0L) {
+            val wait = blockedUntil - System.currentTimeMillis()
+            if (wait > 0L) delay(wait)
+            chat.clearBlock()
+        }
+    }
+    DisposableEffect(Unit) {
+        onDispose { vm.flushAgentUsage() }
+    }
+
     LaunchedEffect(messages.size, live?.steps?.size, messages.lastOrNull()?.pending) {
         if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex)
     }
@@ -180,7 +217,17 @@ fun AgentScreen(vm: WeatherViewModel) {
         contentAlignment = Alignment.TopCenter
     ) {
         Column(Modifier.widthIn(max = 720.dp).fillMaxWidth().fillMaxHeight()) {
-            AgentHeader(status)
+            AgentHeader(status, family, familyOpen) { familyOpen = !familyOpen }
+            if (family) {
+                AnimatedVisibility(visible = familyOpen) {
+                    FamilyControlsCard(
+                        limitMinutes = settings.agentLimitMinutes,
+                        usedSeconds = usedSeconds,
+                        onLimitChange = vm::setAgentLimit,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                    )
+                }
+            }
             if (messages.isEmpty()) {
                 AgentEmptyState(Modifier.weight(1f).fillMaxWidth())
             } else {
@@ -195,20 +242,26 @@ fun AgentScreen(vm: WeatherViewModel) {
                     }
                 }
             }
-            AgentInputBar(
-                text = text,
-                onTextChange = { text = clampAgentInput(it) },
-                canSend = canSend,
-                sending = sending,
-                onSend = { submit() },
-                modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = bottom)
-            )
+            if (limited) {
+                AgentLimitBar(blockedUntil, Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = bottom))
+            } else if (locked) {
+                AgentLockedBar(Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = bottom))
+            } else {
+                AgentInputBar(
+                    text = text,
+                    onTextChange = { text = clampAgentInput(it) },
+                    canSend = canSend,
+                    sending = false,
+                    onSend = { submit() },
+                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = bottom)
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun AgentHeader(status: String?) {
+private fun AgentHeader(status: String?, showFamily: Boolean, familyOpen: Boolean, onToggleFamily: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
     val transition = rememberInfiniteTransition(label = "agent-header")
     val corner by transition.animateFloat(
@@ -263,6 +316,15 @@ private fun AgentHeader(status: String?) {
                         overflow = TextOverflow.Ellipsis
                     )
                 }
+            }
+        }
+        if (showFamily) {
+            IconButton(onClick = onToggleFamily) {
+                Icon(
+                    Icons.Rounded.FamilyRestroom,
+                    contentDescription = tr("Family controls"),
+                    tint = if (familyOpen) scheme.primary else scheme.onSurfaceVariant
+                )
             }
         }
     }
@@ -330,25 +392,35 @@ private fun AgentBubbleRow(message: AgentMessage, settings: AppSettings, modifie
             Modifier.fillMaxWidth(),
             horizontalArrangement = if (message.fromUser) Arrangement.End else Arrangement.Start
         ) {
-            if (message.fromUser) UserBubble(message.text) else AgentBubble(message, settings)
+            if (message.fromUser) UserBubble(message.text, message.error) else AgentBubble(message, settings)
         }
     }
 }
 
 @Composable
-private fun UserBubble(text: String) {
+private fun UserBubble(text: String, error: String?) {
     val scheme = MaterialTheme.colorScheme
-    Surface(
-        color = scheme.primary,
-        contentColor = scheme.onPrimary,
-        shape = RoundedCornerShape(28.dp, 28.dp, 8.dp, 28.dp),
-        modifier = Modifier.widthIn(max = 300.dp)
-    ) {
-        Text(
-            text,
-            modifier = Modifier.padding(horizontal = 18.dp, vertical = 14.dp),
-            style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium)
-        )
+    Column(horizontalAlignment = Alignment.End, modifier = Modifier.widthIn(max = 300.dp)) {
+        Surface(
+            color = scheme.primary,
+            contentColor = scheme.onPrimary,
+            shape = RoundedCornerShape(28.dp, 28.dp, 8.dp, 28.dp)
+        ) {
+            Text(
+                text,
+                modifier = Modifier.padding(horizontal = 18.dp, vertical = 14.dp),
+                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium)
+            )
+        }
+        if (error != null) {
+            Text(
+                tr(error),
+                modifier = Modifier.padding(top = 4.dp, end = 8.dp),
+                style = MaterialTheme.typography.labelMedium,
+                color = scheme.error,
+                textAlign = TextAlign.End
+            )
+        }
     }
 }
 
@@ -383,6 +455,8 @@ private fun AgentBubble(message: AgentMessage, settings: AppSettings) {
                     when (card) {
                         is AgentCard.Current -> CurrentWeatherCard(card, settings, content)
                         is AgentCard.Days -> DaysCard(card, settings, content)
+                        is AgentCard.Metric -> MetricCard(card, settings, content)
+                        is AgentCard.MapView -> AgentMapCard(card, settings, content)
                     }
                 }
             }
@@ -577,7 +651,7 @@ private fun CommandStream(steps: List<AgentStep>, live: Boolean, content: Color)
 }
 
 @Composable
-private fun CardPanel(content: Color, body: @Composable () -> Unit) {
+internal fun CardPanel(content: Color, body: @Composable () -> Unit) {
     Surface(
         color = content.copy(alpha = 0.1f),
         contentColor = content,
@@ -589,7 +663,7 @@ private fun CardPanel(content: Color, body: @Composable () -> Unit) {
 }
 
 @Composable
-private fun CardTitle(label: String, place: String, content: Color) {
+internal fun CardTitle(label: String, place: String, content: Color) {
     Column {
         Text(label, style = MaterialTheme.typography.labelMedium, color = content.copy(alpha = 0.72f))
         if (place.isNotEmpty()) {
@@ -633,7 +707,7 @@ private fun CurrentWeatherCard(card: AgentCard.Current, settings: AppSettings, c
 }
 
 @Composable
-private fun Stat(label: String, value: String, content: Color, modifier: Modifier) {
+internal fun Stat(label: String, value: String, content: Color, modifier: Modifier) {
     Column(modifier) {
         Text(label, style = MaterialTheme.typography.labelSmall, color = content.copy(alpha = 0.7f), maxLines = 1, overflow = TextOverflow.Ellipsis)
         Text(value, style = MaterialTheme.typography.titleSmall, color = content, maxLines = 1, overflow = TextOverflow.Ellipsis)
