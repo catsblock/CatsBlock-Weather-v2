@@ -1282,5 +1282,49 @@ export default {
           return jsonResponse({ error: "method_not_allowed" }, 405, { Allow: "GET, OPTIONS" });
         }
         if (!authorized(request, env)) {
-          return jsonResponse({ error: "unauthorized", message: 
-... (2 KB restante(s))
+          return jsonResponse({ error: "unauthorized", message: MSG_UNAVAILABLE }, 401);
+        }
+        return jsonResponse({ available: await agentAvailable(env) }, 200);
+      }
+
+      if (path === "/v1/agent") {
+        if (request.method !== "POST") {
+          return jsonResponse({ error: "method_not_allowed" }, 405, { Allow: "POST, OPTIONS" });
+        }
+        if (!authorized(request, env)) {
+          return jsonResponse({ error: "unauthorized", message: MSG_FAILED }, 401);
+        }
+        return await handleAgent(request, env, ctx);
+      }
+
+      if (request.method !== "GET") {
+        return jsonResponse({ error: "method_not_allowed" }, 405, { Allow: "GET, OPTIONS" });
+      }
+
+      if (path === "/" || path === "/v1/health") {
+        return textResponse("ok", 200, "text/plain; charset=utf-8");
+      }
+
+      const routes = {
+        "/v1/status": null,
+        "/v1/weather": "weather",
+        "/v1/visual": "visual",
+        "/v1/openweather": "openweather",
+      };
+      if (!Object.prototype.hasOwnProperty.call(routes, path)) {
+        return jsonResponse({ error: "not_found" }, 404);
+      }
+
+      if (!authorized(request, env)) {
+        return jsonResponse({ error: "unauthorized" }, 401);
+      }
+
+      if (path === "/v1/status") {
+        return await handleStatus(request, env);
+      }
+      return await handleProxy(request, env, routes[path]);
+    } catch (err) {
+      return jsonResponse({ error: "internal_error" }, 500);
+    }
+  },
+};
