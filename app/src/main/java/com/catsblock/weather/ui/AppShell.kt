@@ -63,6 +63,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
@@ -119,6 +120,13 @@ fun AppShell(vm: WeatherViewModel, screen: Screen?) {
     val tab = AppTab.of(screen) ?: last
     SideEffect { last = tab }
 
+    val settings by vm.settings.collectAsStateWithLifecycle()
+    val agentAllowed = settings.ageGroup.agentAllowed
+    val tabs = remember(agentAllowed) { AppTab.entries.filter { it != AppTab.Agent || agentAllowed } }
+    LaunchedEffect(screen, agentAllowed) {
+        if (screen == Screen.Agent && !agentAllowed) vm.openWeather()
+    }
+
     val layout = LocalWindowLayout.current
     val navBottom: Dp = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     val inset = if (layout.useRail) navBottom + 16.dp else navBottom + BarHeight + BarGap * 2
@@ -156,7 +164,7 @@ fun AppShell(vm: WeatherViewModel, screen: Screen?) {
                 when (target) {
                     AppTab.Weather -> MainScreen(vm)
                     AppTab.WeatherMap -> MapScreen(vm)
-                    AppTab.Agent -> AgentScreen(vm)
+                    AppTab.Agent -> if (agentAllowed) AgentScreen(vm) else Box(Modifier.fillMaxSize())
                     AppTab.Settings -> SettingsScreen(vm)
                 }
             }
@@ -165,13 +173,14 @@ fun AppShell(vm: WeatherViewModel, screen: Screen?) {
 
     if (layout.useRail) {
         Row(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-            ExpressiveNavigationRail(selected = tab, onSelect = onSelect)
+            ExpressiveNavigationRail(tabs = tabs, selected = tab, onSelect = onSelect)
             Box(Modifier.weight(1f).fillMaxHeight()) { content() }
         }
     } else {
         Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
             content()
             ExpressiveNavigationBar(
+                tabs = tabs,
                 selected = tab,
                 onSelect = onSelect,
                 modifier = Modifier.align(Alignment.BottomCenter)
@@ -182,6 +191,7 @@ fun AppShell(vm: WeatherViewModel, screen: Screen?) {
 
 @Composable
 private fun ExpressiveNavigationRail(
+    tabs: List<AppTab>,
     selected: AppTab,
     onSelect: (AppTab) -> Unit,
     modifier: Modifier = Modifier
@@ -215,7 +225,7 @@ private fun ExpressiveNavigationRail(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            AppTab.entries.forEach { tab ->
+            tabs.forEach { tab ->
                 RailItem(tab, tab == selected, idleTint, activeTint, pill) { onSelect(tab) }
             }
         }
@@ -269,6 +279,7 @@ private fun RailItem(
 
 @Composable
 private fun ExpressiveNavigationBar(
+    tabs: List<AppTab>,
     selected: AppTab,
     onSelect: (AppTab) -> Unit,
     modifier: Modifier = Modifier
@@ -291,7 +302,7 @@ private fun ExpressiveNavigationBar(
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                AppTab.entries.forEach { tab ->
+                tabs.forEach { tab ->
                     NavigationItem(tab, tab == selected) { onSelect(tab) }
                 }
             }
