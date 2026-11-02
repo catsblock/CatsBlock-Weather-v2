@@ -54,7 +54,7 @@ private val policySections = listOf(
     "Your rights" to
         "Depending on where you live (including under the GDPR, UK GDPR, LGPD, CCPA/CPRA and PIPEDA), you may have rights to access, correct, delete, restrict or port personal data, to object to processing and to withdraw consent. CatsBlock Corporation does not sell or share personal information and does not use it for advertising or profiling. Because it offers no accounts or contact channel and keeps only irreversible hashes that cannot be linked to you, it cannot identify you or retrieve data about you, so such requests generally cannot be fulfilled; records expire automatically. You may complain to your local data protection authority.",
     "Children" to
-        "CatsBlock Weather is not directed to children. The Agent is available to all users, and no age is collected, stored, or used to restrict features."
+        "CatsBlock Weather is not directed to children. The Agent is available to all users, and no age is collected, stored, or used to restrict features.",
     "Regional restrictions" to
         "The service is not available in certain regions because of local laws, sanctions and data-transfer rules, currently including Japan, Iran, Cuba, North Korea, Syria, China, Russia and the Crimea, Donetsk, Luhansk and Sevastopol regions. Cloudflare determines your country from the connection on each request without storing it, and access is re-evaluated automatically. Bypassing these restrictions with a VPN, proxy or other means is prohibited, and you are solely responsible for complying with the laws that apply to you.",
     "Security" to
