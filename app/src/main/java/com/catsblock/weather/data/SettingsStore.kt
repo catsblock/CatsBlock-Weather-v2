@@ -88,7 +88,7 @@ class SettingsStore(private val context: Context) {
             customFontName = it[Keys.customFontName].orEmpty(),
             precipUnit = runCatching { PrecipUnit.valueOf(it[Keys.precipUnit] ?: "") }.getOrDefault(PrecipUnit.Mm),
             disableEffectsOnSaver = it[Keys.disableEffectsOnSaver] ?: true,
-            agentLimitMinutes = it[Keys.agentLimit]?.takeIf { value -> value in AgentLimitOptions } ?: 0,
+            agentLimitMinutes = (it[Keys.agentLimit] ?: 0).coerceAtLeast(0),
             agentUsedSeconds = (it[Keys.agentUsed] ?: 0).coerceAtLeast(0),
             agentUsageDay = it[Keys.agentUsageDay].orEmpty(),
             agentBlockedUntil = it[Keys.agentBlockedUntil] ?: 0L
