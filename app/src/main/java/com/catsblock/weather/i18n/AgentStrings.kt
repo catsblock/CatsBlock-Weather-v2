@@ -1,3 +1,4 @@
+
 package com.catsblock.weather.i18n
 
 private fun row(key: String, vararg values: String): Pair<String, Array<out String>> = key to values
@@ -20,4 +21,4 @@ private val agentBaseStrings: Map<String, Array<out String>> = mapOf(
     row("Past days", "Dias anteriores", "Dias anteriores", "Días anteriores", "Jours passés", "Прошлые дни", "Vergangene Tage", "Giorni passati", "지난 며칠", "Hari-hari lalu")
 )
 
-internal val agentStrings: Map<String, Array<out String>> = agentBaseStrings + complianceStrings
+internal val agentStrings: Map<String, Array<out String>> = agentBaseStrings + complianceStrings + familyStrings + termsStrings
