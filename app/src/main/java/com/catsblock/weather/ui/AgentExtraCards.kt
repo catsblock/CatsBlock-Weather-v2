@@ -155,7 +155,6 @@ private fun MetricChart(card: AgentCard.Metric, content: Color) {
 @SuppressLint("SetJavaScriptEnabled", "ClickableViewAccessibility")
 @Composable
 internal fun AgentMapCard(card: AgentCard.MapView, settings: AppSettings, content: Color) {
-    val context = LocalContext.current
     val scheme = MaterialTheme.colorScheme
     val systemDark = isSystemInDarkTheme()
     val dark = when (settings.theme) {
@@ -163,11 +162,10 @@ internal fun AgentMapCard(card: AgentCard.MapView, settings: AppSettings, conten
         ThemeMode.Light -> false
         ThemeMode.Dark -> true
     }
-    val chosen = remember(card.layer) { MapLayer.entries.firstOrNull { it.id == card.layer && it != MapLayer.None } ?: MapLayer.Precipitation }
-    var selectedId by rememberSaveable(card.layer, card.lat, card.lon) { mutableStateOf(chosen.id) }
-    var appliedId by remember(card.layer, card.lat, card.lon) { mutableStateOf(chosen.id) }
-    var ready by remember(card.layer, card.lat, card.lon) { mutableStateOf(false) }
-    val selected = MapLayer.entries.firstOrNull { it.id == selectedId } ?: chosen
+    var selectedId by rememberSaveable(card.lat, card.lon) { mutableStateOf(MapLayer.None.id) }
+    var appliedId by remember(card.lat, card.lon) { mutableStateOf(MapLayer.None.id) }
+    var ready by remember(card.lat, card.lon) { mutableStateOf(false) }
+    val selected = MapLayer.entries.firstOrNull { it.id == selectedId } ?: MapLayer.None
     val background = scheme.surface.toArgb()
     val fahrenheit = settings.fahrenheit
     val initJson = remember(card, dark, fahrenheit) {
@@ -178,8 +176,8 @@ internal fun AgentMapCard(card: AgentCard.MapView, settings: AppSettings, conten
             .put("hasCity", true)
             .put("lat", card.lat)
             .put("lon", card.lon)
-            .put("layer", chosen.id)
-            .put("title", tr(chosen.label))
+            .put("layer", MapLayer.None.id)
+            .put("title", tr(MapLayer.None.label))
             .put("err", tr("Map data unavailable"))
             .put("f", fahrenheit)
             .put("labels", mapLabels())
@@ -271,20 +269,6 @@ internal fun AgentMapCard(card: AgentCard.MapView, settings: AppSettings, conten
                         selectedLabelColor = content,
                         selectedLeadingIconColor = content
                     )
-                )
-            }
-        }
-        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(
-                tr("Layer chosen by the Agent") + ": " + tr(chosen.label),
-                style = MaterialTheme.typography.labelMedium,
-                color = content.copy(alpha = 0.8f)
-            )
-            if (selected != chosen) {
-                Text(
-                    tr("Layer chosen by you") + ": " + tr(selected.label),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = content.copy(alpha = 0.8f)
                 )
             }
         }
