@@ -117,6 +117,16 @@ jobs:
           test -f "$APK"
           echo "APK_PATH=$APK" >> "$GITHUB_ENV"
 
+      - name: Summarize build
+        run: |
+          if [ "$TESTONLY" = "true" ]; then
+            echo "### Test build (testonly = true)" >> "$GITHUB_STEP_SUMMARY"
+            echo "The APK is attached to this run as the \`com.catsblock.weather\` artifact. No GitHub release was created." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "### Release build (testonly = false)" >> "$GITHUB_STEP_SUMMARY"
+            echo "The APK is attached to this run and published in the Releases tab." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
