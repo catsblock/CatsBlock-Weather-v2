@@ -234,14 +234,18 @@ class WeatherRepository {
     private suspend fun fetchRaw(city: City, source: WeatherSource): WeatherBundle {
         if (source == WeatherSource.OpenMeteo) return fetchOpenMeteo(city)
         val base = SecretKeys.baseUrl()
-        if (base.isEmpty()) return fetchOpenMeteo(city)
+        if (base.isEmpty() || SecretKeys.appToken().isEmpty()) return fetchOpenMeteo(city)
         return try {
             fetchViaWorker(city, source, base)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             _usageStatus.value = _usageStatus.value.copy(usingFallback = true)
-            AppLog.warn("Weather", "Provider ${source.name} failed, falling back to Open-Meteo", e)
+            if (e is WorkerHttpException && (e.code == 401 || e.code == 403)) {
+                AppLog.warn("Weather", "Worker rejected the app token (HTTP ${e.code}). The APP_TOKEN used to build the APK must match the Worker secret APP_TOKEN.", e)
+            } else {
+                AppLog.warn("Weather", "Provider ${source.name} failed, falling back to Open-Meteo", e)
+            }
             fetchOpenMeteo(city)
         }
     }
