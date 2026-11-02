@@ -5,12 +5,18 @@ export const SHORT_LIMIT = 20;
 export const LONG_LIMIT = 150;
 export const IP_CEILING_LIMIT = 400;
 export const IP_CEILING_WINDOW_MS = 10 * 60 * 1000;
-export const AGENT_RATE_LIMIT = 5;
+export const AGENT_TOKEN_LIMIT = 2500;
+export const AGENT_IP_TOKEN_LIMIT = 50000;
+export const BURST_WINDOW_MS = 10 * 1000;
+export const BURST_LIMIT = 6;
+export const BURST_LOCK_MS = 60 * 1000;
+export const IP_SHARED_LIMIT = 4000;
+export const IP_SHARED_WINDOW_MS = 10 * 60 * 1000;
 export const AGENT_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 const KEY_PATTERN = /^[a-f0-9]{64}$/;
 const SAFETY_MARGIN_S = 5;
-const WINDOW_FIELDS = ["s", "l", "ip", "ag"];
+const WINDOW_FIELDS = ["s", "l", "ip", "ag", "sh", "bu"];
 
 function freshWindow(entry, now, windowMs) {
   if (!entry || typeof entry.r !== "number" || entry.r <= now) return { c: 0, r: now + windowMs };
@@ -28,6 +34,7 @@ function prune(data, now) {
     if (live) next[field] = live;
   }
   if (typeof data.u === "number" && data.u > now) next.u = data.u;
+  if (typeof data.bl === "number" && data.bl > now) next.bl = data.bl;
   return next;
 }
 
@@ -37,6 +44,7 @@ function expiry(data) {
     if (data[field] && data[field].r > latest) latest = data[field].r;
   }
   if (typeof data.u === "number" && data.u > latest) latest = data.u;
+  if (typeof data.bl === "number" && data.bl > latest) latest = data.bl;
   return latest;
 }
 
@@ -82,20 +90,38 @@ function agentPeek(data, now) {
   return live ? { used: live.c, resetSeconds: Math.ceil((live.r - now) / 1000) } : { used: 0, resetSeconds: 0 };
 }
 
-function agentReserve(data, now) {
-  const window = freshWindow(data.ag, now, AGENT_WINDOW_MS);
-  if (window.c >= AGENT_RATE_LIMIT) return { ok: false, resetSeconds: Math.ceil((window.r - now) / 1000) };
+function sharedGuard(data, now) {
+  const window = freshWindow(data.sh, now, IP_SHARED_WINDOW_MS);
   window.c += 1;
+  if (window.c > IP_SHARED_LIMIT) return { exceeded: true };
+  data.sh = window;
+  return { exceeded: false };
+}
+
+function clampTokens(value) {
+  const n = Math.floor(Number(value));
+  return Number.isFinite(n) && n >= 0 && n <= 20000 ? n : 0;
+}
+
+function agentCharge(data, now, tokens) {
+  const window = freshWindow(data.ag, now, AGENT_WINDOW_MS);
+  window.c += tokens;
   data.ag = window;
   return { ok: true, used: window.c, resetSeconds: Math.ceil((window.r - now) / 1000) };
 }
 
-function agentRefund(data, now) {
-  const live = activeWindow(data.ag, now);
-  if (!live) return { ok: true };
-  live.c = Math.max(0, live.c - 1);
-  data.ag = live;
-  return { ok: true };
+function agentBurst(data, now) {
+  if (typeof data.bl === "number" && data.bl > now) {
+    return { ok: false, lockSeconds: Math.ceil((data.bl - now) / 1000) };
+  }
+  const window = freshWindow(data.bu, now, BURST_WINDOW_MS);
+  window.c += 1;
+  data.bu = window;
+  if (window.c > BURST_LIMIT) {
+    data.bl = now + BURST_LOCK_MS;
+    return { ok: false, lockSeconds: Math.ceil(BURST_LOCK_MS / 1000) };
+  }
+  return { ok: true, lockSeconds: 0 };
 }
 
 function reply(payload, status) {
@@ -198,11 +224,14 @@ export class RateLimiter {
         result = agentPeek(this.data, now);
         mutated = false;
         break;
-      case "agent.reserve":
-        result = agentReserve(this.data, now);
+      case "agent.charge":
+        result = agentCharge(this.data, now, clampTokens(body.tokens));
         break;
-      case "agent.refund":
-        result = agentRefund(this.data, now);
+      case "agent.burst":
+        result = agentBurst(this.data, now);
+        break;
+      case "ip.guard":
+        result = sharedGuard(this.data, now);
         break;
       default:
         return reply({ error: "bad_request" }, 400);
@@ -212,13 +241,13 @@ export class RateLimiter {
   }
 }
 
-export async function limiterCall(env, hash, op) {
+export async function limiterCall(env, hash, op, extra) {
   if (!env.RATE_LIMITER) throw new Error("limiter_missing");
   const stub = env.RATE_LIMITER.get(env.RATE_LIMITER.idFromName(hash));
   const response = await stub.fetch("https://rate-limiter.internal/" + op, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ key: hash, op }),
+    body: JSON.stringify(Object.assign({}, extra || {}, { key: hash, op })),
   });
   if (!response.ok) throw new Error("limiter_http");
   return response.json();
