@@ -2,7 +2,6 @@ package com.catsblock.weather.ui
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.RepeatMode
@@ -13,12 +12,8 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -43,19 +38,14 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowUpward
-import androidx.compose.material.icons.rounded.Check
-import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.Stars
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.lifecycle.Lifecycle
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -78,7 +68,6 @@ import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -113,19 +102,6 @@ private const val EraseStepMs = 28L
 private const val HoldMs = 1800L
 private const val PauseMs = 450L
 
-private val FailureTint = Color(0xFFFF8A80)
-
-private enum class ProcessState { Waiting, Running, Done, Failed }
-
-private class AgentProcess(val label: String, val ids: Set<String>)
-
-private val Processes = listOf(
-    AgentProcess("Region check", setOf("region")),
-    AgentProcess("Rate limiter", setOf("limiter", "validate")),
-    AgentProcess("Weather feed", setOf("locate", "weather")),
-    AgentProcess("Language model", setOf("model", "format"))
-)
-
 private fun stepLabel(id: String): String = tr(
     when (id) {
         "region" -> "Checking region"
@@ -144,29 +120,18 @@ private fun liveLabel(steps: List<AgentStep>): String {
     return if (running != null) stepLabel(running.id) else tr("Working")
 }
 
-private fun processState(steps: List<AgentStep>, process: AgentProcess): ProcessState {
-    val own = steps.filter { it.id in process.ids }
-    return when {
-        own.any { it.status == StepStatus.Fail } -> ProcessState.Failed
-        own.any { it.status == StepStatus.Run } -> ProcessState.Running
-        own.isNotEmpty() -> ProcessState.Done
-        else -> ProcessState.Waiting
-    }
-}
-
 @Composable
 fun AgentScreen(vm: WeatherViewModel) {
     val scheme = MaterialTheme.colorScheme
     val chat = vm.agent
     val messages by chat.messages.collectAsStateWithLifecycle()
-    val sending by chat.sending.collectAsStateWithLifecycle()
     val city by vm.city.collectAsStateWithLifecycle()
     val settings by vm.settings.collectAsStateWithLifecycle()
     var text by rememberSaveable { mutableStateOf("") }
     val blockedUntil by chat.blockedUntil.collectAsStateWithLifecycle()
-    val unavailable by chat.unavailable.collectAsStateWithLifecycle()
+    val gate by chat.gate.collectAsStateWithLifecycle()
     val limited = blockedUntil > 0L
-    val canSend = text.isNotBlank() && !unavailable && !limited
+    val canSend = text.isNotBlank() && gate == AgentGate.Open && !limited
     val submit = {
         if (canSend && chat.send(text, city, settings)) text = ""
     }
@@ -174,8 +139,6 @@ fun AgentScreen(vm: WeatherViewModel) {
     val bottomInset = LocalBottomInset.current
     val imeBottom = WindowInsets.ime.asPaddingValues().calculateBottomPadding()
     val bottom = if (imeBottom > bottomInset) imeBottom else bottomInset
-    val live = messages.lastOrNull()?.takeIf { it.pending }
-    val status = if (sending) liveLabel(live?.steps.orEmpty()) else null
 
     LaunchedEffect(Unit) {
         chat.refreshAvailability()
@@ -188,7 +151,7 @@ fun AgentScreen(vm: WeatherViewModel) {
         }
     }
 
-    LaunchedEffect(messages.size, live?.steps?.size, messages.lastOrNull()?.pending) {
+    LaunchedEffect(messages.size, messages.lastOrNull()?.pending) {
         if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex)
     }
 
@@ -197,7 +160,7 @@ fun AgentScreen(vm: WeatherViewModel) {
         contentAlignment = Alignment.TopCenter
     ) {
         Column(Modifier.widthIn(max = 720.dp).fillMaxWidth().fillMaxHeight()) {
-            AgentHeader(status)
+            AgentHeader()
             if (messages.isEmpty()) {
                 AgentEmptyState(Modifier.weight(1f).fillMaxWidth())
             } else {
@@ -212,18 +175,19 @@ fun AgentScreen(vm: WeatherViewModel) {
                     }
                 }
             }
-            if (limited) {
-                AgentLimitBar(blockedUntil, Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = bottom))
-            } else if (unavailable) {
-                AgentUnavailableBar(Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = bottom))
-            } else {
-                AgentInputBar(
+            val barModifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = bottom)
+            when {
+                gate == AgentGate.WorkersLimit -> AgentWorkersLimitBar(barModifier)
+                gate == AgentGate.Checking -> AgentCheckingBar(barModifier)
+                gate == AgentGate.Unavailable -> AgentUnavailableBar(barModifier)
+                limited -> AgentLimitBar(blockedUntil, barModifier)
+                else -> AgentInputBar(
                     text = text,
                     onTextChange = { text = clampAgentInput(it) },
                     canSend = canSend,
                     sending = false,
                     onSend = { submit() },
-                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = bottom)
+                    modifier = barModifier
                 )
             }
         }
@@ -231,7 +195,7 @@ fun AgentScreen(vm: WeatherViewModel) {
 }
 
 @Composable
-private fun AgentHeader(status: String?) {
+private fun AgentHeader() {
     val scheme = MaterialTheme.colorScheme
     val transition = rememberInfiniteTransition(label = "agent-header")
     val corner by transition.animateFloat(
@@ -240,8 +204,6 @@ private fun AgentHeader(status: String?) {
         animationSpec = infiniteRepeatable(tween(2400, easing = FastOutSlowInEasing), RepeatMode.Reverse),
         label = "corner"
     )
-    var shown by remember { mutableStateOf("") }
-    LaunchedEffect(status) { if (status != null) shown = status }
     Row(
         Modifier.statusBarsPadding().padding(horizontal = 20.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -263,31 +225,6 @@ private fun AgentHeader(status: String?) {
             color = scheme.onBackground,
             maxLines = 1
         )
-        AnimatedVisibility(
-            visible = status != null,
-            enter = fadeIn() + scaleIn(spring(dampingRatio = 0.6f, stiffness = Spring.StiffnessMedium)),
-            exit = fadeOut() + scaleOut()
-        ) {
-            Surface(
-                color = scheme.tertiaryContainer,
-                contentColor = scheme.onTertiaryContainer,
-                shape = CircleShape
-            ) {
-                Row(
-                    Modifier.padding(start = 10.dp, end = 16.dp, top = 8.dp, bottom = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    ExpressiveLoader(size = 22.dp, color = scheme.onTertiaryContainer)
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        shown,
-                        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-            }
-        }
     }
 }
 
@@ -353,6 +290,46 @@ private fun AgentUnavailableBar(modifier: Modifier) {
             color = scheme.onErrorContainer,
             style = MaterialTheme.typography.bodyMedium,
             textAlign = TextAlign.Center
+        )
+    }
+}
+
+@Composable
+private fun AgentWorkersLimitBar(modifier: Modifier) {
+    val scheme = MaterialTheme.colorScheme
+    Box(
+        modifier
+            .fillMaxWidth()
+            .background(scheme.errorContainer, RoundedCornerShape(24.dp))
+            .padding(horizontal = 20.dp, vertical = 16.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            tr(AgentMessages.WORKERS_LIMIT),
+            color = scheme.onErrorContainer,
+            style = MaterialTheme.typography.bodyMedium,
+            textAlign = TextAlign.Center
+        )
+    }
+}
+
+@Composable
+private fun AgentCheckingBar(modifier: Modifier) {
+    val scheme = MaterialTheme.colorScheme
+    Row(
+        modifier
+            .fillMaxWidth()
+            .background(scheme.surfaceContainerHigh, RoundedCornerShape(24.dp))
+            .padding(horizontal = 20.dp, vertical = 16.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        ExpressiveLoader(size = 26.dp, color = scheme.onSurfaceVariant)
+        Spacer(Modifier.width(12.dp))
+        Text(
+            tr("Checking Agent availability"),
+            color = scheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodyMedium
         )
     }
 }
@@ -466,10 +443,9 @@ private fun AgentBubble(message: AgentMessage, settings: AppSettings) {
             Modifier.padding(horizontal = 14.dp, vertical = 14.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            if (message.pending || message.steps.isNotEmpty()) {
-                ActivityPanel(message, content)
-            }
-            if (!message.pending) {
+            if (message.pending) {
+                WorkingIndicator(message.steps, content)
+            } else {
                 if (message.text.isNotEmpty()) {
                     Text(
                         if (message.notice) tr(message.text) else message.text,
@@ -492,188 +468,20 @@ private fun AgentBubble(message: AgentMessage, settings: AppSettings) {
 }
 
 @Composable
-private fun ActivityPanel(message: AgentMessage, content: Color) {
-    val live = message.pending
-    val failed = message.steps.any { it.status == StepStatus.Fail } || (!live && message.notice)
-    var open by rememberSaveable(message.id) { mutableStateOf(false) }
-    val expanded = live || open
-    val rotation by animateFloatAsState(
-        if (expanded) 180f else 0f,
-        spring(dampingRatio = 0.7f, stiffness = Spring.StiffnessMediumLow),
-        label = "chevron"
-    )
-    val done = message.steps.count { it.status == StepStatus.Done }
-    Surface(
-        color = content.copy(alpha = 0.1f),
-        contentColor = content,
-        shape = RoundedCornerShape(24.dp),
-        modifier = Modifier
-            .fillMaxWidth()
-            .animateContentSize(spring(dampingRatio = 0.8f, stiffness = Spring.StiffnessMediumLow))
+private fun WorkingIndicator(steps: List<AgentStep>, content: Color) {
+    Row(
+        Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Row(
-                Modifier.fillMaxWidth().clickable(enabled = !live, role = Role.Button) { open = !open },
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Box(Modifier.size(32.dp), contentAlignment = Alignment.Center) {
-                    if (live) {
-                        ExpressiveLoader(size = 30.dp, color = content)
-                    } else {
-                        Icon(
-                            if (failed) Icons.Rounded.Close else Icons.Rounded.Check,
-                            contentDescription = null,
-                            tint = if (failed) FailureTint else content,
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
-                }
-                Spacer(Modifier.width(12.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        if (live) liveLabel(message.steps) else tr(if (failed) "Stopped" else "Completed"),
-                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Black),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        "$done/${message.steps.size}",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = content.copy(alpha = 0.7f)
-                    )
-                }
-                if (!live) {
-                    Icon(
-                        Icons.Rounded.KeyboardArrowDown,
-                        contentDescription = tr(if (open) "Hide activity" else "Show activity"),
-                        tint = content,
-                        modifier = Modifier.graphicsLayer { rotationZ = rotation }
-                    )
-                }
-            }
-            AnimatedVisibility(
-                visible = expanded,
-                enter = fadeIn(tween(200)) + expandVertically(),
-                exit = fadeOut(tween(120)) + shrinkVertically()
-            ) {
-                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                    ProcessGrid(message.steps, content)
-                    CommandStream(message.steps, live, content)
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun ProcessGrid(steps: List<AgentStep>, content: Color) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        ExpressiveLoader(size = 30.dp, color = content)
+        Spacer(Modifier.width(12.dp))
         Text(
-            tr("System processes"),
-            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Black),
-            color = content.copy(alpha = 0.72f)
+            liveLabel(steps),
+            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Black),
+            color = content,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
         )
-        Processes.chunked(2).forEach { pair ->
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                pair.forEach { process ->
-                    ProcessChip(process, processState(steps, process), content, Modifier.weight(1f))
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun ProcessChip(process: AgentProcess, state: ProcessState, content: Color, modifier: Modifier) {
-    val alpha by animateFloatAsState(if (state == ProcessState.Running) 0.24f else 0.1f, tween(240), label = "chipAlpha")
-    Surface(
-        color = content.copy(alpha = alpha),
-        contentColor = content,
-        shape = RoundedCornerShape(18.dp),
-        modifier = modifier
-    ) {
-        Row(
-            Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(Modifier.size(18.dp), contentAlignment = Alignment.Center) {
-                when (state) {
-                    ProcessState.Running -> CircularProgressIndicator(Modifier.size(16.dp), color = content, strokeWidth = 2.dp)
-                    ProcessState.Done -> Icon(Icons.Rounded.Check, contentDescription = null, tint = content, modifier = Modifier.size(18.dp))
-                    ProcessState.Failed -> Icon(Icons.Rounded.Close, contentDescription = null, tint = FailureTint, modifier = Modifier.size(18.dp))
-                    ProcessState.Waiting -> Box(Modifier.size(7.dp).clip(CircleShape).background(content.copy(alpha = 0.35f)))
-                }
-            }
-            Spacer(Modifier.width(8.dp))
-            Text(
-                tr(process.label),
-                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-    }
-}
-
-@Composable
-private fun CommandStream(steps: List<AgentStep>, live: Boolean, content: Color) {
-    val lines = steps.filter { it.command.isNotBlank() }.takeLast(6)
-    val transition = rememberInfiniteTransition(label = "cursor")
-    val blink by transition.animateFloat(
-        initialValue = 0.15f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(520), RepeatMode.Reverse),
-        label = "blink"
-    )
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(
-            tr("Live commands"),
-            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Black),
-            color = content.copy(alpha = 0.72f)
-        )
-        Surface(
-            color = Color.Black.copy(alpha = 0.32f),
-            contentColor = content,
-            shape = RoundedCornerShape(18.dp),
-            modifier = Modifier.fillMaxWidth().animateContentSize()
-        ) {
-            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                lines.forEach { step ->
-                    val tint = when (step.status) {
-                        StepStatus.Run -> content
-                        StepStatus.Done -> content.copy(alpha = 0.78f)
-                        StepStatus.Fail -> FailureTint
-                    }
-                    Row(verticalAlignment = Alignment.Top) {
-                        Text("\$", fontFamily = FontFamily.Monospace, fontSize = 12.sp, lineHeight = 16.sp, color = content.copy(alpha = 0.5f))
-                        Spacer(Modifier.width(8.dp))
-                        Text(
-                            step.command,
-                            modifier = Modifier.weight(1f),
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 12.sp,
-                            lineHeight = 16.sp,
-                            color = tint
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Text(
-                            when (step.status) {
-                                StepStatus.Run -> "…"
-                                StepStatus.Done -> "✓"
-                                StepStatus.Fail -> "✕"
-                            },
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 12.sp,
-                            lineHeight = 16.sp,
-                            color = tint
-                        )
-                    }
-                }
-                if (live) {
-                    Text("▌", fontFamily = FontFamily.Monospace, fontSize = 12.sp, lineHeight = 16.sp, color = content.copy(alpha = blink))
-                }
-            }
-        }
     }
 }
 
