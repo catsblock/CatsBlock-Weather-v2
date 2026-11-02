@@ -55,12 +55,7 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.Stars
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.IconButton
-import androidx.compose.material.icons.rounded.FamilyRestroom
-import androidx.compose.runtime.DisposableEffect
 import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.compose.LocalLifecycleOwner
-import androidx.lifecycle.repeatOnLifecycle
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -94,6 +89,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.catsblock.weather.data.AgentCard
 import com.catsblock.weather.data.AgentDay
 import com.catsblock.weather.data.AgentLimits
+import com.catsblock.weather.data.AgentMessages
 import com.catsblock.weather.data.AgentStep
 import com.catsblock.weather.data.AppSettings
 import com.catsblock.weather.data.StepStatus
@@ -166,14 +162,10 @@ fun AgentScreen(vm: WeatherViewModel) {
     val city by vm.city.collectAsStateWithLifecycle()
     val settings by vm.settings.collectAsStateWithLifecycle()
     var text by rememberSaveable { mutableStateOf("") }
-    val usedSeconds by vm.agentUsedSeconds.collectAsStateWithLifecycle()
-    val family = settings.ageGroup.familyControls
-    val locked = family && settings.agentLimitMinutes > 0 && usedSeconds >= settings.agentLimitMinutes * 60
-    var familyOpen by rememberSaveable { mutableStateOf(true) }
-    val lifecycleOwner = LocalLifecycleOwner.current
     val blockedUntil by chat.blockedUntil.collectAsStateWithLifecycle()
+    val unavailable by chat.unavailable.collectAsStateWithLifecycle()
     val limited = blockedUntil > 0L
-    val canSend = text.isNotBlank() && !locked && !limited
+    val canSend = text.isNotBlank() && !unavailable && !limited
     val submit = {
         if (canSend && chat.send(text, city, settings)) text = ""
     }
@@ -184,18 +176,8 @@ fun AgentScreen(vm: WeatherViewModel) {
     val live = messages.lastOrNull()?.takeIf { it.pending }
     val status = if (sending) liveLabel(live?.steps.orEmpty()) else null
 
-    LaunchedEffect(family, locked) {
-        if (family && !locked) {
-            lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-                while (true) {
-                    delay(1000L)
-                    vm.tickAgentUsage()
-                }
-            }
-        }
-    }
-    LaunchedEffect(locked) {
-        if (locked) vm.flushAgentUsage()
+    LaunchedEffect(Unit) {
+        chat.refreshAvailability()
     }
     LaunchedEffect(blockedUntil) {
         if (blockedUntil > 0L) {
@@ -203,9 +185,6 @@ fun AgentScreen(vm: WeatherViewModel) {
             if (wait > 0L) delay(wait)
             chat.clearBlock()
         }
-    }
-    DisposableEffect(Unit) {
-        onDispose { vm.flushAgentUsage() }
     }
 
     LaunchedEffect(messages.size, live?.steps?.size, messages.lastOrNull()?.pending) {
@@ -217,17 +196,7 @@ fun AgentScreen(vm: WeatherViewModel) {
         contentAlignment = Alignment.TopCenter
     ) {
         Column(Modifier.widthIn(max = 720.dp).fillMaxWidth().fillMaxHeight()) {
-            AgentHeader(status, family, familyOpen) { familyOpen = !familyOpen }
-            if (family) {
-                AnimatedVisibility(visible = familyOpen) {
-                    FamilyControlsCard(
-                        limitMinutes = settings.agentLimitMinutes,
-                        usedSeconds = usedSeconds,
-                        onLimitChange = vm::setAgentLimit,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
-                    )
-                }
-            }
+            AgentHeader(status)
             if (messages.isEmpty()) {
                 AgentEmptyState(Modifier.weight(1f).fillMaxWidth())
             } else {
@@ -244,8 +213,8 @@ fun AgentScreen(vm: WeatherViewModel) {
             }
             if (limited) {
                 AgentLimitBar(blockedUntil, Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = bottom))
-            } else if (locked) {
-                AgentLockedBar(Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = bottom))
+            } else if (unavailable) {
+                AgentUnavailableBar(Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = bottom))
             } else {
                 AgentInputBar(
                     text = text,
@@ -261,7 +230,7 @@ fun AgentScreen(vm: WeatherViewModel) {
 }
 
 @Composable
-private fun AgentHeader(status: String?, showFamily: Boolean, familyOpen: Boolean, onToggleFamily: () -> Unit) {
+private fun AgentHeader(status: String?) {
     val scheme = MaterialTheme.colorScheme
     val transition = rememberInfiniteTransition(label = "agent-header")
     val corner by transition.animateFloat(
@@ -318,15 +287,25 @@ private fun AgentHeader(status: String?, showFamily: Boolean, familyOpen: Boolea
                 }
             }
         }
-        if (showFamily) {
-            IconButton(onClick = onToggleFamily) {
-                Icon(
-                    Icons.Rounded.FamilyRestroom,
-                    contentDescription = tr("Family controls"),
-                    tint = if (familyOpen) scheme.primary else scheme.onSurfaceVariant
-                )
-            }
-        }
+    }
+}
+
+@Composable
+private fun AgentUnavailableBar(modifier: Modifier) {
+    val scheme = MaterialTheme.colorScheme
+    Box(
+        modifier
+            .fillMaxWidth()
+            .background(scheme.errorContainer, RoundedCornerShape(24.dp))
+            .padding(horizontal = 20.dp, vertical = 16.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            tr(AgentMessages.UNAVAILABLE),
+            color = scheme.onErrorContainer,
+            style = MaterialTheme.typography.bodyMedium,
+            textAlign = TextAlign.Center
+        )
     }
 }
 
