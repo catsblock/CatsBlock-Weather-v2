@@ -271,7 +271,12 @@ data class AppSettings(
     val fontChoice: FontChoice = FontChoice.GoogleSans,
     val customFontName: String = "",
     val precipUnit: PrecipUnit = PrecipUnit.Mm,
-    val disableEffectsOnSaver: Boolean = true
+    val disableEffectsOnSaver: Boolean = true,
+    val ageGroup: AgeGroup = AgeGroup.Unknown,
+    val agentLimitMinutes: Int = 0,
+    val agentUsedSeconds: Int = 0,
+    val agentUsageDay: String = "",
+    val agentBlockedUntil: Long = 0L
 )
 
 data class Continent(val title: String, val cities: List<City>)
