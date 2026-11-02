@@ -8,7 +8,14 @@ plugins {
 
 base.archivesName.set("com.catsblock.weather")
 
-val buildNum = (project.findProperty("buildNumber") as String?)?.toIntOrNull() ?: 1
+val buildNum = (project.findProperty("buildNumber") as String?)?.toIntOrNull()?.takeIf { it > 0 } ?: 1
+val buildDate: java.time.LocalDate = (project.findProperty("buildDate") as String?)
+    ?.let { runCatching { java.time.LocalDate.parse(it) }.getOrNull() }
+    ?: java.time.LocalDate.now(java.time.ZoneOffset.UTC)
+val releaseVersionName = String.format(
+    java.util.Locale.ROOT, "%02d.%d.%04d.%d.%s-RELEASE",
+    buildDate.dayOfMonth, buildDate.monthValue, buildDate.year, buildNum, "CatsBlock".uppercase().map { it - 'A' + 1 }.joinToString("")
+)
 val ksPath: String? = System.getenv("KS_PATH")
 val ksPass: String? = System.getenv("KS_PASS")
 
@@ -30,7 +37,7 @@ android {
         minSdk = 26
         targetSdk = 36
         versionCode = buildNum
-        versionName = "1.0.$buildNum"
+        versionName = releaseVersionName
         buildConfigField("String", "CLOUDFLARE_WEBSITE", quoted(secret("CLOUDFLARE_WEBSITE").trimEnd('/')))
         buildConfigField("String", "APP_TOKEN", quoted(secret("APP_TOKEN")))
     }
