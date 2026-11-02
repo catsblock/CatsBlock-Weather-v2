@@ -60,7 +60,7 @@ class SettingsStore(private val context: Context) {
         AppSettings(
             fahrenheit = it[Keys.fahrenheit] ?: false,
             apiKeys = readKeys(it),
-            weatherSource = runCatching { WeatherSource.valueOf(it[Keys.weatherSource] ?: "") }.getOrDefault(WeatherSource.OpenMeteo),
+            weatherSource = runCatching { WeatherSource.valueOf(it[Keys.weatherSource] ?: "") }.getOrDefault(WeatherSource.OpenMeteo).let { chosen -> if (SecretKeys.available(chosen)) chosen else WeatherSource.OpenMeteo },
             windUnit = runCatching { WindUnit.valueOf(it[Keys.windUnit] ?: "") }.getOrDefault(WindUnit.Kmh),
             pressureUnit = runCatching { PressureUnit.valueOf(it[Keys.pressureUnit] ?: "") }.getOrDefault(PressureUnit.Hpa),
             backgroundUpdates = it[Keys.backgroundUpdates] ?: true,
