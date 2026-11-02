@@ -94,7 +94,7 @@ object AppUpdates {
                 if (asset.getString("name").endsWith(".apk")) {
                     return@withContext UpdateInfo(
                         build,
-                        "1.0.$build",
+                        json.optString("name").trim().ifEmpty { "Build $build" },
                         asset.getLong("size"),
                         asset.getString("browser_download_url")
                     )
