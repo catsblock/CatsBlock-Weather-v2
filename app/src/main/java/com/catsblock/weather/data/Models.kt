@@ -272,7 +272,6 @@ data class AppSettings(
     val customFontName: String = "",
     val precipUnit: PrecipUnit = PrecipUnit.Mm,
     val disableEffectsOnSaver: Boolean = true,
-    val ageGroup: AgeGroup = AgeGroup.Unknown,
     val agentLimitMinutes: Int = 0,
     val agentUsedSeconds: Int = 0,
     val agentUsageDay: String = "",
