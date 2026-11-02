@@ -48,7 +48,6 @@ class SettingsStore(private val context: Context) {
         val customFontName = stringPreferencesKey("custom_font_name")
         val precipUnit = stringPreferencesKey("precip_unit")
         val disableEffectsOnSaver = booleanPreferencesKey("disable_effects_on_saver")
-        val ageGroup = stringPreferencesKey("age_group")
         val agentLimit = intPreferencesKey("agent_limit_minutes")
         val agentUsed = intPreferencesKey("agent_used_seconds")
         val agentUsageDay = stringPreferencesKey("agent_usage_day")
@@ -89,7 +88,6 @@ class SettingsStore(private val context: Context) {
             customFontName = it[Keys.customFontName].orEmpty(),
             precipUnit = runCatching { PrecipUnit.valueOf(it[Keys.precipUnit] ?: "") }.getOrDefault(PrecipUnit.Mm),
             disableEffectsOnSaver = it[Keys.disableEffectsOnSaver] ?: true,
-            ageGroup = AgeGroup.from(it[Keys.ageGroup]),
             agentLimitMinutes = it[Keys.agentLimit]?.takeIf { value -> value in AgentLimitOptions } ?: 0,
             agentUsedSeconds = (it[Keys.agentUsed] ?: 0).coerceAtLeast(0),
             agentUsageDay = it[Keys.agentUsageDay].orEmpty(),
@@ -238,10 +236,6 @@ class SettingsStore(private val context: Context) {
 
     suspend fun setDisableEffectsOnSaver(value: Boolean) {
         context.dataStore.edit { it[Keys.disableEffectsOnSaver] = value }
-    }
-
-    suspend fun setAgeGroup(value: AgeGroup) {
-        context.dataStore.edit { it[Keys.ageGroup] = value.name }
     }
 
     suspend fun setAgentLimit(minutes: Int) {
