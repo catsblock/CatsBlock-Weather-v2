@@ -46,6 +46,7 @@ import androidx.compose.material.icons.rounded.Business
 import androidx.compose.material.icons.rounded.Code
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.NotificationsActive
+import androidx.compose.material.icons.rounded.Gavel
 import androidx.compose.material.icons.rounded.PrivacyTip
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
@@ -927,6 +928,13 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
                     tr("Privacy Policy"),
                     tr("How CatsBlock Weather handles your data."),
                     { vm.openPrivacy(Screen.Settings) }
+                )
+                GroupDivider()
+                NavRow(
+                    Icons.Rounded.Gavel,
+                    tr("Terms of Service"),
+                    tr("The rules for using CatsBlock Weather and the Agent."),
+                    { vm.openTerms() }
                 )
                 GroupDivider()
                 ListItem(
