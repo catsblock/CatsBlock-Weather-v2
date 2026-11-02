@@ -17,6 +17,8 @@ body.light{--bg:#eef0f5;--fg:#1b1d24;--chip:rgba(255,255,255,.92);--sub:#5b6070;
 body.dark{--bg:#14161c;--fg:#e9ebf2;--chip:rgba(32,35,44,.92);--sub:#a5abbb;--edge:rgba(255,255,255,.1)}
 html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;background:var(--bg);font-family:sans-serif;-webkit-tap-highlight-color:transparent}
 #map{position:absolute;inset:0;background:var(--bg)}
+html.round,html.round body{background:transparent}
+html.round #map{border-radius:20px;overflow:hidden;isolation:isolate}
 .fc{position:absolute;left:0;top:0;pointer-events:none;transition:opacity .35s}
 .fc.blur{filter:blur(7px)}
 #legend{position:absolute;z-index:1000;left:50%;top:calc(var(--top) + 12px);transform:translate(-50%,-140%);opacity:0;min-width:176px;max-width:84%;padding:10px 16px 12px;border-radius:24px;background:var(--chip);color:var(--fg);box-shadow:0 4px 18px rgba(0,0,0,.22);border:1px solid var(--edge);transition:transform .5s cubic-bezier(.2,0,0,1),opacity .35s;box-sizing:border-box}
@@ -69,7 +71,7 @@ function loadScript(urls, i, ok, bad) {
 }
 window.onerror = function (m) { console.log('MapError ' + m); };
 function start() {
-var map = L.map('map', {zoomControl:false, attributionControl:false, minZoom:2, maxZoom:12, zoomSnap:0.25, worldCopyJump:true}).setView([0, 0], 4);
+var map = L.map('map', {zoomControl:false, attributionControl:false, minZoom:INIT.minZoom || 2, maxZoom:12, zoomSnap:0.25, worldCopyJump:true}).setView([0, 0], 4);
 L.control.attribution({position:'bottomright', prefix:false}).addTo(map)
   .addAttribution('© OpenStreetMap contributors · Open-Meteo · RainViewer · NASA GIBS · NASA FIRMS · NASA EONET');
 
@@ -155,7 +157,9 @@ function setLegend(extra) {
   }
 }
 
-var tileOk = false;
+var tileOk = false, tileErrors = 0, fallbackOn = false;
+var OSM_URL = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+var FALLBACK_URL = 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png';
 map.createPane('basepane').style.zIndex = 190;
 var fieldPane = map.createPane('fieldpane');
 fieldPane.style.zIndex = 250;
@@ -165,8 +169,12 @@ map.createPane('stormpane').style.zIndex = 640;
 
 function makeBase() {
   if (base) map.removeLayer(base);
-  base = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:19, pane:'basepane'});
+  base = L.tileLayer(fallbackOn ? FALLBACK_URL : OSM_URL, {maxZoom:19, pane:'basepane', subdomains:'abcd'});
   base.on('tileload', function () { tileOk = true; hideNote(); });
+  base.on('tileerror', function () {
+    tileErrors++;
+    if (!tileOk && !fallbackOn && tileErrors >= 2) { fallbackOn = true; makeBase(); }
+  });
   base.addTo(map);
   document.getElementById('map').classList.toggle('dim', state.dark);
 }
@@ -533,7 +541,9 @@ state.err = INIT.err;
 state.labels = INIT.labels || {};
 setTheme(INIT.dark);
 setInsets(INIT.top, INIT.bottom);
+if (INIT.round) document.documentElement.className = 'round';
 if (INIT.hasCity) setCity(INIT.lat, INIT.lon, false);
+if (INIT.zoom) map.setView([INIT.centerLat, INIT.centerLon], INIT.zoom, {animate:false});
 setLayer(INIT.layer, INIT.title, INIT.err, INIT.f, INIT.labels);
 
 setTimeout(function () { if (!tileOk) note(INIT.err); }, 8000);
