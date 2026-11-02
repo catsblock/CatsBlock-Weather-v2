@@ -15,6 +15,8 @@ import java.io.IOException
 import java.time.LocalDate
 import java.util.concurrent.TimeUnit
 
+private const val DEFAULT_MAP_ZOOM = 5.5
+
 object AgentLimits {
     const val MAX_CHARS = 70
     const val HISTORY_TURNS = 2
@@ -94,7 +96,15 @@ sealed interface AgentCard {
         val avg: Double
     ) : AgentCard
 
-    data class MapView(val layer: String, val place: String, val lat: Double, val lon: Double) : AgentCard
+    data class MapView(
+        val layer: String,
+        val place: String,
+        val lat: Double,
+        val lon: Double,
+        val zoom: Double,
+        val centerLat: Double,
+        val centerLon: Double
+    ) : AgentCard
 }
 
 sealed interface AgentOutcome {
@@ -296,7 +306,10 @@ class AgentClient {
             layer = item.optString("layer", "none"),
             place = item.optString("place"),
             lat = item.getDouble("lat"),
-            lon = item.getDouble("lon")
+            lon = item.getDouble("lon"),
+            zoom = item.optDouble("zoom", DEFAULT_MAP_ZOOM),
+            centerLat = item.optDouble("centerLat", item.getDouble("lat")),
+            centerLon = item.optDouble("centerLon", item.getDouble("lon"))
         )
         else -> null
     }
