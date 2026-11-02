@@ -90,7 +90,7 @@ class UpdateViewModel(private val app: Application) : AndroidViewModel(app) {
                 val a = assets.getJSONObject(i)
                 if (a.getString("name").endsWith(".apk")) {
                     return UpdateState.Available(
-                        UpdateInfo(build, "1.0.$build", a.getLong("size"), a.getString("browser_download_url"))
+                        UpdateInfo(build, o.optString("name").trim().ifEmpty { "Build $build" }, a.getLong("size"), a.getString("browser_download_url"))
                     )
                 }
             }
