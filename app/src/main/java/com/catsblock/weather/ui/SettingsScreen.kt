@@ -941,7 +941,7 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
                     modifier = Modifier.clickable { tapVersion() },
                     leadingContent = { Icon(Icons.Rounded.Info, null, tint = MaterialTheme.colorScheme.primary) },
                     headlineContent = { Text(tr("App version")) },
-                    trailingContent = { Text(versionName, color = MaterialTheme.colorScheme.onSurfaceVariant) },
+                    supportingContent = { Text(versionName) },
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                 )
                 if (developerEnabled) {
@@ -1085,7 +1085,7 @@ private fun UpdateCard(up: UpdateViewModel) {
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        InfoBlock(s.info)
+                        InfoBlock(s.info, Modifier.weight(1f).padding(end = 12.dp))
                         Button(onClick = up::update) { Text(tr("Update")) }
                     }
                 }
@@ -1096,7 +1096,7 @@ private fun UpdateCard(up: UpdateViewModel) {
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        InfoBlock(s.info)
+                        InfoBlock(s.info, Modifier.weight(1f).padding(end = 12.dp))
                         Button(onClick = up::openUnknownSourcesSettings) { Text(tr("Open settings")) }
                     }
                 }
@@ -1120,8 +1120,8 @@ private fun UpdateCard(up: UpdateViewModel) {
 }
 
 @Composable
-private fun InfoBlock(info: UpdateInfo) {
-    Column {
+private fun InfoBlock(info: UpdateInfo, modifier: Modifier = Modifier) {
+    Column(modifier) {
         Text("${tr("Version")} ${info.versionName}", style = MaterialTheme.typography.titleSmall)
         Text(mb(info.sizeBytes), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
