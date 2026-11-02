@@ -1,4 +1,3 @@
-
 export const SHORT_WINDOW_MS = 10 * 60 * 1000;
 export const LONG_WINDOW_MS = 12 * 60 * 60 * 1000;
 export const LOCKOUT_MS = 6 * 60 * 60 * 1000;
@@ -290,7 +289,11 @@ export class RateLimiter {
     stored = await this.state.storage.get("d");
     if (!stored && this.kv) {
       const raw = await this.kv.get(key);
-      stored = raw ? JSON.parse(raw) : null;
+      try {
+        stored = raw ? JSON.parse(raw) : null;
+      } catch (err) {
+        stored = null;
+      }
     }
     const base = stored && typeof stored === "object" ? stored : {};
     this.data = prune(Object.assign({}, base, { k: key }), Date.now());
