@@ -1,6 +1,8 @@
 package com.catsblock.weather.ui
 
 import com.catsblock.weather.i18n.tr
+import com.catsblock.weather.data.AgeGroup
+import java.time.LocalDate
 import com.catsblock.weather.data.UserKeys
 import com.catsblock.weather.data.WeatherSource
 import com.catsblock.weather.work.BackgroundUpdates
@@ -62,7 +64,7 @@ import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 import java.util.Locale
 
-enum class Screen { Welcome, Picker, Main, Map, Agent, Settings, IconKit, BackgroundKit, AppIcon, LiveMoon, Privacy, Info }
+enum class Screen { Welcome, Picker, Main, Map, Agent, Settings, IconKit, BackgroundKit, AppIcon, LiveMoon, Privacy, Info, Age, Terms }
 
 sealed interface WeatherState {
     data object Idle : WeatherState
@@ -76,6 +78,8 @@ class WeatherViewModel(private val app: Application) : AndroidViewModel(app) {
 
     private companion object {
         const val FRESH_MS = 120_000L
+        const val DEFAULT_AGE = 18
+        const val USAGE_FLUSH_TICKS = 10
     }
 
     private val store = SettingsStore(app)
@@ -84,7 +88,11 @@ class WeatherViewModel(private val app: Application) : AndroidViewModel(app) {
     private var loadJob: Job? = null
 
     val screen = MutableStateFlow<Screen?>(null)
-    val agent = AgentChat(viewModelScope)
+    val agent = AgentChat(viewModelScope, onBlockChanged = { until -> viewModelScope.launch { store.setAgentBlockedUntil(until) } })
+    val pendingAge = MutableStateFlow(DEFAULT_AGE)
+    val agentUsedSeconds = MutableStateFlow(0)
+    private var agentUsageDay = ""
+    private var agentUnsaved = 0
     val refreshing = MutableStateFlow(false)
     val notices = MutableSharedFlow<String>(extraBufferCapacity = 1)
     val usageStatus = repo.usageStatus
@@ -99,6 +107,15 @@ class WeatherViewModel(private val app: Application) : AndroidViewModel(app) {
     val settings = store.settings.stateIn(viewModelScope, SharingStarted.Eagerly, AppSettings())
 
     val activityStats = activity.stats.stateIn(viewModelScope, SharingStarted.Eagerly, com.catsblock.weather.data.ActivityStats())
+
+    init {
+        viewModelScope.launch {
+            val stored = store.settings.first()
+            agentUsageDay = LocalDate.now().toString()
+            agent.restoreBlock(stored.agentBlockedUntil)
+            if (stored.agentUsageDay == agentUsageDay) agentUsedSeconds.value = stored.agentUsedSeconds
+        }
+    }
 
     init {
         viewModelScope.launch { settings.collect { UserKeys.update(it.apiKeys) } }
@@ -117,9 +134,10 @@ class WeatherViewModel(private val app: Application) : AndroidViewModel(app) {
         }
         viewModelScope.launch {
             val saved = store.currentCity.first()
+            val group = store.settings.first().ageGroup
             if (saved != null) {
                 city.value = saved
-                screen.value = Screen.Main
+                screen.value = if (group == AgeGroup.Unknown) Screen.Age else Screen.Main
                 refresh()
             } else {
                 screen.value = Screen.Welcome
@@ -236,6 +254,10 @@ class WeatherViewModel(private val app: Application) : AndroidViewModel(app) {
         screen.value = Screen.Privacy
     }
 
+    fun openTerms() {
+        screen.value = Screen.Terms
+    }
+
     fun openInfo(from: Screen) {
         infoReturn = from
         screen.value = Screen.Info
@@ -271,14 +293,54 @@ class WeatherViewModel(private val app: Application) : AndroidViewModel(app) {
             Screen.Settings, Screen.Map, Screen.Agent, Screen.LiveMoon -> Screen.Main
             Screen.Privacy -> privacyReturn
             Screen.Info -> infoReturn
+            Screen.Terms -> Screen.Settings
             Screen.IconKit, Screen.BackgroundKit, Screen.AppIcon -> Screen.Settings
             else -> screen.value
         }
     }
 
+    private fun gateScreen(): Screen =
+        if (settings.value.ageGroup == AgeGroup.Unknown) Screen.Age else Screen.Main
+
+    fun setPendingAge(value: Int) {
+        pendingAge.value = value
+    }
+
+    fun confirmAge(age: Int): Boolean {
+        val group = AgeGroup.of(age)
+        if (group == AgeGroup.Unknown) return false
+        viewModelScope.launch { store.setAgeGroup(group) }
+        screen.value = Screen.Main
+        return true
+    }
+
+    fun setAgentLimit(minutes: Int) {
+        viewModelScope.launch { store.setAgentLimit(minutes) }
+    }
+
+    fun tickAgentUsage() {
+        val today = LocalDate.now().toString()
+        if (today != agentUsageDay) {
+            agentUsageDay = today
+            agentUsedSeconds.value = 0
+            agentUnsaved = 0
+        }
+        agentUsedSeconds.value += 1
+        agentUnsaved += 1
+        if (agentUnsaved >= USAGE_FLUSH_TICKS) flushAgentUsage()
+    }
+
+    fun flushAgentUsage() {
+        if (agentUnsaved == 0 || agentUsageDay.isEmpty()) return
+        val day = agentUsageDay
+        val seconds = agentUsedSeconds.value
+        agentUnsaved = 0
+        viewModelScope.launch { store.setAgentUsage(day, seconds) }
+    }
+
     fun selectCity(selected: City) {
         city.value = selected
-        screen.value = Screen.Main
+        screen.value = gateScreen()
         queryText.value = ""
         searchResults.value = emptyList()
         searchLoading.value = false
@@ -355,7 +417,7 @@ class WeatherViewModel(private val app: Application) : AndroidViewModel(app) {
 
     @SuppressLint("MissingPermission")
     fun locate() {
-        screen.value = Screen.Main
+        screen.value = gateScreen()
         weather.value = WeatherState.Loading
         loadJob?.cancel()
         loadJob = viewModelScope.launch {
