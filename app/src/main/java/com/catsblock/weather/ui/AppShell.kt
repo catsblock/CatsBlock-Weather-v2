@@ -121,7 +121,7 @@ fun AppShell(vm: WeatherViewModel, screen: Screen?) {
     SideEffect { last = tab }
 
     val settings by vm.settings.collectAsStateWithLifecycle()
-    val agentAllowed = settings.ageGroup.agentAllowed
+    val agentAllowed = true
     val tabs = remember(agentAllowed) { AppTab.entries.filter { it != AppTab.Agent || agentAllowed } }
     LaunchedEffect(screen, agentAllowed) {
         if (screen == Screen.Agent && !agentAllowed) vm.openWeather()
