@@ -253,7 +253,7 @@ internal object MapHost {
     }
 }
 
-private fun mapLabels(): JSONObject = JSONObject()
+internal fun mapLabels(): JSONObject = JSONObject()
     .put("td", tr("Tropical depression"))
     .put("ts", tr("Tropical storm"))
     .put("c1", tr("Category 1"))
