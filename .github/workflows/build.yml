@@ -30,6 +30,23 @@ jobs:
         with:
           gradle-version: 8.11.1
 
+      - name: Read release configuration
+        run: |
+          if [ ! -f app-config.json ]; then
+            echo "::error::app-config.json was not found in the repository root."
+            exit 1
+          fi
+          TESTONLY=$(jq -r 'if (.testonly | type) == "boolean" then (.testonly | tostring) else "invalid" end' app-config.json)
+          case "$TESTONLY" in
+            true|false) ;;
+            *)
+              echo "::error::app-config.json must contain a boolean \"testonly\" value."
+              exit 1
+              ;;
+          esac
+          echo "TESTONLY=$TESTONLY" >> "$GITHUB_ENV"
+          echo "BUILD_DATE=$(date -u +%F)" >> "$GITHUB_ENV"
+
       - name: Check signing secrets
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
@@ -92,7 +109,7 @@ jobs:
           KS_PASS: ${{ secrets.KS_PASS }}
           CLOUDFLARE_WEBSITE: ${{ secrets.CLOUDFLARE_WEBSITE }}
           APP_TOKEN: ${{ secrets.APP_TOKEN }}
-        run: gradle assembleRelease --no-daemon --stacktrace -PbuildNumber=${{ github.run_number }}
+        run: gradle assembleRelease --no-daemon --stacktrace -PbuildNumber=${{ github.run_number }} -PbuildDate=${{ env.BUILD_DATE }}
 
       - name: Locate APK
         run: |
@@ -106,10 +123,17 @@ jobs:
           name: com.catsblock.weather
           path: ${{ env.APK_PATH }}
 
+      - name: Compute release name
+        if: env.TESTONLY == 'false'
+        run: |
+          D=$(date -u -d "$BUILD_DATE" +%d); M=$(date -u -d "$BUILD_DATE" +%-m); Y=$(date -u -d "$BUILD_DATE" +%Y)
+          echo "RELEASE_NAME=$D.$M.$Y.${{ github.run_number }}.31201921215311-RELEASE" >> "$GITHUB_ENV"
+
       - name: Create release
+        if: env.TESTONLY == 'false'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}
-          name: Build ${{ github.run_number }}
+          name: ${{ env.RELEASE_NAME }}
           make_latest: true
           files: ${{ env.APK_PATH }}
