@@ -6,6 +6,7 @@ import com.catsblock.weather.data.AgentLimits
 import com.catsblock.weather.data.AgentMessages
 import com.catsblock.weather.data.AgentOutcome
 import com.catsblock.weather.data.AgentStep
+import com.catsblock.weather.data.AgentTurn
 import com.catsblock.weather.data.AppSettings
 import com.catsblock.weather.data.City
 import com.catsblock.weather.data.StepStatus
@@ -35,9 +36,9 @@ private data class QueuedRequest(
     val settings: AppSettings
 )
 
-private const val SpamWindowMs = 10_000L
-private const val SpamThreshold = 5
-private const val SpamLockMs = 60_000L
+private const val SpamWindowMs = 15L * 60L * 1000L
+private const val SpamThreshold = 30
+private const val SpamLockMs = 30L * 60L * 1000L
 
 fun clampAgentInput(raw: String): String {
     val flat = raw.replace('\n', ' ').replace('\r', ' ').replace('\t', ' ')
@@ -60,12 +61,21 @@ class AgentChat(
     private var nextId = 0L
     private val queue = ArrayDeque<QueuedRequest>()
     private val recentSends = ArrayDeque<Long>()
+    private val history = ArrayDeque<AgentTurn>()
     private var spamUntil = 0L
     private var worker: Job? = null
 
     val messages = MutableStateFlow<List<AgentMessage>>(emptyList())
     val sending = MutableStateFlow(false)
     val blockedUntil = MutableStateFlow(0L)
+    val unavailable = MutableStateFlow(false)
+
+    fun refreshAvailability() {
+        scope.launch {
+            val available = client.isAvailable()
+            unavailable.value = !available
+        }
+    }
 
     fun restoreBlock(until: Long) {
         blockedUntil.value = if (until > System.currentTimeMillis()) until else 0L
@@ -98,6 +108,7 @@ class AgentChat(
         val now = System.currentTimeMillis()
         if (blockedUntil.value > now) return false
         if (spamUntil > now) return false
+        if (unavailable.value) return false
         if (registerSend(now)) {
             spamUntil = now + SpamLockMs
             recentSends.clear()
@@ -138,12 +149,19 @@ class AgentChat(
         }
     }
 
+    private fun rememberTurns(userText: String, reply: String) {
+        history.addLast(AgentTurn(fromUser = true, text = userText))
+        history.addLast(AgentTurn(fromUser = false, text = reply.take(AgentLimits.HISTORY_CHARS)))
+        while (history.size > AgentLimits.HISTORY_TURNS) history.removeFirst()
+    }
+
     private suspend fun process(request: QueuedRequest) {
+        val context = history.toList()
         val outcome = try {
             if (request.city == null) {
-                AgentOutcome.Failure(AgentMessages.FAILED)
+                AgentOutcome.Failure(AgentMessages.UNAVAILABLE)
             } else {
-                client.ask(request.text, request.city, request.settings) { step ->
+                client.ask(request.text, request.city, request.settings, context) { step ->
                     messages.update { list ->
                         list.map { if (it.id == request.pendingId) it.copy(steps = it.steps.mergeStep(step)) else it }
                     }
@@ -160,6 +178,7 @@ class AgentChat(
         }
         when (outcome) {
             is AgentOutcome.Reply -> {
+                if (outcome.text.isNotEmpty() && outcome.text != AgentMessages.REFUSED) rememberTurns(request.text, outcome.text)
                 resolve(
                     request.pendingId,
                     AgentMessage(
@@ -194,6 +213,14 @@ class AgentChat(
                             AgentMessage(request.pendingId, fromUser = false, text = outcome.message, notice = true, steps = steps)
                         )
                         rejectQueued(AgentMessages.SPAM)
+                    }
+                    AgentMessages.UNAVAILABLE -> {
+                        unavailable.value = true
+                        resolve(
+                            request.pendingId,
+                            AgentMessage(request.pendingId, fromUser = false, text = outcome.message, notice = true, steps = steps)
+                        )
+                        rejectQueued(AgentMessages.UNAVAILABLE)
                     }
                     else -> resolve(
                         request.pendingId,
