@@ -9,6 +9,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okio.BufferedSource
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
 import java.time.LocalDate
@@ -22,10 +23,12 @@ object AgentMessages {
     const val TOO_LONG = "This message is either too long or too lengthy."
     const val FAILED = "Something went wrong while trying to send your message."
     const val REFUSED = "I can't help with this."
-    const val LIMIT = "You have reached the limit of 5 messages. Please wait 24 hours before trying again."
+    const val LIMIT = "Your Agent usage limit has been reached."
+    const val VIOLATION = "This message violates the terms of service."
+    const val SPAM = "Too many messages. Please wait a minute before sending more."
     const val REGION = "Our service is not available in your region."
 
-    val known: Set<String> = setOf(TOO_LONG, FAILED, REFUSED, LIMIT, REGION)
+    val known: Set<String> = setOf(TOO_LONG, FAILED, REFUSED, LIMIT, REGION, SPAM)
 }
 
 enum class StepStatus { Run, Done, Fail }
@@ -45,6 +48,20 @@ data class AgentDay(
     val precipMm: Double
 )
 
+enum class AgentMetric(val key: String, val title: String, val zeroBased: Boolean) {
+    Humidity("humidity", "Humidity", false),
+    Wind("wind", "Wind", true),
+    Pressure("pressure", "Pressure", false),
+    Clouds("clouds", "Cloud cover", true),
+    Uv("uv", "UV index", true),
+    Rain("rain", "Precipitation", true),
+    Temperature("temperature", "Temperature", false);
+
+    companion object {
+        fun fromKey(key: String): AgentMetric? = entries.firstOrNull { it.key == key }
+    }
+}
+
 sealed interface AgentCard {
     data class Current(
         val place: String,
@@ -58,11 +75,25 @@ sealed interface AgentCard {
     ) : AgentCard
 
     data class Days(val history: Boolean, val place: String, val days: List<AgentDay>) : AgentCard
+
+    data class Metric(
+        val metric: AgentMetric,
+        val place: String,
+        val now: Double,
+        val past: List<Double>,
+        val ahead: List<Double>,
+        val min: Double,
+        val max: Double,
+        val avg: Double
+    ) : AgentCard
+
+    data class MapView(val layer: String, val place: String, val lat: Double, val lon: Double) : AgentCard
 }
 
 sealed interface AgentOutcome {
-    data class Reply(val text: String, val cards: List<AgentCard>) : AgentOutcome
-    data class Failure(val message: String) : AgentOutcome
+    data class Reply(val text: String, val cards: List<AgentCard>, val remaining: Int = -1, val resetSeconds: Long = 0L) : AgentOutcome
+    data class Violation(val remaining: Int = -1, val resetSeconds: Long = 0L) : AgentOutcome
+    data class Failure(val message: String, val retryAfterSeconds: Long = 0L) : AgentOutcome
 }
 
 class AgentClient {
@@ -93,6 +124,7 @@ class AgentClient {
             val builder = Request.Builder()
                 .url("$base/v1/agent")
                 .header("X-Agent-Stream", "1")
+                .header("X-Device-Id", DeviceFingerprint.id)
                 .post(payload.toRequestBody("application/json; charset=utf-8".toMediaType()))
             SecretKeys.appToken().takeIf { it.isNotEmpty() }?.let { builder.header("X-App-Token", it) }
             client.newCall(builder.build()).execute().use { response ->
@@ -146,13 +178,19 @@ class AgentClient {
             RegionGuard.report()
             return AgentOutcome.Failure(AgentMessages.REGION)
         }
+        if (success && root != null && root.optBoolean("violation")) {
+            return AgentOutcome.Violation(root.optInt("remaining", -1), root.optLong("resetSeconds"))
+        }
         if (!success || root == null) {
             val message = root?.optString("message").orEmpty()
-            return AgentOutcome.Failure(if (message in AgentMessages.known) message else AgentMessages.FAILED)
+            return AgentOutcome.Failure(
+                if (message in AgentMessages.known) message else AgentMessages.FAILED,
+                root?.optLong("retryAfterSeconds") ?: 0L
+            )
         }
         val reply = root.optString("reply").trim()
         val cards = parseCards(root)
-        return if (reply.isEmpty() && cards.isEmpty()) AgentOutcome.Failure(AgentMessages.FAILED) else AgentOutcome.Reply(reply, cards)
+        return if (reply.isEmpty() && cards.isEmpty()) AgentOutcome.Failure(AgentMessages.FAILED) else AgentOutcome.Reply(reply, cards, root.optInt("remaining", -1), root.optLong("resetSeconds"))
     }
 
     private fun parseCards(root: JSONObject): List<AgentCard> {
@@ -195,6 +233,32 @@ class AgentClient {
                 }
             )
         }
+        "metric" -> {
+            val metric = AgentMetric.fromKey(item.optString("metric"))
+            if (metric == null) {
+                null
+            } else {
+                AgentCard.Metric(
+                    metric = metric,
+                    place = item.optString("place"),
+                    now = item.getDouble("now"),
+                    past = doubles(item.optJSONArray("past")),
+                    ahead = doubles(item.optJSONArray("ahead")),
+                    min = item.optDouble("min"),
+                    max = item.optDouble("max"),
+                    avg = item.optDouble("avg")
+                )
+            }
+        }
+        "map" -> AgentCard.MapView(
+            layer = item.getString("layer"),
+            place = item.optString("place"),
+            lat = item.getDouble("lat"),
+            lon = item.getDouble("lon")
+        )
         else -> null
     }
+
+    private fun doubles(array: JSONArray?): List<Double> =
+        if (array == null) emptyList() else (0 until array.length()).map { array.optDouble(it) }
 }
