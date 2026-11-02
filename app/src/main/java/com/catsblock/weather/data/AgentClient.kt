@@ -17,6 +17,8 @@ import java.util.concurrent.TimeUnit
 
 object AgentLimits {
     const val MAX_CHARS = 70
+    const val HISTORY_TURNS = 2
+    const val HISTORY_CHARS = 280
 }
 
 object AgentMessages {
@@ -25,10 +27,13 @@ object AgentMessages {
     const val REFUSED = "I can't help with this."
     const val LIMIT = "Your Agent usage limit has been reached."
     const val VIOLATION = "This message violates the terms of service."
-    const val SPAM = "Too many messages. Please wait a minute before sending more."
+    const val SPAM = "You sent too many messages in a short time. You are blocked for 30 minutes."
     const val REGION = "Our service is not available in your region."
+    const val UNAVAILABLE = "The Agent service is unavailable. Try again later."
+    const val BLOCKED = "This message was blocked because it does not look like a real question."
+    const val BUSY = "The Agent is busy right now. Please try again in a moment."
 
-    val known: Set<String> = setOf(TOO_LONG, FAILED, REFUSED, LIMIT, REGION, SPAM)
+    val known: Set<String> = setOf(TOO_LONG, FAILED, REFUSED, LIMIT, REGION, SPAM, UNAVAILABLE, BLOCKED, BUSY)
 }
 
 enum class StepStatus { Run, Done, Fail }
@@ -38,6 +43,8 @@ data class AgentStep(
     val status: StepStatus,
     val command: String
 )
+
+data class AgentTurn(val fromUser: Boolean, val text: String)
 
 data class AgentDay(
     val date: LocalDate,
@@ -100,19 +107,49 @@ class AgentClient {
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(40, TimeUnit.SECONDS)
-        .callTimeout(45, TimeUnit.SECONDS)
+        .readTimeout(90, TimeUnit.SECONDS)
+        .callTimeout(120, TimeUnit.SECONDS)
         .build()
+
+    suspend fun isAvailable(): Boolean = withContext(Dispatchers.IO) {
+        val base = SecretKeys.baseUrl()
+        if (base.isEmpty()) return@withContext false
+        try {
+            val builder = Request.Builder()
+                .url("$base/v1/agent/status")
+                .header("X-Device-Id", DeviceFingerprint.id)
+                .get()
+            SecretKeys.appToken().takeIf { it.isNotEmpty() }?.let { builder.header("X-App-Token", it) }
+            client.newCall(builder.build()).execute().use { response ->
+                if (!response.isSuccessful) return@use false
+                JSONObject(response.body?.string().orEmpty()).optBoolean("available", false)
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            AppLog.warn("Agent", "Availability check failed", e)
+            false
+        }
+    }
 
     suspend fun ask(
         message: String,
         city: City,
         settings: AppSettings,
+        history: List<AgentTurn>,
         onStep: (AgentStep) -> Unit = {}
     ): AgentOutcome = withContext(Dispatchers.IO) {
         val base = SecretKeys.baseUrl()
-        if (base.isEmpty()) return@withContext AgentOutcome.Failure(AgentMessages.FAILED)
+        if (base.isEmpty()) return@withContext AgentOutcome.Failure(AgentMessages.UNAVAILABLE)
         try {
+            val turns = JSONArray()
+            history.takeLast(AgentLimits.HISTORY_TURNS).forEach { turn ->
+                turns.put(
+                    JSONObject()
+                        .put("role", if (turn.fromUser) "user" else "assistant")
+                        .put("text", turn.text.take(AgentLimits.HISTORY_CHARS))
+                )
+            }
             val payload = JSONObject()
                 .put("message", message)
                 .put("lat", city.lat)
@@ -120,6 +157,7 @@ class AgentClient {
                 .put("city", city.name)
                 .put("lang", settings.language.code)
                 .put("imperial", settings.fahrenheit)
+                .put("history", turns)
                 .toString()
             val builder = Request.Builder()
                 .url("$base/v1/agent")
@@ -190,7 +228,11 @@ class AgentClient {
         }
         val reply = root.optString("reply").trim()
         val cards = parseCards(root)
-        return if (reply.isEmpty() && cards.isEmpty()) AgentOutcome.Failure(AgentMessages.FAILED) else AgentOutcome.Reply(reply, cards, root.optInt("remaining", -1), root.optLong("resetSeconds"))
+        return if (reply.isEmpty() && cards.isEmpty()) {
+            AgentOutcome.Failure(AgentMessages.FAILED)
+        } else {
+            AgentOutcome.Reply(reply, cards, root.optInt("remaining", -1), root.optLong("resetSeconds"))
+        }
     }
 
     private fun parseCards(root: JSONObject): List<AgentCard> {
@@ -251,7 +293,7 @@ class AgentClient {
             }
         }
         "map" -> AgentCard.MapView(
-            layer = item.getString("layer"),
+            layer = item.optString("layer", "none"),
             place = item.optString("place"),
             lat = item.getDouble("lat"),
             lon = item.getDouble("lon")
