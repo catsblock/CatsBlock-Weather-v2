@@ -30,7 +30,7 @@ private val termsSections = listOf(
     "Acceptance of the terms" to
         "By using CatsBlock Weather (the \"App\"), published by CatsBlock Corporation, you agree to these Terms of Service. If you do not agree, do not use the App. You can review these terms at any time in Settings.",
     "Who can use the App" to
-        "You must be at least 6 years old to use the App. The Agent is available only from age 13, and users from 13 to 18 are offered family controls with a daily time limit. If you use the App on behalf of a child, you are responsible for their use.",
+        "You must comply with the laws that apply where you live to use the App. The Agent is available to all users, and you agree not to use it for unlawful purposes."
     "The Agent" to
         "The Agent is an AI that answers questions about the weather. Its replies are generated automatically, may be inaccurate or incomplete, and are not professional weather, safety or emergency advice. Always check the official forecast and warnings from your local authorities.",
     "Agent usage limits" to
