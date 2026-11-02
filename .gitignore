@@ -14,3 +14,12 @@ captures/
 *.keystore
 .env
 *.env
+.dev.vars
+.dev.vars.*
+.wrangler/
+wrangler.toml
+*.pem
+*.key
+*.pfx
+google-services.json
+secrets.properties
