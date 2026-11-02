@@ -498,8 +498,14 @@ const AGENT_OUTPUT_TOKENS = 1450;
 const AGENT_MAX_REPLY_CHARS = 1500;
 const AGENT_WEATHER_TIMEOUT_MS = 8000;
 const AGENT_GEMINI_TIMEOUT_MS = 20000;
-const AGENT_DEFAULT_MODEL = "gemini-2.5-flash";
-const AGENT_MODEL_PATTERN = /^[a-z0-9][a-z0-9.\-]{2,40}$/;
+
+const AGENT_MODELS = [
+  { name: "Gemini 3.8 Flash", model: "gemini-3.8-flash", key: "GEMINI_API_KEY" },
+  { name: "Gemini 3.5 Flash Lite", model: "gemini-3.5-flash-lite", key: "GEMINI_API_KEY" },
+  { name: "Gemini 3.1 Flash Lite", model: "gemini-3.1-flash-lite", key: "GEMINI_API_KEY" },
+  { name: "Gemini 2.5 Flash", model: "gemini-2.5-flash", key: "GEMINI_API_KEY" },
+];
+
 const AGENT_LANG_PATTERN = /^[A-Za-z]{2,3}(-[A-Za-z]{2,4})?$/;
 const AGENT_INVISIBLE = /[\u0000-\u0008\u000B-\u001F\u007F-\u009F\u00AD\u034F\u061C\u115F\u1160\u17B4\u17B5\u180B-\u180E\u200B-\u200F\u202A-\u202E\u2060-\u206F\u3164\uFEFF\uFFA0]/;
 const AGENT_STRUCTURE = /(\[\[|\]\]|<\s*\/?\s*[a-z_]+|<\|)/i;
@@ -551,7 +557,6 @@ const AGENT_HISTORY_CHARS = 280;
 const AGENT_QUEUE_KEY = "0".repeat(64);
 const AGENT_QUEUE_WAIT_MS = 60000;
 const AGENT_QUEUE_POLL_MS = 1500;
-const AGENT_KEY_DOWN_FLAG = "agent:key_down";
 const AGENT_KEY_DOWN_TTL_S = 600;
 const AGENT_INVISIBLE_ALL = new RegExp(AGENT_INVISIBLE.source, "g");
 const AGENT_VOWELS = /[aeiouyáàâãéêíóôõúüç]/i;
@@ -667,18 +672,35 @@ function buildAgentContents(history, userText) {
   return contents;
 }
 
-async function agentAvailable(env) {
-  if (!env.GEMINI_API_KEY || !env.APP_KV || !env.RATE_LIMITER) return false;
+function configuredAgentModels(env) {
+  return AGENT_MODELS.filter((entry) => typeof env[entry.key] === "string" && env[entry.key].trim().length > 0);
+}
+
+function agentModelFlag(entry) {
+  return "agent:model_down:" + entry.model;
+}
+
+async function agentModelDown(env, entry) {
   try {
-    return (await env.APP_KV.get(AGENT_KEY_DOWN_FLAG)) === null;
+    return (await env.APP_KV.get(agentModelFlag(entry))) !== null;
   } catch (err) {
     return false;
   }
 }
 
-async function markAgentKeyDown(env) {
+async function agentAvailable(env) {
+  if (!env.APP_KV || !env.RATE_LIMITER) return false;
+  const models = configuredAgentModels(env);
+  if (models.length === 0) return false;
+  for (const entry of models) {
+    if (!(await agentModelDown(env, entry))) return true;
+  }
+  return false;
+}
+
+async function markAgentModelDown(env, entry) {
   try {
-    await env.APP_KV.put(AGENT_KEY_DOWN_FLAG, "1", { expirationTtl: AGENT_KEY_DOWN_TTL_S });
+    await env.APP_KV.put(agentModelFlag(entry), "1", { expirationTtl: AGENT_KEY_DOWN_TTL_S });
   } catch (err) {
     return;
   }
@@ -1047,9 +1069,9 @@ async function loadAgentWeather(input, step) {
   return weather;
 }
 
-async function callGemini(env, input, weather) {
-  const apiKey = String(env.GEMINI_API_KEY);
-  const model = AGENT_MODEL_PATTERN.test(String(env.GEMINI_MODEL || "")) ? String(env.GEMINI_MODEL) : AGENT_DEFAULT_MODEL;
+async function callGemini(env, input, weather, entry) {
+  const apiKey = String(env[entry.key]);
+  const model = entry.model;
   const userText =
     "<weather_data>" + JSON.stringify(weather.model) + "</weather_data>\n<app_language>" + input.lang + "</app_language>\n<user_message>" + input.message + "</user_message>";
   const payload = {
@@ -1070,10 +1092,9 @@ async function callGemini(env, input, weather) {
   });
   if (!response.ok) {
     const detail = await readCapped(response);
-    if ([401, 403, 429].includes(response.status) || (detail && /API_KEY|quota|RESOURCE_EXHAUSTED/i.test(detail))) {
-      await markAgentKeyDown(env);
-    }
-    throw new Error("gemini_http");
+    const error = new Error("gemini_http");
+    error.modelUnavailable = [401, 403, 429].includes(response.status) || (detail && /API_KEY|quota|RESOURCE_EXHAUSTED|NOT_FOUND|model/i.test(detail));
+    throw error;
   }
   const text = await readCapped(response);
   if (text === null) throw new Error("gemini_size");
@@ -1184,15 +1205,31 @@ async function runAgent(request, env, read, emit) {
 
     const queued = await acquireAgentSlot(env, step);
     if (!queued) return agentBusy();
-    const modelCommand = "model.generate --thinking off --max-output " + AGENT_OUTPUT_TOKENS;
-    step("model", "run", modelCommand);
-    let result;
+
+    const models = configuredAgentModels(env);
+    let result = null;
+
     try {
-      result = await callGemini(env, input, weather);
+      for (const entry of models) {
+        if (await agentModelDown(env, entry)) continue;
+
+        const modelCommand = "model.generate --name \"" + entry.name + "\" --thinking off --max-output " + AGENT_OUTPUT_TOKENS;
+        step("model", "run", modelCommand);
+
+        try {
+          result = await callGemini(env, input, weather, entry);
+          step("model", "done", modelCommand);
+          break;
+        } catch (err) {
+          await markAgentModelDown(env, entry);
+          step("model", "fail", modelCommand);
+        }
+      }
     } finally {
       await releaseAgentSlot(env);
     }
-    step("model", "done", modelCommand);
+
+    if (!result) return agentUnavailable();
 
     step("limiter", "run", "limiter.charge --scope agent");
     const charge = await limiterCall(env, id.hash, "agent.charge", { tokens: result.tokens });
@@ -1202,14 +1239,17 @@ async function runAgent(request, env, read, emit) {
     step("format", "run", "format --cards " + result.cards.length);
     const remaining = Math.max(0, AGENT_TOKEN_LIMIT - charge.used);
     const payload = { reply: result.reply, cards: result.cards, remaining, resetSeconds: charge.resetSeconds };
+
     if (result.violation) {
       payload.violation = true;
       payload.message = MSG_VIOLATION;
     }
+
     const done = agentResult(200, payload, {
       "X-Agent-Remaining": String(remaining),
       "X-Agent-Reset-Seconds": String(charge.resetSeconds),
     });
+
     step("format", "done", "format --cards " + result.cards.length);
     return done;
   } catch (err) {
@@ -1220,25 +1260,32 @@ async function runAgent(request, env, read, emit) {
 
 async function handleAgent(request, env, ctx) {
   const read = await readAgentBody(request);
+
   if (request.headers.get("X-Agent-Stream") !== "1") {
     const result = await runAgent(request, env, read, () => {});
     return jsonResponse(result.body, result.status, result.headers);
   }
+
   const { readable, writable } = new TransformStream();
   const writer = writable.getWriter();
   const encoder = new TextEncoder();
+
   const emit = (event) => {
     writer.write(encoder.encode(JSON.stringify(event) + "\n")).catch(() => {});
   };
+
   ctx.waitUntil(
     (async () => {
       let result;
+
       try {
         result = await runAgent(request, env, read, emit);
       } catch (err) {
         result = agentFailure(502);
       }
+
       emit({ type: "final", status: result.status, body: result.body });
+
       try {
         await writer.close();
       } catch (err) {
@@ -1246,9 +1293,16 @@ async function handleAgent(request, env, ctx) {
       }
     })()
   );
+
   return new Response(readable, {
     status: 200,
-    headers: Object.assign({ "Content-Type": "application/x-ndjson; charset=utf-8", "X-Accel-Buffering": "no" }, SAFE_HEADERS),
+    headers: Object.assign(
+      {
+        "Content-Type": "application/x-ndjson; charset=utf-8",
+        "X-Accel-Buffering": "no",
+      },
+      SAFE_HEADERS
+    ),
   });
 }
 
@@ -1258,6 +1312,7 @@ export default {
       if (request.method === "OPTIONS") {
         return new Response(null, { status: 204, headers: SAFE_HEADERS });
       }
+
       if (request.url.length > MAX_URL_LENGTH) {
         return jsonResponse({ error: "uri_too_long" }, 414);
       }
@@ -1270,6 +1325,7 @@ export default {
         if (request.method !== "GET") {
           return jsonResponse({ error: "method_not_allowed" }, 405, { Allow: "GET, OPTIONS" });
         }
+
         return jsonResponse({ allowed: !regionBlocked }, 200);
       }
 
@@ -1281,9 +1337,11 @@ export default {
         if (request.method !== "GET") {
           return jsonResponse({ error: "method_not_allowed" }, 405, { Allow: "GET, OPTIONS" });
         }
+
         if (!authorized(request, env)) {
           return jsonResponse({ error: "unauthorized", message: MSG_UNAVAILABLE }, 401);
         }
+
         return jsonResponse({ available: await agentAvailable(env) }, 200);
       }
 
@@ -1291,9 +1349,11 @@ export default {
         if (request.method !== "POST") {
           return jsonResponse({ error: "method_not_allowed" }, 405, { Allow: "POST, OPTIONS" });
         }
+
         if (!authorized(request, env)) {
           return jsonResponse({ error: "unauthorized", message: MSG_FAILED }, 401);
         }
+
         return await handleAgent(request, env, ctx);
       }
 
@@ -1311,6 +1371,7 @@ export default {
         "/v1/visual": "visual",
         "/v1/openweather": "openweather",
       };
+
       if (!Object.prototype.hasOwnProperty.call(routes, path)) {
         return jsonResponse({ error: "not_found" }, 404);
       }
@@ -1322,6 +1383,7 @@ export default {
       if (path === "/v1/status") {
         return await handleStatus(request, env);
       }
+
       return await handleProxy(request, env, routes[path]);
     } catch (err) {
       return jsonResponse({ error: "internal_error" }, 500);
