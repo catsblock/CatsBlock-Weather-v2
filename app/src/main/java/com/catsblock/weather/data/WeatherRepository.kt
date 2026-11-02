@@ -88,6 +88,7 @@ class WeatherRepository {
         val path = runCatching { java.net.URI(url).path }.getOrNull().orEmpty()
         UserKeys.forPath(path)?.let { builder.header("X-Api-Key", it) }
         SecretKeys.appToken().takeIf { it.isNotEmpty() }?.let { builder.header("X-App-Token", it) }
+        builder.header("X-Device-Id", DeviceFingerprint.id)
         client.newCall(builder.build()).execute().use { response ->
             val prev = _usageStatus.value
             val shortRemaining = response.header("X-RateLimit-Remaining-10m")?.toIntOrNull() ?: prev.shortRemaining
