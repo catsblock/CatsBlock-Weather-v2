@@ -43,9 +43,14 @@ jobs:
       - name: Check backend secrets
         env:
           CLOUDFLARE_WEBSITE: ${{ secrets.CLOUDFLARE_WEBSITE }}
+          APP_TOKEN: ${{ secrets.APP_TOKEN }}
         run: |
           if [ -z "$CLOUDFLARE_WEBSITE" ]; then
             echo "::error::Create the repository secret CLOUDFLARE_WEBSITE with the deployed Cloudflare Worker URL."
+            exit 1
+          fi
+          if [ "${#APP_TOKEN}" -lt 32 ]; then
+            echo "::error::Create the repository secret APP_TOKEN with the same value (at least 32 characters) as the Worker secret APP_TOKEN."
             exit 1
           fi
 
@@ -86,6 +91,7 @@ jobs:
         env:
           KS_PASS: ${{ secrets.KS_PASS }}
           CLOUDFLARE_WEBSITE: ${{ secrets.CLOUDFLARE_WEBSITE }}
+          APP_TOKEN: ${{ secrets.APP_TOKEN }}
         run: gradle assembleRelease --no-daemon --stacktrace -PbuildNumber=${{ github.run_number }}
 
       - name: Locate APK
