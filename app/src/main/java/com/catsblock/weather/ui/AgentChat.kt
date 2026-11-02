@@ -1,5 +1,6 @@
 package com.catsblock.weather.ui
 
+import com.catsblock.weather.data.AgentAvailability
 import com.catsblock.weather.data.AgentCard
 import com.catsblock.weather.data.AgentClient
 import com.catsblock.weather.data.AgentLimits
@@ -14,8 +15,12 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+
+enum class AgentGate { Checking, Open, Unavailable, WorkersLimit }
 
 data class AgentMessage(
     val id: Long,
@@ -68,12 +73,16 @@ class AgentChat(
     val messages = MutableStateFlow<List<AgentMessage>>(emptyList())
     val sending = MutableStateFlow(false)
     val blockedUntil = MutableStateFlow(0L)
-    val unavailable = MutableStateFlow(false)
+    private val _gate = MutableStateFlow(AgentGate.Checking)
+    val gate: StateFlow<AgentGate> = _gate.asStateFlow()
 
     fun refreshAvailability() {
         scope.launch {
-            val available = client.isAvailable()
-            unavailable.value = !available
+            _gate.value = when (client.availability()) {
+                AgentAvailability.Available -> AgentGate.Open
+                AgentAvailability.WorkersLimit -> AgentGate.WorkersLimit
+                AgentAvailability.Unavailable -> AgentGate.Unavailable
+            }
         }
     }
 
@@ -108,7 +117,7 @@ class AgentChat(
         val now = System.currentTimeMillis()
         if (blockedUntil.value > now) return false
         if (spamUntil > now) return false
-        if (unavailable.value) return false
+        if (_gate.value != AgentGate.Open) return false
         if (registerSend(now)) {
             spamUntil = now + SpamLockMs
             recentSends.clear()
@@ -215,7 +224,7 @@ class AgentChat(
                         rejectQueued(AgentMessages.SPAM)
                     }
                     AgentMessages.UNAVAILABLE -> {
-                        unavailable.value = true
+                        _gate.value = AgentGate.Unavailable
                         resolve(
                             request.pendingId,
                             AgentMessage(request.pendingId, fromUser = false, text = outcome.message, notice = true, steps = steps)
