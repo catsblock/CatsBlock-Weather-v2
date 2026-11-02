@@ -64,6 +64,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -286,6 +287,53 @@ private fun AgentHeader(status: String?) {
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun AgentLimitBar(blockedUntil: Long, modifier: Modifier) {
+    val scheme = MaterialTheme.colorScheme
+    var remainingSeconds by remember { mutableLongStateOf(0L) }
+
+    LaunchedEffect(blockedUntil) {
+        while (true) {
+            val remaining = ((blockedUntil - System.currentTimeMillis()) / 1000L).coerceAtLeast(0L)
+            remainingSeconds = remaining
+            if (remaining == 0L) break
+            delay(1000L)
+        }
+    }
+
+    val minutes = remainingSeconds / 60L
+    val seconds = remainingSeconds % 60L
+    val countdown = if (minutes > 0L) {
+        "%d:%02d".format(minutes, seconds)
+    } else {
+        "%ds".format(seconds)
+    }
+
+    Box(
+        modifier
+            .fillMaxWidth()
+            .background(scheme.secondaryContainer, RoundedCornerShape(24.dp))
+            .padding(horizontal = 20.dp, vertical = 16.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                tr(AgentMessages.LIMIT),
+                color = scheme.onSecondaryContainer,
+                style = MaterialTheme.typography.bodyMedium,
+                textAlign = TextAlign.Center
+            )
+            Text(
+                countdown,
+                modifier = Modifier.padding(top = 4.dp),
+                color = scheme.onSecondaryContainer,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Bold
+            )
         }
     }
 }
