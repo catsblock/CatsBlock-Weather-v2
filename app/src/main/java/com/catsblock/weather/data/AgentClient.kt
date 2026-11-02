@@ -34,8 +34,9 @@ object AgentMessages {
     const val UNAVAILABLE = "The Agent service is unavailable. Try again later."
     const val BLOCKED = "This message was blocked because it does not look like a real question."
     const val BUSY = "The Agent is busy right now. Please try again in a moment."
+    const val WORKERS_LIMIT = "Our services are currently unavailable because Cloudflare workers have reached their limit. Please check back at 0:00 UTC."
 
-    val known: Set<String> = setOf(TOO_LONG, FAILED, REFUSED, LIMIT, REGION, SPAM, UNAVAILABLE, BLOCKED, BUSY)
+    val known: Set<String> = setOf(TOO_LONG, FAILED, REFUSED, LIMIT, REGION, SPAM, UNAVAILABLE, BLOCKED, BUSY, WORKERS_LIMIT)
 }
 
 enum class StepStatus { Run, Done, Fail }
@@ -121,26 +122,7 @@ class AgentClient {
         .callTimeout(120, TimeUnit.SECONDS)
         .build()
 
-    suspend fun isAvailable(): Boolean = withContext(Dispatchers.IO) {
-        val base = SecretKeys.baseUrl()
-        if (base.isEmpty()) return@withContext false
-        try {
-            val builder = Request.Builder()
-                .url("$base/v1/agent/status")
-                .header("X-Device-Id", DeviceFingerprint.id)
-                .get()
-            SecretKeys.appToken().takeIf { it.isNotEmpty() }?.let { builder.header("X-App-Token", it) }
-            client.newCall(builder.build()).execute().use { response ->
-                if (!response.isSuccessful) return@use false
-                JSONObject(response.body?.string().orEmpty()).optBoolean("available", false)
-            }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            AppLog.warn("Agent", "Availability check failed", e)
-            false
-        }
-    }
+    suspend fun availability(): AgentAvailability = WorkerHealth.check()
 
     suspend fun ask(
         message: String,
@@ -181,7 +163,13 @@ class AgentClient {
                 if (streaming && body != null) {
                     readStream(body.source(), onStep)
                 } else {
-                    outcomeOf(response.isSuccessful, runCatching { JSONObject(body?.string().orEmpty()) }.getOrNull())
+                    val raw = body?.string().orEmpty()
+                    if (WorkerHealth.isLimitResponse(response.code, response.header("Content-Type"), raw)) {
+                        WorkerHealth.reportLimit()
+                        AgentOutcome.Failure(AgentMessages.WORKERS_LIMIT)
+                    } else {
+                        outcomeOf(response.isSuccessful, runCatching { JSONObject(raw) }.getOrNull())
+                    }
                 }
             }
         } catch (e: CancellationException) {
