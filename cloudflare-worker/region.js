@@ -23,6 +23,8 @@ function blockedCountries(env) {
 
 export function isRegionBlocked(request, env) {
   const region = resolveRegion(request);
+  const unknown = region.country === "" || region.country === "XX" || region.country === "T1";
+  if (unknown) return Boolean(env && env.BLOCK_UNKNOWN_REGION === "true");
   if (!/^[A-Z]{2}$/.test(region.country)) return false;
   if (blockedCountries(env).includes(region.country)) return true;
   const subdivisions = BLOCKED_SUBDIVISIONS[region.country];
