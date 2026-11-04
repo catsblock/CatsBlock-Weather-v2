@@ -13,6 +13,8 @@ object FireHotspots {
 
     private const val CELL = 0.25
     private const val TTL = 3 * 3600_000L
+    private const val LIVE = Long.MIN_VALUE
+    private const val WEEK = "https://firms.modaps.eosdis.nasa.gov/data/active_fire/modis-c6.1/csv/MODIS_C6_1_Global_7d.csv"
 
     private val sources = listOf(
         "https://firms.modaps.eosdis.nasa.gov/data/active_fire/modis-c6.1/csv/MODIS_C6_1_Global_24h.csv",
@@ -34,7 +36,23 @@ object FireHotspots {
     fun fetchedAt(): Long = cachedAt
 
     @Synchronized
-    fun json(context: Context): ByteArray? {
+    fun json(context: Context, day: Long? = null): ByteArray? =
+        if (day == null) live(context) else historic(context, day)
+
+    private fun historic(context: Context, day: Long): ByteArray? {
+        val now = System.currentTimeMillis()
+        val file = File(context.cacheDir, "fire_day_$day.json")
+        if (file.exists() && now - file.lastModified() < TTL) {
+            val stored = runCatching { file.readBytes() }.getOrNull()
+            if (stored != null && stored.isNotEmpty()) return stored
+        }
+        val days = runCatching { download(WEEK, true) }.getOrNull()
+        if (days == null) return if (file.exists()) runCatching { file.readBytes() }.getOrNull() else null
+        days.forEach { (key, data) -> runCatching { File(context.cacheDir, "fire_day_$key.json").writeBytes(data) } }
+        return days[day]
+    }
+
+    private fun live(context: Context): ByteArray? {
         val now = System.currentTimeMillis()
         cached?.takeIf { now - cachedAt < TTL }?.let { return it }
         val file = File(context.cacheDir, "fire_hotspots.json")
@@ -47,7 +65,7 @@ object FireHotspots {
             }
         }
         for (source in sources) {
-            val data = runCatching { download(source) }.getOrNull()
+            val data = runCatching { download(source, false) }.getOrNull()?.get(LIVE)
             if (data != null) {
                 cached = data
                 cachedAt = now
@@ -75,15 +93,20 @@ object FireHotspots {
         }
     }
 
+    private fun dayOf(date: String?, days: HashMap<String, Long>): Long {
+        if (date.isNullOrBlank()) return -1L
+        return days.getOrPut(date) { runCatching { LocalDate.parse(date).toEpochDay() }.getOrDefault(-1L) }
+    }
+
     private fun minuteOf(date: String?, time: String?, days: HashMap<String, Long>): Double {
-        if (date.isNullOrBlank() || time.isNullOrBlank()) return 0.0
-        val day = days.getOrPut(date) { runCatching { LocalDate.parse(date).toEpochDay() }.getOrDefault(-1L) }
+        if (time.isNullOrBlank()) return 0.0
+        val day = dayOf(date, days)
         if (day < 0) return 0.0
         val hhmm = time.trim().toIntOrNull() ?: return 0.0
         return (day * 1440 + (hhmm / 100) * 60 + hhmm % 100).toDouble()
     }
 
-    private fun download(url: String): ByteArray? {
+    private fun download(url: String, split: Boolean): Map<Long, ByteArray>? {
         client.newCall(Request.Builder().url(url).build()).execute().use { response ->
             if (!response.isSuccessful) return null
             val reader = response.body?.byteStream()?.bufferedReader() ?: return null
@@ -99,14 +122,16 @@ object FireHotspots {
             val days = HashMap<String, Long>()
             if (iLat < 0 || iLon < 0) return null
             val need = maxOf(iLat, iLon)
-            val cells = HashMap<Long, DoubleArray>()
+            val buckets = HashMap<Long, HashMap<Long, DoubleArray>>()
             var line = reader.readLine()
             while (line != null) {
                 val p = line.split(',')
                 if (p.size > need) {
                     val lat = p[iLat].toDoubleOrNull()
                     val lon = p[iLon].toDoubleOrNull()
-                    if (lat != null && lon != null && keep(p.getOrNull(iConf))) {
+                    val bucket = if (split) dayOf(p.getOrNull(iDate), days) else LIVE
+                    if (lat != null && lon != null && bucket != -1L && keep(p.getOrNull(iConf))) {
+                        val cells = buckets.getOrPut(bucket) { HashMap() }
                         val la = floor(lat / CELL).toInt()
                         val lo = floor(lon / CELL).toInt()
                         val key = (la.toLong() shl 32) xor (lo.toLong() and 0xffffffffL)
@@ -128,21 +153,25 @@ object FireHotspots {
                 }
                 line = reader.readLine()
             }
-            if (cells.isEmpty()) return null
-            val out = StringBuilder(cells.size * 56)
-            out.append('[')
-            var first = true
-            for (cell in cells.values) {
-                if (!first) out.append(',')
-                first = false
-                out.append('[').append(cell[0]).append(',').append(cell[1]).append(',')
-                    .append(cell[2].toInt()).append(',').append((cell[3] * 10).roundToLong() / 10.0).append(',')
-                    .append(cell[4].toLong()).append(',').append(cell[5].toLong()).append(',')
-                    .append(cell[6].roundToLong()).append(',').append(cell[7].roundToLong()).append(',')
-                    .append(cell[8].toInt()).append(']')
-            }
-            out.append(']')
-            return out.toString().toByteArray(Charsets.UTF_8)
+            if (buckets.isEmpty()) return null
+            return buckets.mapValues { encode(it.value.values) }
         }
+    }
+
+    private fun encode(cells: Collection<DoubleArray>): ByteArray {
+        val out = StringBuilder(cells.size * 56)
+        out.append('[')
+        var first = true
+        for (cell in cells) {
+            if (!first) out.append(',')
+            first = false
+            out.append('[').append(cell[0]).append(',').append(cell[1]).append(',')
+                .append(cell[2].toInt()).append(',').append((cell[3] * 10).roundToLong() / 10.0).append(',')
+                .append(cell[4].toLong()).append(',').append(cell[5].toLong()).append(',')
+                .append(cell[6].roundToLong()).append(',').append(cell[7].roundToLong()).append(',')
+                .append(cell[8].toInt()).append(']')
+        }
+        out.append(']')
+        return out.toString().toByteArray(Charsets.UTF_8)
     }
 }
