@@ -489,7 +489,7 @@ function setLayer(id, title, err, f, labels) {
   startLayer(id);
 }
 
-var COLS = 12, ROWS = 9;
+var COLS = 37, ROWS = 16;
 
 function wrapLon(x) { return ((x + 540) % 360) - 180; }
 
@@ -500,17 +500,6 @@ function lonFor(latlng) {
   while (mid - x > 180) x += 360;
   return x;
 }
-
-map.on('moveend', function () {
-  if (!isGrid(state.layer) || !state.canvas) return;
-  clearTimeout(timer);
-  timer = setTimeout(function () {
-    var inside = grid && map.getBounds().getSouth() >= grid.s && map.getBounds().getNorth() <= grid.n &&
-      map.getBounds().getWest() >= grid.w && map.getBounds().getEast() <= grid.e;
-    var fresh = Date.now() - gridAt < 600000 && Math.abs(map.getZoom() - gridZoom) < 0.5;
-    if (!(inside && fresh)) loadGrid(false);
-  }, 350);
-});
 
 window.MapApi = {setTheme:setTheme, setLayer:setLayer, setCity:setCity, setInsets:setInsets, locate:locate};
 
