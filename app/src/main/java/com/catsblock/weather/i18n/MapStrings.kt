@@ -3,6 +3,10 @@ package com.catsblock.weather.i18n
 private fun row(key: String, vararg values: String): Pair<String, Array<out String>> = key to values
 
 internal val mapStrings: Map<String, Array<out String>> = mapOf(
+    row("Sea-surface temperature", "Temperatura da superfície do mar", "Temperatura da superfície do mar", "Temperatura de la superficie del mar", "Température de surface de la mer", "Температура поверхности моря", "Meeresoberflächentemperatur", "Temperatura della superficie del mare", "해수면 온도", "Suhu permukaan laut"),
+    row("Model estimate", "Estimativa do modelo", "Estimativa do modelo", "Estimación del modelo", "Estimation du modèle", "Оценка модели", "Modellschätzung", "Stima del modello", "모델 추정값", "Perkiraan model"),
+    row("Dryness ratio", "Índice de aridez", "Índice de aridez", "Índice de aridez", "Indice d'aridité", "Коэффициент сухости", "Trockenheitsindex", "Indice di aridità", "건조 지수", "Rasio kekeringan"),
+    row("Hours from now", "Horas a partir de agora", "Horas a partir de agora", "Horas desde ahora", "Heures à partir de maintenant", "Часов от текущего момента", "Stunden ab jetzt", "Ore da adesso", "현재 기준 시간", "Jam dari sekarang"),
     row("Dew point", "Ponto de orvalho", "Ponto de orvalho", "Punto de rocío", "Point de rosée", "Точка росы", "Taupunkt", "Punto di rugiada", "이슬점", "Titik embun"),
     row("UV index", "Índice UV", "Índice UV", "Índice UV", "Indice UV", "УФ-индекс", "UV-Index", "Indice UV", "자외선 지수", "Indeks UV"),
     row("Air quality", "Qualidade do ar", "Qualidade do ar", "Calidad del aire", "Qualité de l'air", "Качество воздуха", "Luftqualität", "Qualità dell'aria", "대기질", "Kualitas udara"),
