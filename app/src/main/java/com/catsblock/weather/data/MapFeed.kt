@@ -13,10 +13,9 @@ object MapFeeds {
     fun serve(context: Context, uri: Uri): ByteArray? {
         fun number(name: String): Double? = uri.getQueryParameter(name)?.toDoubleOrNull()
         return when (uri.lastPathSegment) {
-            "__fires.json" -> FireHotspots.json(context, number("day")?.toLong())
-            "__alerts.json" -> AlertFeed.json(number("at")?.toLong())
-            "__alertrange.json" -> AlertFeed.range()
-            "__drought.json" -> DroughtFeed.json(uri.getQueryParameter("d"))
+            "__fires.json" -> FireHotspots.json(context)
+            "__alerts.json" -> AlertFeed.json()
+            "__drought.json" -> DroughtFeed.json()
             "__firedetail.json" -> {
                 val query = FireDetails.Query(
                     lat = number("lat") ?: return null,
