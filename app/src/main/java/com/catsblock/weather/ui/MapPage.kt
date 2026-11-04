@@ -290,53 +290,23 @@ function loadSstLayer(seq) {
   useFrame();
 }
 
-function loadSatelliteClouds(seq) {
-  state.busy = true;
-  setLegend('');
-  var products = [
-    {layer:'VIIRS_SNPP_CorrectedReflectance_TrueColor', level:9},
-    {layer:'MODIS_Terra_CorrectedReflectance_TrueColor', level:8},
-    {layer:'MODIS_Aqua_CorrectedReflectance_TrueColor', level:8}
-  ];
-  var productIndex = 0, dayOffset = 0, active = null, timeout = null, loaded = false;
-  var offsets = [0, 1, 2, 3, 4, 5];
-  function nextFrame() {
-    if (seq !== state.seq) return;
-    if (timeout) { clearTimeout(timeout); timeout = null; }
-    if (active) map.removeLayer(active);
-    if (dayOffset >= offsets.length) { dayOffset = 0; productIndex++; }
-    if (productIndex >= products.length) { state.busy = false; setLegend(state.err); return; }
-    var product = products[productIndex];
-    var day = new Date(Date.now() - offsets[dayOffset] * 86400000).toISOString().slice(0, 10);
-    var candidate = L.tileLayer('https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/' + product.layer + '/default/' + day + '/GoogleMapsCompatible_Level' + product.level + '/{z}/{y}/{x}.jpg', {
-      minZoom:2, maxZoom:12, maxNativeZoom:product.level, tileSize:256, opacity:0.96, updateWhenIdle:true, updateWhenZooming:false, keepBuffer:2, crossOrigin:true
-    });
-    active = candidate;
-    loaded = false;
-    candidate.on('tileload', function () {
-      if (seq !== state.seq || active !== candidate) return;
-      loaded = true;
-      state.busy = false;
-      setLegend('NASA GIBS · ' + day);
-    });
-    candidate.on('load', function () {
-      if (seq !== state.seq || active !== candidate || loaded) return;
-      dayOffset++;
-      nextFrame();
-    });
-    candidate.addTo(map);
-    candidate.setZIndex(6);
-    overlay = candidate;
-    timeout = setTimeout(function () {
-      if (seq !== state.seq || active !== candidate || loaded) return;
-      dayOffset++;
-      nextFrame();
-    }, 8500);
-  }
-  nextFrame();
+function fetchJsonWithTimeout(url, timeoutMs) {
+  var controller = new AbortController();
+  var timer = setTimeout(function () { controller.abort(); }, timeoutMs || 15000);
+  return Promise.resolve().then(function () { return fetch(url, {signal:controller.signal}); }).then(function (response) {
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+    return response.json();
+  }).then(function (data) {
+    clearTimeout(timer);
+    return data;
+  }, function (error) {
+    clearTimeout(timer);
+    throw error;
+  });
 }
+
 function getJson(url) {
-  return fetch(url).then(function (r) { if (!r.ok) throw new Error('http'); return r.json(); });
+  return fetchJsonWithTimeout(url, 15000);
 }
 
 function fitCanvas(cv, m) {
@@ -571,7 +541,7 @@ function startLayer(id) {
   clearOverlay();
   if (id === 'precip') {
     state.busy = true;
-    fetch('https://api.rainviewer.com/public/weather-maps.json').then(function (r) { return r.json(); }).then(function (d) {
+    fetchJsonWithTimeout('https://api.rainviewer.com/public/weather-maps.json', 15000).then(function (d) {
       if (seq !== state.seq) return;
       var frames = d.radar && d.radar.past ? d.radar.past : [], last = frames[frames.length - 1];
       if (!last) throw new Error('none');
@@ -581,8 +551,6 @@ function startLayer(id) {
     }).catch(function () { if (seq === state.seq) { state.busy = false; setLegend(state.err); } });
   } else if (id === 'cyclones') {
     loadStorms(seq);
-  } else if (id === 'satellite') {
-    loadSatelliteClouds(seq);
   } else if (id === 'sst') {
     loadSstLayer(seq);
   } else if (id === 'fires') {
