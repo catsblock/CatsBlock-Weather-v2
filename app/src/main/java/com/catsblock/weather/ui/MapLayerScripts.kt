@@ -3,17 +3,37 @@ package com.catsblock.weather.ui
 internal object MapLayerScripts {
 
     val source: String = """
-var extra = null, land = null, landLoading = false, landWaiters = [], boSeq = 0, boTimer = null;
+var extra = null, land = null, landLoading = false, landWaiters = [];
+var hist = {el:null, cfg:null, min:0, max:0, frames:[], host:'', idx:0, timer:null};
+var HOUR = 3600000, DAY = 86400000;
 var OM = 'https://api.open-meteo.com/v1/forecast';
+var OM_ARCHIVE = 'https://archive-api.open-meteo.com/v1/archive';
+var OM_PAST = 'https://historical-forecast-api.open-meteo.com/v1/forecast';
 var GRID_KEY = {temp:'t', clouds:'c', wind:'ws', pressure:'p', dew:'dp', uv:'uv', aqi:'aq', sea:'sl', drought:'dr'};
 var LEVEL_COLORS = {warning:'#ffd600', alert:'#ff6d00', danger:'#e53935'};
 var LEVEL_RANK = {warning:1, alert:2, danger:3};
-var BLACKOUT_COLORS = {minor:'#2979ff', moderate:'#ffd600', severe:'#e53935'};
 var DRY = [[255, 236, 140], [255, 200, 60], [245, 140, 30], [216, 67, 21], [150, 20, 20]];
 var LAND_URLS = [
   'https://cdn.jsdelivr.net/gh/nvkelso/natural-earth-vector@master/geojson/ne_50m_land.geojson',
   'https://cdn.jsdelivr.net/gh/nvkelso/natural-earth-vector@master/geojson/ne_110m_land.geojson'
 ];
+var HISTORY = {
+  precip:{mode:'frames'},
+  temp:{mode:'hour', min:Date.UTC(1940, 0, 1)},
+  clouds:{mode:'hour', min:Date.UTC(1940, 0, 1)},
+  wind:{mode:'hour', min:Date.UTC(1940, 0, 1)},
+  pressure:{mode:'hour', min:Date.UTC(1940, 0, 1)},
+  dew:{mode:'hour', min:Date.UTC(1940, 0, 1)},
+  uv:{mode:'hour', min:Date.UTC(2022, 0, 1)},
+  aqi:{mode:'hour', min:Date.UTC(2022, 9, 1)},
+  sea:{mode:'hour', min:Date.UTC(2022, 9, 1)},
+  alerts:{mode:'hour', min:null},
+  cyclones:{mode:'day', min:Date.UTC(2000, 0, 1)},
+  sst:{mode:'day', min:Date.UTC(2002, 5, 1), lag:3},
+  fires:{mode:'day', span:6},
+  drought:{mode:'day', min:Date.UTC(1940, 0, 31)},
+  coldfront:{mode:'day', min:Date.UTC(1940, 0, 1)}
+};
 var COLD = {
   N: {key:'cfN', turn:2.4, target:30, origins:[[72, -52, 160], [70, -40, 190], [66, -38, 140], [75, -35, 175]]},
   S: {key:'cfS', turn:-2.4, target:-30, origins:[[-68, -62, 20], [-69, -5, 5], [-68, 45, 15], [-67, 100, 10], [-68, 150, 25], [-69, -110, 355]]}
@@ -159,7 +179,206 @@ function omFetch(base, p, tail, size) {
 
 function hasData(arr) { return arr.some(function (v) { return v !== null && v !== undefined; }); }
 
+function pad(n) { return n < 10 ? '0' + n : '' + n; }
+
+function isoDay(ms) { return new Date(ms).toISOString().slice(0, 10); }
+
+function histBounds(cfg) {
+  var now = Date.now(), min, max;
+  if (cfg.mode === 'hour') {
+    max = Math.floor(now / HOUR) * HOUR;
+    min = Math.ceil((cfg.min || now - 7 * DAY) / HOUR) * HOUR;
+  } else {
+    max = Math.floor((now - (cfg.lag || 0) * DAY) / DAY) * DAY;
+    min = cfg.span !== undefined ? (Math.floor(now / DAY) - cfg.span) * DAY : (cfg.min || max - 7 * DAY);
+  }
+  return {min:min, max:max};
+}
+
+function histInit() {
+  if (hist.el) return;
+  var css = document.createElement('style');
+  css.textContent = '#hist{position:absolute;z-index:1000;left:88px;right:12px;bottom:calc(var(--bottom) + 34px);display:none;flex-direction:column;gap:6px;padding:10px 14px;border-radius:22px;background:var(--chip);color:var(--fg);box-shadow:0 4px 18px rgba(0,0,0,.25);border:1px solid var(--edge);box-sizing:border-box}' +
+    '#hist.on{display:flex}' +
+    '#hist .hr{display:flex;align-items:center;gap:8px}' +
+    '#hist .ht{flex:1;min-width:0;font-size:12px;font-weight:600;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
+    '#hist input[type=date]{background:transparent;color:var(--fg);border:1px solid var(--edge);border-radius:12px;padding:4px 8px;font-size:12px;min-width:0}' +
+    '#hist button{border:0;border-radius:14px;padding:6px 12px;font-size:12px;font-weight:700;background:var(--edge);color:var(--fg)}' +
+    '#hist button.on{background:#2979ff;color:#fff}' +
+    '#hist input[type=range]{width:100%;margin:0}' +
+    '#hist.day #hRange{display:none}' +
+    '#hist.frames #hDate{display:none}';
+  document.head.appendChild(css);
+  var el = document.createElement('div');
+  el.id = 'hist';
+  el.innerHTML = '<div class="hr"><input id="hDate" type="date"><span id="hTime" class="ht"></span><button id="hLive" type="button"></button></div><input id="hRange" type="range" min="0" max="23" step="1" value="0">';
+  document.body.appendChild(el);
+  hist.el = el;
+  hist.date = document.getElementById('hDate');
+  hist.time = document.getElementById('hTime');
+  hist.live = document.getElementById('hLive');
+  hist.range = document.getElementById('hRange');
+  hist.date.addEventListener('change', histPick);
+  hist.range.addEventListener('input', function () {
+    if (hist.cfg && hist.cfg.mode === 'frames') { showFrame(+hist.range.value); histLabel(); } else { histPick(); }
+  });
+  hist.live.addEventListener('click', histLive);
+}
+
+function histSetup(id) {
+  if (INIT.round) return;
+  histInit();
+  var cfg = HISTORY[id] || null;
+  hist.cfg = cfg;
+  hist.idx = 0;
+  hist.frames = [];
+  clearTimeout(hist.timer);
+  if (!cfg) { hist.el.className = ''; return; }
+  hist.el.className = 'on ' + cfg.mode;
+  hist.live.textContent = lbl('hLive', 'Live');
+  if (cfg.mode === 'frames') return;
+  var b = histBounds(cfg);
+  hist.min = b.min; hist.max = b.max;
+  hist.date.min = isoDay(b.min); hist.date.max = isoDay(b.max);
+  if (id === 'alerts') {
+    fetch('__alertrange.json').then(function (r) { if (!r.ok) throw new Error('http'); return r.json(); }).then(function (d) {
+      if (state.layer !== 'alerts' || !d.min) return;
+      cfg.min = d.min * 1000;
+      var nb = histBounds(cfg);
+      hist.min = nb.min; hist.date.min = isoDay(nb.min);
+    }).catch(function () {});
+  }
+  histSync();
+}
+
+function histSync() {
+  var cfg = hist.cfg;
+  if (!cfg || cfg.mode === 'frames') return;
+  var at = state.at === null ? hist.max : state.at, d = new Date(at);
+  hist.date.value = isoDay(at);
+  if (cfg.mode === 'hour') {
+    hist.range.min = 0;
+    hist.range.max = isoDay(at) === isoDay(hist.max) ? new Date(hist.max).getUTCHours() : 23;
+    hist.range.value = d.getUTCHours();
+  }
+  hist.time.textContent = cfg.mode === 'hour' ? isoDay(at) + ' ' + pad(d.getUTCHours()) + ':00 UTC' : isoDay(at);
+  hist.live.className = state.at === null ? 'on' : '';
+}
+
+function histLabel() {
+  var f = hist.frames[hist.idx];
+  if (!hist.el || !f) return;
+  hist.time.textContent = new Date(f.time * 1000).toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'});
+  hist.live.className = hist.idx === hist.frames.length - 1 ? 'on' : '';
+}
+
+function histPick() {
+  var cfg = hist.cfg, day = Date.parse(hist.date.value + 'T00:00:00Z');
+  if (!cfg || isNaN(day)) return;
+  var at = day + (cfg.mode === 'hour' ? Math.min(+hist.range.value, 23) * HOUR : 0);
+  at = Math.max(hist.min, Math.min(hist.max, at));
+  histApply(at >= hist.max ? null : at);
+}
+
+function histLive() {
+  if (hist.cfg && hist.cfg.mode === 'frames') { showFrame(hist.frames.length - 1); hist.range.value = hist.idx; histLabel(); return; }
+  histApply(null);
+}
+
+function histApply(at) {
+  state.at = at;
+  histSync();
+  clearTimeout(hist.timer);
+  hist.timer = setTimeout(function () { startLayer(state.layer); }, 350);
+}
+
+function framesReady(host, past) {
+  hist.frames = past; hist.host = host;
+  showFrame(past.length - 1);
+  if (!hist.el || !hist.cfg || hist.cfg.mode !== 'frames') return;
+  hist.range.min = 0; hist.range.max = past.length - 1; hist.range.value = hist.idx;
+  histLabel();
+}
+
+function showFrame(i) {
+  var f = hist.frames[i];
+  if (!f) return;
+  var next = L.tileLayer(hist.host + f.path + '/256/{z}/{x}/{y}/2/1_1.png', {maxNativeZoom:7, opacity:0.82, tileSize:256}).addTo(map);
+  next.setZIndex(5);
+  if (overlay) map.removeLayer(overlay);
+  overlay = next;
+  hist.idx = i;
+}
+
+function usdmDate(ms) {
+  var back = (new Date(ms).getUTCDay() + 5) % 7;
+  return new Date(ms - back * DAY).toISOString().slice(0, 10).replace(/-/g, '');
+}
+
+function omSource(at, older) { return Date.now() - at < 6 * DAY ? OM : older; }
+
+function atTail(vars, at) {
+  var d = isoDay(at);
+  return '&hourly=' + vars + '&start_date=' + d + '&end_date=' + d + '&timezone=UTC';
+}
+
+function hourAt(it, name, at) {
+  return val(function () { return it.hourly[name][new Date(at).getUTCHours()]; });
+}
+
+function fetchWeatherAt(p, id, at) {
+  var vars = id === 'dew' ? 'dew_point_2m' : (id === 'uv' ? 'uv_index' : 'temperature_2m,cloud_cover,pressure_msl,wind_speed_10m,wind_direction_10m');
+  var base = omSource(at, id === 'uv' ? OM_PAST : OM_ARCHIVE);
+  return omFetch(base, p, atTail(vars, at) + '&wind_speed_unit=kmh', 60).then(function (d) {
+    var g = {t:[], c:[], p:[], ws:[], wd:[], dp:[], uv:[]};
+    d.forEach(function (it) {
+      g.t.push(hourAt(it, 'temperature_2m', at));
+      g.c.push(hourAt(it, 'cloud_cover', at));
+      g.p.push(hourAt(it, 'pressure_msl', at));
+      g.ws.push(hourAt(it, 'wind_speed_10m', at));
+      g.wd.push(hourAt(it, 'wind_direction_10m', at));
+      g.dp.push(hourAt(it, 'dew_point_2m', at));
+      g.uv.push(hourAt(it, 'uv_index', at));
+    });
+    if (!hasData(id === 'dew' ? g.dp : (id === 'uv' ? g.uv : g.t))) throw new Error('none');
+    return g;
+  });
+}
+
+function fetchAirAt(p, at) {
+  return omFetch('https://air-quality-api.open-meteo.com/v1/air-quality', p, atTail('us_aqi', at), 60).then(function (d) {
+    var aq = d.map(function (it) { return hourAt(it, 'us_aqi', at); });
+    if (!hasData(aq)) throw new Error('none');
+    return {aq:aq};
+  });
+}
+
+function fetchSeaAt(p, at) {
+  return omFetch('https://marine-api.open-meteo.com/v1/marine', p, atTail('sea_level_height_msl', at), 12).then(function (d) {
+    var sl = d.map(function (it) { return hourAt(it, 'sea_level_height_msl', at); });
+    if (!hasData(sl)) throw new Error('none');
+    return {sl:sl};
+  });
+}
+
+function fetchDroughtAt(p, at) {
+  var end = at - DAY, base = omSource(end, OM_ARCHIVE);
+  var tail = '&daily=precipitation_sum,et0_fao_evapotranspiration&start_date=' + isoDay(at - 30 * DAY) + '&end_date=' + isoDay(end) + '&timezone=UTC';
+  return omFetch(base, p, tail, 60).then(function (d) {
+    var dr = d.map(function (it) {
+      return val(function () {
+        var pr = it.daily.precipitation_sum, et = it.daily.et0_fao_evapotranspiration, a = 0, b = 0;
+        for (var i = 0; i < pr.length; i++) { a += pr[i] || 0; b += et[i] || 0; }
+        return b < 10 ? 1.5 : a / b;
+      });
+    });
+    if (!hasData(dr)) throw new Error('none');
+    return {dr:dr};
+  });
+}
+
 function fetchWeather(p, id) {
+  if (state.at !== null) return fetchWeatherAt(p, id, state.at);
   var vars = id === 'dew' ? 'dew_point_2m' : (id === 'uv' ? 'uv_index' : 'temperature_2m,cloud_cover,pressure_msl,wind_speed_10m,wind_direction_10m');
   var job = omFetch(OM, p, '&current=' + vars + '&wind_speed_unit=kmh&timezone=UTC', 120).then(function (d) {
     var g = {t:[], c:[], p:[], ws:[], wd:[], dp:[], uv:[]};
@@ -186,12 +405,14 @@ function fetchWeather(p, id) {
 }
 
 function fetchAir(p) {
+  if (state.at !== null) return fetchAirAt(p, state.at);
   return omFetch('https://air-quality-api.open-meteo.com/v1/air-quality', p, '&current=us_aqi&timezone=UTC', 120).then(function (d) {
     return {aq:d.map(function (it) { return val(function () { return it.current.us_aqi; }); })};
   });
 }
 
 function fetchSea(p) {
+  if (state.at !== null) return fetchSeaAt(p, state.at);
   var hour = new Date().getUTCHours();
   return omFetch('https://marine-api.open-meteo.com/v1/marine', p, '&hourly=sea_level_height_msl&forecast_days=1&timezone=UTC', 12).then(function (d) {
     var sl = d.map(function (it) { return val(function () { return it.hourly.sea_level_height_msl[hour]; }); });
@@ -201,6 +422,7 @@ function fetchSea(p) {
 }
 
 function fetchDrought(p) {
+  if (state.at !== null) return fetchDroughtAt(p, state.at);
   return omFetch(OM, p, '&daily=precipitation_sum,et0_fao_evapotranspiration&past_days=30&forecast_days=1&timezone=UTC', 120).then(function (d) {
     return {dr:d.map(function (it) {
       return val(function () {
@@ -271,7 +493,7 @@ function colorFor(id, v, ll) {
 }
 
 function loadUsdm(seq) {
-  fetch('__drought.json').then(function (r) { if (!r.ok) throw new Error('http'); return r.json(); }).then(function (fc) {
+  fetch(state.at === null ? '__drought.json' : '__drought.json?d=' + usdmDate(state.at)).then(function (r) { if (!r.ok) throw new Error('http'); return r.json(); }).then(function (fc) {
     if (seq !== state.seq || !fc.features || !fc.features.length) return;
     extra = L.geoJSON(fc, {
       renderer:L.canvas({pane:'zonepane'}),
@@ -288,7 +510,7 @@ function loadUsdm(seq) {
 
 function loadAlerts(seq) {
   state.busy = true; setLegend('');
-  fetch('__alerts.json').then(function (r) { if (!r.ok) throw new Error('http'); return r.json(); }).then(function (fc) {
+  fetch(state.at === null ? '__alerts.json' : '__alerts.json?at=' + Math.floor(state.at / 1000)).then(function (r) { if (!r.ok) throw new Error('http'); return r.json(); }).then(function (fc) {
     if (seq !== state.seq) return;
     var feats = (fc.features || []).slice().sort(function (a, b) { return LEVEL_RANK[a.properties.level] - LEVEL_RANK[b.properties.level]; });
     overlay = L.geoJSON({type:'FeatureCollection', features:feats}, {
@@ -309,44 +531,6 @@ function loadAlerts(seq) {
     state.busy = false;
     setLegend(feats.length ? '' : lbl('noAlerts', 'No active alerts right now'));
   }).catch(function () { if (seq === state.seq) { state.busy = false; setLegend(state.err); } });
-}
-
-function loadBlackouts(seq) {
-  var group = L.layerGroup();
-  overlay = group.addTo(map);
-  var run = function () {
-    if (seq !== state.seq) return;
-    if (map.getZoom() < 5) {
-      group.clearLayers(); state.busy = false;
-      setLegend(lbl('zoomIn', 'Zoom in to see outages'));
-      return;
-    }
-    var b = map.getBounds(), my = ++boSeq;
-    var url = '__blackouts.json?s=' + b.getSouth().toFixed(3) + '&n=' + b.getNorth().toFixed(3) + '&w=' + b.getWest().toFixed(3) + '&e=' + b.getEast().toFixed(3);
-    state.busy = true; setLegend('');
-    fetch(url).then(function (r) { if (!r.ok) throw new Error('http'); return r.json(); }).then(function (fc) {
-      if (seq !== state.seq || my !== boSeq) return;
-      group.clearLayers();
-      var feats = fc.features || [];
-      feats.forEach(function (f) {
-        var p = f.properties, c = BLACKOUT_COLORS[p.level] || BLACKOUT_COLORS.minor;
-        var shape = L.geoJSON(f, {pane:'zonepane', style:{color:c, weight:2, opacity:0.95, fillColor:c, fillOpacity:0.4}});
-        shape.on('click', function (ev) {
-          L.DomEvent.stopPropagation(ev);
-          var d = JSON.parse(JSON.stringify(p));
-          d.lat = ev.latlng.lat; d.lon = wrapLon(ev.latlng.lng);
-          openDetail('blackout', d);
-        });
-        group.addLayer(shape);
-      });
-      state.busy = false;
-      setLegend(feats.length ? '' : lbl('noOutages', 'No outages detected right now'));
-    }).catch(function () { if (seq === state.seq && my === boSeq) { state.busy = false; setLegend(state.err); } });
-  };
-  var later = function () { clearTimeout(boTimer); boTimer = setTimeout(run, 900); };
-  map.on('moveend', later);
-  off = function () { map.off('moveend', later); clearTimeout(boTimer); };
-  run();
 }
 
 function seasonFactor(date) {
@@ -382,7 +566,7 @@ function loadColdFront(seq) {
   function build() {
     if (seq !== state.seq) return;
     group.clearLayers(); heads = [];
-    var fN = seasonFactor(new Date()), fS = 1 - fN;
+    var fN = seasonFactor(new Date(state.at === null ? Date.now() : state.at)), fS = 1 - fN;
     [['N', fN], ['S', fS]].forEach(function (h) {
       var cfg = COLD[h[0]], f = h[1], name = lbl(cfg.key, h[0] === 'N' ? 'Greenland' : 'Antarctica');
       cfg.origins.forEach(function (o, idx) {
@@ -488,23 +672,28 @@ function loadFires(seq) {
   var group = L.layerGroup();
   overlay = group.addTo(map);
   state.busy = true; setLegend('');
-  var cells = [];
+  var cells = [], day = state.at === null ? null : Math.floor(state.at / DAY);
   var redo = function () { renderFires(cells, group); };
   map.on('moveend zoomend', redo);
   off = function () { map.off('moveend zoomend', redo); };
-  var fresh = cache.fires && Date.now() - cache.firesAt < 600000;
-  var p = fresh ? Promise.resolve(cache.fires) : fetch('__fires.json').then(function (r) {
+  var fresh = day === null && cache.fires && Date.now() - cache.firesAt < 600000;
+  var p = fresh ? Promise.resolve(cache.fires) : fetch(day === null ? '__fires.json' : '__fires.json?day=' + day).then(function (r) {
     if (!r.ok) throw new Error('http');
     return r.json();
   }).catch(function () {
+    if (day !== null) throw new Error('none');
     return getJson(EONET + 'wildfires').then(function (d) { return parseFires(d.events || []); });
-  }).then(function (c) { cache.fires = c; cache.firesAt = Date.now(); return c; });
+  }).then(function (c) {
+    if (day === null) { cache.fires = c; cache.firesAt = Date.now(); }
+    return c;
+  });
   p.then(function (c) {
     if (seq !== state.seq) return;
     cells = c;
     redo();
-  }).catch(function () {}).then(function () {
-    if (seq === state.seq) { state.busy = false; setLegend(''); }
+    state.busy = false; setLegend('');
+  }).catch(function () {
+    if (seq === state.seq) { state.busy = false; setLegend(day === null ? '' : state.err); }
   });
 }
 """.trimIndent()
