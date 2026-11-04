@@ -15,6 +15,105 @@ var LAND_URLS = [
 ];
 var FRONT = {drop:4, none:999, step:3, window:2};
 var frontHits = [], zoneCanvas = null;
+
+var requestCache = new Map(), requestQueue = [], requestActive = 0, requestNextStart = 0;
+var REQUEST_CACHE_LIMIT = 48, REQUEST_CONCURRENCY = 3, REQUEST_INTERVAL = 180;
+
+function cloneJson(value) {
+  return value === null || value === undefined ? value : JSON.parse(JSON.stringify(value));
+}
+
+function cacheJson(key, value, ttl) {
+  requestCache.delete(key);
+  requestCache.set(key, {value:cloneJson(value), at:Date.now(), ttl:ttl});
+  while (requestCache.size > REQUEST_CACHE_LIMIT) requestCache.delete(requestCache.keys().next().value);
+}
+
+function staleJson(key) { var entry = requestCache.get(key); return entry && Date.now() - entry.at <= entry.ttl * 6 ? cloneJson(entry.value) : null; }
+
+function cachedJson(key) {
+  var entry = requestCache.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.at > entry.ttl) return null;
+  requestCache.delete(key);
+  requestCache.set(key, entry);
+  return cloneJson(entry.value);
+}
+
+function drainRequests() {
+  while (requestActive < REQUEST_CONCURRENCY && requestQueue.length) {
+    var job = requestQueue.shift();
+    if (job.signal && job.signal.aborted) {
+      job.reject(new Error('aborted'));
+      continue;
+    }
+    requestActive++;
+    var now = Date.now(), wait = Math.max(0, requestNextStart - now);
+    requestNextStart = now + wait + REQUEST_INTERVAL;
+    setTimeout(function (current) {
+      current.run().then(current.resolve, current.reject).then(function () {
+        requestActive--;
+        drainRequests();
+      });
+    }, wait, job);
+  }
+}
+
+function scheduleRequest(run, signal) {
+  return new Promise(function (resolve, reject) {
+    requestQueue.push({run:run, signal:signal, resolve:resolve, reject:reject});
+    drainRequests();
+  });
+}
+
+function retryDelay(response, attempt) {
+  var retryAfter = response && response.headers ? response.headers.get('Retry-After') : null;
+  if (retryAfter) {
+    var seconds = Number(retryAfter);
+    if (isFinite(seconds)) return Math.min(30000, Math.max(250, seconds * 1000));
+    var date = Date.parse(retryAfter);
+    if (isFinite(date)) return Math.min(30000, Math.max(250, date - Date.now()));
+  }
+  return Math.min(12000, 500 * Math.pow(2, attempt)) + Math.floor(Math.random() * 250);
+}
+
+function requestJson(url, options, ttl) {
+  options = options || {};
+  var key = String(url), cached = cachedJson(key);
+  if (cached !== null) return Promise.resolve(cached);
+  var signal = options.signal || null;
+  var cacheTtl = ttl || (key.indexOf('__') === 0 ? 120000 : 90000);
+  function attempt(index) {
+    return scheduleRequest(function () {
+      if (signal && signal.aborted) throw new Error('aborted');
+      return fetch(url, options).then(function (response) {
+        if (!response.ok) {
+          var error = new Error('HTTP ' + response.status);
+          error.status = response.status;
+          error.retryAfter = response.headers.get('Retry-After');
+          throw error;
+        }
+        return response.json();
+      });
+    }, signal).catch(function (error) {
+      if (signal && signal.aborted) throw error;
+      var status = error && error.status;
+      if (index >= 3 || (status && status < 500 && status !== 429)) {
+        var stale = staleJson(key);
+        if (stale !== null) return stale;
+        throw error;
+      }
+      return new Promise(function (resolve) {
+        var delay = retryDelay({headers:{get:function () { return error.retryAfter || null; }}}, index);
+        setTimeout(resolve, delay);
+      }).then(function () { return attempt(index + 1); });
+    });
+  }
+  return attempt(0).then(function (value) {
+    cacheJson(key, value, cacheTtl);
+    return cloneJson(value);
+  });
+}
 var gridCache = {}, GRID_TTL = 1800000, GRID_BOX = {s:-75, n:75, w:-180, e:180}, gridToken = 0, gridCtl = null, gridSignal = null;
 
 map.createPane('zonepane').style.zIndex = 400;
@@ -141,7 +240,7 @@ function val(fn) {
 
 function omChunk(base, la, lo, tail) {
   var url = base + '?latitude=' + la.join(',') + '&longitude=' + lo.join(',') + tail;
-  return fetch(url, gridSignal ? {signal:gridSignal} : undefined).then(function (r) { if (!r.ok) throw new Error('http'); return r.json(); })
+  return requestJson(url, gridSignal ? {signal:gridSignal} : null, 120000)
     .then(function (d) { return Array.isArray(d) ? d : [d]; })
     .catch(function () { return la.map(function () { return null; }); });
 }
@@ -262,17 +361,30 @@ function loadGrid(force) {
     grid = g; gridAt = Date.now(); gridZoom = map.getZoom();
     state.busy = false; setLegend('');
     if (overlay && overlay.refresh) overlay.refresh();
-  }).catch(function () {
-    if (seq === state.seq && token === gridToken) { state.busy = false; setLegend(state.err); }
+   }).catch(function () {
+    if (seq !== state.seq || token !== gridToken) return;
+    var fallback = gridCache[id];
+    if (fallback && Date.now() - fallback.at < GRID_TTL * 6) {
+      grid = fallback.g;
+      gridAt = fallback.at;
+      gridZoom = map.getZoom();
+      state.busy = false;
+      setLegend('');
+      if (overlay && overlay.refresh) overlay.refresh();
+    } else {
+      state.busy = false;
+      setLegend(state.err);
+    }
   });
 }
 
 function sample(arr, lat, lon) {
   var fx = (lon - grid.w) / (grid.e - grid.w) * (COLS - 1);
   var fy = (lat - grid.s) / (grid.n - grid.s) * (ROWS - 1);
-  fx = Math.min(COLS - 1.001, Math.max(0, fx)); fy = Math.min(ROWS - 1.001, Math.max(0, fy));
+  fx = Math.min(COLS - 1.000001, Math.max(0, fx));
+  fy = Math.min(ROWS - 1.000001, Math.max(0, fy));
   var x0 = Math.floor(fx), y0 = Math.floor(fy), tx = fx - x0, ty = fy - y0;
-  tx = tx * tx * (3 - 2 * tx); ty = ty * ty * (3 - 2 * ty);
+  
   var vs = [arr[y0 * COLS + x0], arr[y0 * COLS + x0 + 1], arr[(y0 + 1) * COLS + x0], arr[(y0 + 1) * COLS + x0 + 1]];
   var ws = [(1 - tx) * (1 - ty), tx * (1 - ty), (1 - tx) * ty, tx * ty], sum = 0, wt = 0;
   for (var i = 0; i < 4; i++) {
@@ -300,7 +412,7 @@ function colorFor(id, v, ll) {
 }
 
 function loadUsdm(seq) {
-  fetch('__drought.json').then(function (r) { if (!r.ok) throw new Error('http'); return r.json(); }).then(function (fc) {
+  requestJson('__drought.json', null, 600000).then(function (fc) {
     if (seq !== state.seq || !fc.features || !fc.features.length) return;
     extra = L.geoJSON(fc, {
       renderer:L.canvas({pane:'zonepane'}),
@@ -317,7 +429,7 @@ function loadUsdm(seq) {
 
 function loadAlerts(seq) {
   state.busy = true; setLegend('');
-  fetch('__alerts.json').then(function (r) { if (!r.ok) throw new Error('http'); return r.json(); }).then(function (fc) {
+  requestJson('__alerts.json', null, 120000).then(function (fc) {
     if (seq !== state.seq) return;
     var feats = (fc.features || []).slice().sort(function (a, b) { return LEVEL_RANK[a.properties.level] - LEVEL_RANK[b.properties.level]; });
     overlay = L.geoJSON({type:'FeatureCollection', features:feats}, {
@@ -538,7 +650,7 @@ function showFire(e, cs) {
   if (!(window.MapBridge && window.MapBridge.detail)) return;
   var q = '__firedetail.json?lat=' + e.lat + '&lon=' + e.lon + '&size=' + cs + '&n=' + e.n + '&frp=' + e.frp + '&first=' + e.first +
     '&last=' + e.last + '&bright=' + e.bright + '&conf=' + e.conf + '&night=' + e.night;
-  fetch(q).then(function (r) { if (!r.ok) throw new Error('http'); return r.json(); }).then(function (d) {
+  requestJson(q, null, 30000).then(function (d) {
     openDetail('fire', d);
   }).catch(function () {
     openDetail('fire', {lat:e.lat + cs / 2, lon:e.lon + cs / 2, hotspots:e.n, frp:e.frp, status:'active', cause:'investigating', behavior:'active', modeled:[], detected:'', reported:'', updated:'', costUsd:0, areaHa:e.n * 20, fuelKey:'temperate', fuelText:'', brightness:e.bright, confidence:e.conf, night:e.night > 0});
@@ -588,10 +700,7 @@ function loadFires(seq) {
   map.on('moveend zoomend', redo);
   off = function () { map.off('moveend zoomend', redo); };
   var fresh = cache.fires && Date.now() - cache.firesAt < 600000;
-  var p = fresh ? Promise.resolve(cache.fires) : fetch('__fires.json').then(function (r) {
-    if (!r.ok) throw new Error('http');
-    return r.json();
-  }).catch(function () {
+  var p = fresh ? Promise.resolve(cache.fires) : requestJson('__fires.json', null, 600000).catch(function () {
     return getJson(EONET + 'wildfires').then(function (d) { return parseFires(d.events || []); });
   }).then(function (c) {
     cache.fires = c; cache.firesAt = Date.now();
