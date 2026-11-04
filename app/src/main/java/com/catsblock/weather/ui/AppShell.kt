@@ -87,6 +87,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.catsblock.weather.i18n.tr
+import com.catsblock.weather.ui.glass.hazeBackdropSource
+import com.catsblock.weather.ui.glass.weatherGlassChrome
+import dev.chrisbanes.haze.HazeState
 import kotlin.math.PI
 import kotlin.math.sin
 import kotlinx.coroutines.launch
@@ -121,6 +124,7 @@ fun AppShell(vm: WeatherViewModel, screen: Screen?) {
     SideEffect { last = tab }
 
     val settings by vm.settings.collectAsStateWithLifecycle()
+    val hazeState = remember { HazeState() }
     val agentAllowed = true
     val tabs = remember(agentAllowed) { AppTab.entries.filter { it != AppTab.Agent || agentAllowed } }
     LaunchedEffect(screen, agentAllowed) {
@@ -173,16 +177,19 @@ fun AppShell(vm: WeatherViewModel, screen: Screen?) {
 
     if (layout.useRail) {
         Row(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-            ExpressiveNavigationRail(tabs = tabs, selected = tab, onSelect = onSelect)
-            Box(Modifier.weight(1f).fillMaxHeight()) { content() }
+            ExpressiveNavigationRail(tabs = tabs, selected = tab, onSelect = onSelect, hazeState = hazeState)
+            Box(Modifier.weight(1f).fillMaxHeight()) {
+                Box(Modifier.fillMaxSize().hazeBackdropSource(hazeState)) { content() }
+            }
         }
     } else {
         Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-            content()
+            Box(Modifier.fillMaxSize().hazeBackdropSource(hazeState)) { content() }
             ExpressiveNavigationBar(
                 tabs = tabs,
                 selected = tab,
                 onSelect = onSelect,
+                hazeState = hazeState,
                 modifier = Modifier.align(Alignment.BottomCenter)
             )
         }
@@ -194,6 +201,7 @@ private fun ExpressiveNavigationRail(
     tabs: List<AppTab>,
     selected: AppTab,
     onSelect: (AppTab) -> Unit,
+    hazeState: HazeState,
     modifier: Modifier = Modifier
 ) {
     val scheme = MaterialTheme.colorScheme
@@ -214,7 +222,12 @@ private fun ExpressiveNavigationRail(
         modifier
             .fillMaxHeight()
             .width(RailWidth)
-            .background(container)
+            .weatherGlassChrome(
+                hazeState,
+                RoundedCornerShape(4.dp),
+                container.copy(alpha = 0.72f),
+                scheme.outlineVariant.copy(alpha = 0.62f)
+            )
             .windowInsetsPadding(
                 WindowInsets.systemBars.union(WindowInsets.displayCutout)
                     .only(WindowInsetsSides.Start + WindowInsetsSides.Vertical)
@@ -282,20 +295,28 @@ private fun ExpressiveNavigationBar(
     tabs: List<AppTab>,
     selected: AppTab,
     onSelect: (AppTab) -> Unit,
+    hazeState: HazeState,
     modifier: Modifier = Modifier
 ) {
     val scheme = MaterialTheme.colorScheme
+    val barShape = RoundedCornerShape(4.dp)
     Box(modifier.fillMaxWidth().navigationBarsPadding(), contentAlignment = Alignment.BottomCenter) {
         Surface(
             modifier = Modifier
                 .padding(horizontal = 20.dp, vertical = BarGap)
                 .widthIn(max = 420.dp)
                 .fillMaxWidth()
-                .height(BarHeight),
-            shape = CircleShape,
-            color = scheme.surfaceContainerHigh.copy(alpha = 0.97f),
-            tonalElevation = 3.dp,
-            shadowElevation = 12.dp
+                .height(BarHeight)
+                .weatherGlassChrome(
+                    hazeState,
+                    barShape,
+                    scheme.surfaceContainerHigh.copy(alpha = 0.72f),
+                    scheme.outlineVariant.copy(alpha = 0.62f)
+                ),
+            shape = barShape,
+            color = scheme.surfaceContainerHigh.copy(alpha = 0.55f),
+            tonalElevation = 0.dp,
+            shadowElevation = 4.dp
         ) {
             Row(
                 Modifier.fillMaxSize().padding(8.dp),
