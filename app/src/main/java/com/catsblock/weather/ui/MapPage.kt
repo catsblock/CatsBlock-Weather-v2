@@ -80,9 +80,9 @@ window.onerror = function (m) { console.log('MapError ' + m); };
 function start() {
 var map = L.map('map', {zoomControl:false, attributionControl:false, minZoom:INIT.minZoom || 2, maxZoom:12, zoomSnap:0.25, worldCopyJump:true}).setView([0, 0], 4);
 L.control.attribution({position:'bottomright', prefix:false}).addTo(map)
-  .addAttribution('© OpenStreetMap contributors · Open-Meteo · RainViewer · NASA GIBS · NASA FIRMS · NASA EONET · NIFC · NWS · INMET · US Drought Monitor · Natural Earth');
+  .addAttribution('© OpenStreetMap contributors · Open-Meteo · RainViewer · NASA GIBS · NASA FIRMS · NASA EONET · NIFC · Alert-Hub.org · US Drought Monitor · Natural Earth');
 
-var state = {canvas:false, dark:false, layer:'none', title:'', err:'', f:false, lat:0, lon:0, seq:0, busy:false, labels:{}};
+var state = {canvas:false, dark:false, layer:'none', title:'', err:'', f:false, lat:0, lon:0, seq:0, busy:false, labels:{}, at:null};
 var base = null, overlay = null, pin = null, grid = null, gridAt = 0, gridZoom = 0, timer = null, off = null;
 var cache = {storms:null, stormsAt:0, fires:null, firesAt:0};
 var legend = document.getElementById('legend');
@@ -162,7 +162,6 @@ function setLegend(extra) {
   else if (id === 'sea') { grad = gradCss(RAMPS.sea); lo = '-2 m'; hi = '+2 m'; }
   else if (id === 'alerts') { grad = hard([LEVEL_COLORS.warning, LEVEL_COLORS.alert, LEVEL_COLORS.danger]); lo = lbl('lvWarn', 'Warning'); hi = lbl('lvDanger', 'Danger'); }
   else if (id === 'drought') { grad = hard(DRY.map(rgb)); lo = lbl('d0', 'Slightly dry'); hi = lbl('d4', 'Extreme dry'); }
-  else if (id === 'blackout') { grad = hard([BLACKOUT_COLORS.minor, BLACKOUT_COLORS.moderate, BLACKOUT_COLORS.severe]); lo = lbl('boMinor', 'Minor outage'); hi = lbl('boSevere', 'Severe outage'); }
   else if (id === 'coldfront') { grad = 'linear-gradient(90deg,#e3f2fd,#1e88e5,#0d47a1)'; lo = '0%'; hi = '100%'; }
   var html = '<div class="t">' + esc(state.title) + '</div>';
   if (extra) html += '<div class="m">' + esc(extra) + '</div>';
@@ -222,9 +221,12 @@ function setCity(lat, lon, fly) {
 
 function locate() { map.flyTo([state.lat, state.lon], Math.max(map.getZoom(), 7), {duration:1.2}); }
 
+function gibsOn(layer, level, day, opacity) {
+  return L.tileLayer('https://gibs.earthdata.nasa.gov/wmts/epsg3857/all/' + layer + '/default/' + day + '/GoogleMapsCompatible_Level' + level + '/{z}/{y}/{x}.png', {maxNativeZoom:level, opacity:opacity, tileSize:256});
+}
+
 function gibs(layer, level, offset, opacity) {
-  var d = new Date(Date.now() - offset * 86400000).toISOString().slice(0, 10);
-  return L.tileLayer('https://gibs.earthdata.nasa.gov/wmts/epsg3857/all/' + layer + '/default/' + d + '/GoogleMapsCompatible_Level' + level + '/{z}/{y}/{x}.png', {maxNativeZoom:level, opacity:opacity, tileSize:256});
+  return gibsOn(layer, level, new Date(Date.now() - offset * 86400000).toISOString().slice(0, 10), opacity);
 }
 
 function getJson(url) {
@@ -341,13 +343,16 @@ function stormIcon(cat, kt, name) {
   return L.divIcon({className:'cyw', html:html, iconSize:[s, s], iconAnchor:[s / 2, s / 2]});
 }
 
-function buildStorms(events) {
+function buildStorms(events, limit) {
   var group = L.layerGroup(), halo = L.layerGroup(), lines = L.layerGroup(), marks = L.layerGroup(), count = 0;
   var haloColor = state.dark ? 'rgba(255,255,255,.22)' : 'rgba(0,0,0,.22)';
   events.forEach(function (ev) {
     if (!/cyclone|hurricane|typhoon|tropical|depression/i.test(ev.title || '')) return;
-    var geo = (ev.geometry || []).filter(function (g) { return g.type === 'Point' && g.coordinates && g.coordinates.length >= 2; });
+    var geo = (ev.geometry || []).filter(function (g) {
+      return g.type === 'Point' && g.coordinates && g.coordinates.length >= 2 && (!limit || new Date(g.date).getTime() <= limit);
+    });
     geo.sort(function (a, b) { return new Date(a.date) - new Date(b.date); });
+    if (limit && geo.length && limit - new Date(geo[geo.length - 1].date).getTime() > 4 * 86400000) return;
     var pts = geo.map(function (g) { return {lat:g.coordinates[1], lon:g.coordinates[0], kt:toKt(g.magnitudeValue, g.magnitudeUnit)}; });
     if (!pts.length) return;
     for (var i = 1; i < pts.length; i++) {
@@ -378,13 +383,19 @@ function buildStorms(events) {
 
 function loadStorms(seq) {
   state.busy = true; setLegend('');
-  var fresh = cache.storms && Date.now() - cache.stormsAt < 600000;
-  var p = fresh ? Promise.resolve(cache.storms) : getJson(EONET + 'severeStorms').then(function (d) {
-    cache.storms = d.events || []; cache.stormsAt = Date.now(); return cache.storms;
-  });
+  var at = state.at, p;
+  if (at === null) {
+    var fresh = cache.storms && Date.now() - cache.stormsAt < 600000;
+    p = fresh ? Promise.resolve(cache.storms) : getJson(EONET + 'severeStorms').then(function (d) {
+      cache.storms = d.events || []; cache.stormsAt = Date.now(); return cache.storms;
+    });
+  } else {
+    var from = new Date(at - 20 * 86400000).toISOString().slice(0, 10), to = new Date(at + 86400000).toISOString().slice(0, 10);
+    p = getJson('https://eonet.gsfc.nasa.gov/api/v3/events?status=all&limit=500&start=' + from + '&end=' + to + '&category=severeStorms').then(function (d) { return d.events || []; });
+  }
   p.then(function (events) {
     if (seq !== state.seq) return;
-    var built = buildStorms(events);
+    var built = buildStorms(events, at === null ? 0 : at + 86400000 - 1);
     overlay = built.group.addTo(map);
     state.busy = false;
     setLegend(built.count ? '' : lbl('none', 'No active storms right now'));
@@ -395,33 +406,27 @@ function loadStorms(seq) {
 
 __LAYER_SCRIPTS__
 
-function setLayer(id, title, err, f, labels) {
-  state.layer = id; state.title = title; state.err = err; state.f = f; state.busy = false; state.canvas = false;
-  if (labels) state.labels = typeof labels === 'string' ? JSON.parse(labels) : labels;
+function startLayer(id) {
+  state.busy = false; state.canvas = false;
   var seq = ++state.seq;
   clearOverlay();
   if (id === 'precip') {
     state.busy = true;
     fetch('https://api.rainviewer.com/public/weather-maps.json').then(function (r) { return r.json(); }).then(function (d) {
       if (seq !== state.seq) return;
-      var past = d.radar.past, last = past[past.length - 1];
-      overlay = L.tileLayer(d.host + last.path + '/256/{z}/{x}/{y}/2/1_1.png', {maxNativeZoom:7, opacity:0.82, tileSize:256}).addTo(map);
-      overlay.setZIndex(5);
+      framesReady(d.host, d.radar.past);
       state.busy = false; setLegend('');
     }).catch(function () { if (seq === state.seq) { state.busy = false; setLegend(state.err); } });
   } else if (id === 'cyclones') {
     loadStorms(seq);
   } else if (id === 'sst') {
-    overlay = gibs('GHRSST_L4_MUR_Sea_Surface_Temperature_Anomalies_v4.1_STD', 7, 3, 0.8).addTo(map);
+    overlay = (state.at === null ? gibs('GHRSST_L4_MUR_Sea_Surface_Temperature_Anomalies_v4.1_STD', 7, 3, 0.8) : gibsOn('GHRSST_L4_MUR_Sea_Surface_Temperature_Anomalies_v4.1_STD', 7, new Date(state.at).toISOString().slice(0, 10), 0.8)).addTo(map);
     overlay.setZIndex(4);
   } else if (id === 'fires') {
     loadFires(seq);
     return;
   } else if (id === 'alerts') {
     loadAlerts(seq);
-    return;
-  } else if (id === 'blackout') {
-    loadBlackouts(seq);
     return;
   } else if (id === 'coldfront') {
     loadColdFront(seq);
@@ -438,6 +443,13 @@ function setLayer(id, title, err, f, labels) {
     loadGrid(true);
   }
   setLegend('');
+}
+
+function setLayer(id, title, err, f, labels) {
+  state.layer = id; state.title = title; state.err = err; state.f = f; state.at = null;
+  if (labels) state.labels = typeof labels === 'string' ? JSON.parse(labels) : labels;
+  histSetup(id);
+  startLayer(id);
 }
 
 var COLS = 12, ROWS = 9;
