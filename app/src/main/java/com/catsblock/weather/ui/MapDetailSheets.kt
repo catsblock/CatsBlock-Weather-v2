@@ -89,16 +89,17 @@ internal fun MapDetailSheet(detail: MapDetail, onDismiss: () -> Unit) {
     val data = detail.data
     val lat = data.optDouble("lat", Double.NaN)
     val lon = data.optDouble("lon", Double.NaN)
-    val meta by produceState<JSONObject?>(null, lat, lon) {
-        value = if (lat.isNaN() || lon.isNaN()) null else withContext(Dispatchers.IO) {
+    val meta by produceState<JSONObject?>(null, detail.type, lat, lon) {
+        value = if (detail.type == "sample" || lat.isNaN() || lon.isNaN()) null else withContext(Dispatchers.IO) {
             runCatching { MunicipalityMeta.details(lat, lon) }.getOrNull()
         }
     }
-    val loading = meta == null && !lat.isNaN()
+    val loading = detail.type != "sample" && meta == null && !lat.isNaN()
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheet,
-        containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        shape = RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp)
     ) {
         Column(
             Modifier
@@ -111,11 +112,57 @@ internal fun MapDetailSheet(detail: MapDetail, onDismiss: () -> Unit) {
             when (detail.type) {
                 "alert" -> AlertBody(data)
                 "fire" -> FireBody(data)
+                "sample" -> MapReadingBody(data)
                 else -> Header(tr("Municipality details"), null, Color.Unspecified)
             }
-            MunicipalityBlock(meta, loading)
+            if (detail.type != "sample") MunicipalityBlock(meta, loading)
         }
     }
+}
+
+@Composable
+private fun MapReadingBody(data: JSONObject) {
+    val layerId = data.optString("layer")
+    val layer = MapLayer.entries.firstOrNull { it.id == layerId }
+    val title = tr(layer?.label ?: "Weather map")
+    val value = data.optDouble("value", Double.NaN)
+    val unit = data.optString("unit")
+    val lat = data.optDouble("lat", Double.NaN)
+    val lon = data.optDouble("lon", Double.NaN)
+    val readingLabel = data.optString("readingLabel").ifBlank { title }
+    val status = data.optString("status")
+    val secondary = data.optDouble("secondary", Double.NaN)
+    val secondaryLabel = data.optString("secondaryLabel")
+    val secondaryUnit = data.optString("secondaryUnit")
+
+    Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+    if (status.isNotBlank()) {
+        Text(status, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    } else if (value.isNaN()) {
+        Text(tr("Details unavailable"), style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    } else {
+        Text(
+            readingLabel,
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            decimal(value) + (if (unit.isBlank()) "" else " $unit"),
+            style = MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.Medium
+        )
+        if (!secondary.isNaN() && secondaryLabel.isNotBlank()) {
+            Field(secondaryLabel, decimal(secondary) + (if (secondaryUnit.isBlank()) "" else " $secondaryUnit"))
+        }
+    }
+    if (!lat.isNaN() && !lon.isNaN()) {
+        HorizontalDivider()
+        Field(
+            tr("Coordinates"),
+            String.format(Locale.US, "%.3f, %.3f", lat, lon)
+        )
+    }
+    data.optString("source").takeIf { it.isNotBlank() }?.let { Note(tr("Source") + ": " + it) }
 }
 
 @Composable
