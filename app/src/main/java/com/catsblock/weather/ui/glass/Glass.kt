@@ -45,6 +45,7 @@ fun Modifier.weatherGlassChrome(
         state = state,
         style = HazeStyle(
             backgroundColor = tint,
+            tints = emptyList(),
             blurRadius = 14.dp,
             noiseFactor = 0.0f
         )
