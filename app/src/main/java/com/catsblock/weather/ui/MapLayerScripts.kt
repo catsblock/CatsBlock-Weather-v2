@@ -15,12 +15,14 @@ var LAND_URLS = [
 ];
 var FRONT = {
   levels:[3, 6, 10],
+  recent:1.5,
   blue:[[100, 181, 246], [30, 136, 229], [13, 71, 161]],
   alpha:[84, 112, 140],
   grayAlpha:[56, 78, 100],
   width:[2, 3.2, 4.6]
 };
-var frontSmall = null;
+var frontSmall = null, zoneCanvas = null;
+var gridCache = null, gridToken = 0, gridCtl = null, gridSignal = null;
 
 map.createPane('zonepane').style.zIndex = 400;
 
@@ -145,7 +147,7 @@ function val(fn) {
 
 function omChunk(base, la, lo, tail) {
   var url = base + '?latitude=' + la.join(',') + '&longitude=' + lo.join(',') + tail;
-  return fetch(url).then(function (r) { if (!r.ok) throw new Error('http'); return r.json(); })
+  return fetch(url, gridSignal ? {signal:gridSignal} : undefined).then(function (r) { if (!r.ok) throw new Error('http'); return r.json(); })
     .then(function (d) { return Array.isArray(d) ? d : [d]; })
     .catch(function () { return la.map(function () { return null; }); });
 }
@@ -216,25 +218,32 @@ function fetchDrought(p) {
 }
 
 function fetchFront(p) {
-  var n = 24 + new Date().getUTCHours();
-  return omFetch(OM, p, '&hourly=temperature_2m&past_days=1&forecast_days=2&timezone=UTC', 60).then(function (d) {
-    var cp = [], cn = [];
+  var n = 48 + new Date().getUTCHours();
+  return omFetch(OM, p, '&hourly=temperature_2m&past_days=2&forecast_days=3&timezone=UTC', 60).then(function (d) {
+    var cp = [], cr = [], cn = [];
     d.forEach(function (it) {
       var t = it && it.hourly ? it.hourly.temperature_2m : null;
-      var a = t ? t[n - 24] : null, b = t ? t[n] : null, c = t ? t[n + 24] : null;
-      var ok = a !== null && a !== undefined && b !== null && b !== undefined;
-      cp.push(ok ? a - b : null);
-      cn.push(ok && c !== null && c !== undefined ? b - c : null);
+      function at(i) { var v = t ? t[i] : null; return v === undefined ? null : v; }
+      var now = at(n), day = at(n - 24), before = at(n - 8), beforeDay = at(n - 32), a1 = at(n + 24), a2 = at(n + 48);
+      if (now === null || day === null) { cp.push(null); cr.push(null); cn.push(null); return; }
+      var drop = day - now;
+      cp.push(drop);
+      cr.push(before !== null && beforeDay !== null ? drop - (beforeDay - before) : 0);
+      var ahead = [a1, a2].filter(function (v) { return v !== null; }).map(function (v) { return now - v; });
+      cn.push(ahead.length ? Math.max.apply(null, ahead) : null);
     });
     if (!hasData(cp)) throw new Error('none');
-    return {cp:cp, cn:cn};
+    return {cp:cp, cr:cr, cn:cn};
   });
 }
 
 function loadGrid(force) {
   if (!isGrid(state.layer) || !state.canvas) return;
-  var seq = state.seq, id = state.layer;
-  var b = map.getBounds().pad(0.3);
+  var seq = state.seq, id = state.layer, token = ++gridToken;
+  if (gridCtl) gridCtl.abort();
+  gridCtl = window.AbortController ? new AbortController() : null;
+  gridSignal = gridCtl ? gridCtl.signal : null;
+  var b = map.getBounds().pad(0.25);
   var s = Math.max(-80, b.getSouth()), n = Math.min(80, b.getNorth()), w = b.getWest(), e = b.getEast();
   if (e - w > 340) { w = -170; e = 170; }
   var p = {lats:[], lons:[]};
@@ -247,13 +256,13 @@ function loadGrid(force) {
   state.busy = true; setLegend('');
   var job = id === 'aqi' ? fetchAir(p) : (id === 'sea' ? fetchSea(p) : (id === 'drought' ? fetchDrought(p) : (id === 'coldfront' ? fetchFront(p) : fetchWeather(p, id))));
   job.then(function (g) {
-    if (seq !== state.seq) return;
+    if (seq !== state.seq || token !== gridToken) return;
     g.s = s; g.n = n; g.w = w; g.e = e;
     grid = g; gridAt = Date.now(); gridZoom = map.getZoom();
     state.busy = false; setLegend('');
     if (overlay && overlay.refresh) overlay.refresh();
   }).catch(function () {
-    if (seq === state.seq) { state.busy = false; setLegend(state.err); }
+    if (seq === state.seq && token === gridToken) { state.busy = false; setLegend(state.err); }
   });
 }
 
@@ -340,8 +349,8 @@ function frontLevel(v) {
 }
 
 function frontAt(lat, lon) {
-  var a = sample(grid.cp, lat, lon), b = sample(grid.cn, lat, lon);
-  return {past:isNaN(a) ? 0 : a, next:isNaN(b) ? 0 : b};
+  var a = sample(grid.cp, lat, lon), r = sample(grid.cr, lat, lon), b = sample(grid.cn, lat, lon);
+  return {past:isNaN(a) ? 0 : a, trend:isNaN(r) ? 0 : r, next:isNaN(b) ? 0 : b};
 }
 
 function frontAny() {
@@ -394,13 +403,13 @@ function strokeSegments(ctx, segs, color, halo, width, dash) {
 
 function paintFront(ctx, m, size) {
   var step = 6, sw = Math.ceil(size.x / step) + 2, sh = Math.ceil(size.y / step) + 2, total = sw * sh;
-  var past = new Float32Array(total), next = new Float32Array(total), near = new Float32Array(total);
+  var past = new Float32Array(total), trend = new Float32Array(total), next = new Float32Array(total), near = new Float32Array(total);
   var x, y, i;
   for (y = 0; y < sh; y++) {
     for (x = 0; x < sw; x++) {
       var ll = m.containerPointToLatLng([x * step, y * step]), f = frontAt(ll.lat, lonFor(ll));
-      past[y * sw + x] = f.past;
-      next[y * sw + x] = f.next;
+      i = y * sw + x;
+      past[i] = f.past; trend[i] = f.trend; next[i] = f.next;
     }
   }
   for (y = 0; y < sh; y++) {
@@ -422,14 +431,12 @@ function paintFront(ctx, m, size) {
   var sctx = frontSmall.getContext('2d'), img = sctx.createImageData(sw, sh), grey = state.dark ? 196 : 124;
   for (i = 0; i < total; i++) {
     var o = i * 4, lv = frontLevel(past[i]);
-    if (lv > 0) {
+    if (lv === 0) continue;
+    if (trend[i] >= FRONT.recent) {
       var c = FRONT.blue[lv - 1];
       img.data[o] = c[0]; img.data[o + 1] = c[1]; img.data[o + 2] = c[2]; img.data[o + 3] = FRONT.alpha[lv - 1];
     } else {
-      var nl = frontLevel(next[i]);
-      if (nl > 0) {
-        img.data[o] = grey; img.data[o + 1] = grey; img.data[o + 2] = grey; img.data[o + 3] = FRONT.grayAlpha[nl - 1];
-      }
+      img.data[o] = grey; img.data[o + 1] = grey; img.data[o + 2] = grey; img.data[o + 3] = FRONT.grayAlpha[lv - 1];
     }
   }
   sctx.putImageData(img, 0, 0);
@@ -454,7 +461,7 @@ function paintFront(ctx, m, size) {
   var halo = state.dark ? 'rgba(0,0,0,.38)' : 'rgba(255,255,255,.7)';
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
-  strokeSegments(ctx, gray, state.dark ? '#d0d0d0' : '#757575', halo, 2.2, [7, 6]);
+  strokeSegments(ctx, gray, state.dark ? '#d0d0d0' : '#757575', halo, 2.4, [7, 6]);
   for (i = 0; i < 3; i++) {
     strokeSegments(ctx, blue[i], rgb(FRONT.blue[i]), halo, FRONT.width[i], []);
   }
@@ -463,10 +470,11 @@ function paintFront(ctx, m, size) {
 map.on('click', function (ev) {
   if (state.layer !== 'coldfront' || !grid || !grid.cp) return;
   var f = frontAt(ev.latlng.lat, lonFor(ev.latlng));
-  var passed = frontLevel(f.past), coming = frontLevel(f.next);
+  var level = frontLevel(f.past), coming = frontLevel(f.next);
   var names = [lbl('cfWeak', 'Weak'), lbl('cfModerate', 'Moderate'), lbl('cfStrong', 'Strong')], html;
-  if (passed > 0) {
-    html = '<b>' + esc(lbl('cfPassed', 'Cold front passed')) + '</b><br>' + esc(lbl('cfStrength', 'Strength')) + ': ' + esc(names[passed - 1]) +
+  if (level > 0) {
+    var title = f.trend >= FRONT.recent ? lbl('cfNow', 'Cold being felt now') : lbl('cfPassed', 'Cold front passed');
+    html = '<b>' + esc(title) + '</b><br>' + esc(lbl('cfStrength', 'Strength')) + ': ' + esc(names[level - 1]) +
       '<br>' + esc(lbl('cfDropPast', 'Temperature drop in 24 h')) + ': -' + fmtDelta(f.past);
   } else if (coming > 0) {
     html = '<b>' + esc(lbl('cfComing', 'Cold front approaching')) + '</b><br>' + esc(lbl('cfStrength', 'Strength')) + ': ' + esc(names[coming - 1]) +
@@ -476,6 +484,45 @@ map.on('click', function (ev) {
   }
   L.popup({closeButton:false}).setLatLng(ev.latlng).setContent(html).openOn(map);
 });
+
+function stormRadii(kt) {
+  return {outer:110 + 2.2 * kt, inner:kt >= 64 ? 30 + 0.9 * kt : 0};
+}
+
+function paintStorms(ctx, m, size, zones) {
+  if (!zoneCanvas) zoneCanvas = document.createElement('canvas');
+  zoneCanvas.width = size.x; zoneCanvas.height = size.y;
+  var zctx = zoneCanvas.getContext('2d'), scale = 156543.03392 / Math.pow(2, m.getZoom());
+  var passes = [
+    {now:false, inner:false, color:'#8a8f99', alpha:0.24},
+    {now:false, inner:true, color:'#6b7079', alpha:0.26},
+    {now:true, inner:false, color:'#2979ff', alpha:0.28},
+    {now:true, inner:true, color:'#0d47a1', alpha:0.34}
+  ];
+  passes.forEach(function (ps) {
+    zctx.clearRect(0, 0, size.x, size.y);
+    zctx.fillStyle = ps.color;
+    var any = false;
+    zones.forEach(function (z) {
+      if (z.now !== ps.now) return;
+      var rad = stormRadii(z.kt), km = ps.inner ? rad.inner : rad.outer;
+      if (km <= 0) return;
+      var px = km * 1000 / (scale * Math.cos(z.lat * Math.PI / 180));
+      [-360, 0, 360].forEach(function (k) {
+        var p = m.latLngToContainerPoint([z.lat, z.lon + k]);
+        if (p.x + px < 0 || p.y + px < 0 || p.x - px > size.x || p.y - px > size.y) return;
+        zctx.beginPath();
+        zctx.arc(p.x, p.y, px, 0, Math.PI * 2);
+        zctx.fill();
+        any = true;
+      });
+    });
+    if (!any) return;
+    ctx.globalAlpha = ps.alpha;
+    ctx.drawImage(zoneCanvas, 0, 0);
+    ctx.globalAlpha = 1;
+  });
+}
 
 function parseFires(events) {
   var out = [];
