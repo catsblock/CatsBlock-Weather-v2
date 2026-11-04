@@ -13,10 +13,7 @@ var LAND_URLS = [
   'https://cdn.jsdelivr.net/gh/nvkelso/natural-earth-vector@master/geojson/ne_50m_land.geojson',
   'https://cdn.jsdelivr.net/gh/nvkelso/natural-earth-vector@master/geojson/ne_110m_land.geojson'
 ];
-var FRONT = {
-  levels:[3, 6, 10],
-  recent:1.5
-};
+var FRONT = {drop:4, none:999, step:3, window:2};
 var frontHits = [], zoneCanvas = null;
 var gridCache = null, gridToken = 0, gridCtl = null, gridSignal = null;
 
@@ -216,20 +213,22 @@ function fetchDrought(p) {
 function fetchFront(p) {
   var n = 48 + new Date().getUTCHours();
   return omFetch(OM, p, '&hourly=temperature_2m&past_days=2&forecast_days=3&timezone=UTC', 60).then(function (d) {
-    var cp = [], cr = [], cn = [];
+    var cp = [], cn = [];
     d.forEach(function (it) {
       var t = it && it.hourly ? it.hourly.temperature_2m : null;
-      function at(i) { var v = t ? t[i] : null; return v === undefined ? null : v; }
-      var now = at(n), day = at(n - 24), before = at(n - 8), beforeDay = at(n - 32), a1 = at(n + 24), a2 = at(n + 48);
-      if (now === null || day === null) { cp.push(null); cr.push(null); cn.push(null); return; }
-      var drop = day - now;
-      cp.push(drop);
-      cr.push(before !== null && beforeDay !== null ? drop - (beforeDay - before) : 0);
-      var ahead = [a1, a2].filter(function (v) { return v !== null; }).map(function (v) { return now - v; });
-      cn.push(ahead.length ? Math.max.apply(null, ahead) : null);
+      if (!t || t.length < 40) { cp.push(null); cn.push(null); return; }
+      var best = 0, bestAt = -1;
+      for (var h = 30; h < t.length; h++) {
+        var a = t[h - 6], b = t[h], c = t[h - 30], e = t[h - 24];
+        if (a === null || b === null || c === null || e === null || a === undefined || b === undefined || c === undefined || e === undefined) continue;
+        var adj = (a - b) - (c - e);
+        if (adj > best) { best = adj; bestAt = h; }
+      }
+      if (bestAt >= 0 && best >= FRONT.drop) { cp.push(bestAt - n); cn.push(best); }
+      else { cp.push(FRONT.none); cn.push(0); }
     });
     if (!hasData(cp)) throw new Error('none');
-    return {cp:cp, cr:cr, cn:cn};
+    return {cp:cp, cn:cn};
   });
 }
 
@@ -337,217 +336,139 @@ function loadAlerts(seq) {
 
 function fmtDelta(c) { return state.f ? Math.round(c * 9 / 5) + '°F' : Math.round(c) + '°C'; }
 
-function frontLevel(v) {
-  if (!(v >= FRONT.levels[0])) return 0;
-  if (v >= FRONT.levels[2]) return 3;
-  if (v >= FRONT.levels[1]) return 2;
-  return 1;
-}
-
-function frontAt(lat, lon) {
-  var a = sample(grid.cp, lat, lon), r = sample(grid.cr, lat, lon), b = sample(grid.cn, lat, lon);
-  return {past:isNaN(a) ? 0 : a, trend:isNaN(r) ? 0 : r, next:isNaN(b) ? 0 : b};
-}
-
-function frontAny() {
-  if (!grid || !grid.cp) return false;
-  for (var i = 0; i < grid.cp.length; i++) {
-    if (grid.cp[i] >= FRONT.levels[0] || grid.cn[i] >= FRONT.levels[0]) return true;
-  }
-  return false;
-}
-
-function contour(f, i, sw, t, x, y, step) {
-  var a = f[i], b = f[i + 1], c = f[i + sw + 1], d = f[i + sw];
-  var k = (a >= t ? 8 : 0) | (b >= t ? 4 : 0) | (c >= t ? 2 : 0) | (d >= t ? 1 : 0);
-  if (k === 0 || k === 15) return null;
-  var x0 = x * step, y0 = y * step;
-  function at(v1, v2) {
-    var dv = v2 - v1;
-    return dv === 0 ? 0.5 : Math.min(1, Math.max(0, (t - v1) / dv));
-  }
-  var top = [x0 + at(a, b) * step, y0], right = [x0 + step, y0 + at(b, c) * step];
-  var bottom = [x0 + at(d, c) * step, y0 + step], left = [x0, y0 + at(a, d) * step];
-  switch (k) {
-    case 1: case 14: return [[left, bottom]];
-    case 2: case 13: return [[bottom, right]];
-    case 3: case 12: return [[left, right]];
-    case 4: case 11: return [[top, right]];
-    case 6: case 9: return [[top, bottom]];
-    case 7: case 8: return [[left, top]];
-    case 5: return [[top, right], [left, bottom]];
-    case 10: return [[left, top], [bottom, right]];
-  }
-  return null;
-}
-
-function smoothField(src, sw, sh) {
-  var out = new Float32Array(src.length);
-  for (var y = 0; y < sh; y++) {
-    for (var x = 0; x < sw; x++) {
-      var sum = 0, count = 0;
-      for (var dy = -1; dy <= 1; dy++) {
-        for (var dx = -1; dx <= 1; dx++) {
-          var yy = y + dy, xx = x + dx;
-          if (yy < 0 || xx < 0 || yy >= sh || xx >= sw) continue;
-          sum += src[yy * sw + xx];
-          count++;
+function frontComponent(cells) {
+  var inSet = {}, seen = {}, best = [];
+  cells.forEach(function (c) { inSet[c.r + ':' + c.c] = c; });
+  cells.forEach(function (c) {
+    var key = c.r + ':' + c.c;
+    if (seen[key]) return;
+    var stack = [c], comp = [];
+    seen[key] = true;
+    while (stack.length) {
+      var cur = stack.pop();
+      comp.push(cur);
+      for (var dr = -1; dr <= 1; dr++) {
+        for (var dc = -1; dc <= 1; dc++) {
+          var k = (cur.r + dr) + ':' + (cur.c + dc);
+          if (inSet[k] && !seen[k]) { seen[k] = true; stack.push(inSet[k]); }
         }
       }
-      out[y * sw + x] = sum / count;
     }
+    if (comp.length > best.length) best = comp;
+  });
+  return best;
+}
+
+function frontTrack() {
+  if (!grid || !grid.cp) return [];
+  if (grid.track) return grid.track;
+  var cells = [], lo = Infinity, hi = -Infinity;
+  for (var r = 0; r < ROWS; r++) {
+    for (var c = 0; c < COLS; c++) {
+      var v = grid.cp[r * COLS + c];
+      if (v === null || v === undefined || v >= FRONT.none) continue;
+      cells.push({r:r, c:c, t:v});
+      if (v < lo) lo = v;
+      if (v > hi) hi = v;
+    }
+  }
+  var pts = [];
+  for (var t = lo; t <= hi + 0.01; t += FRONT.step) {
+    var near = cells.filter(function (k) { return Math.abs(k.t - t) <= FRONT.window; });
+    var comp = frontComponent(near);
+    if (comp.length < 2) continue;
+    var sr = 0, sc = 0;
+    comp.forEach(function (k) { sr += k.r; sc += k.c; });
+    sr /= comp.length; sc /= comp.length;
+    pts.push({
+      t:t,
+      lat:grid.s + (grid.n - grid.s) * sr / (ROWS - 1),
+      lon:grid.w + (grid.e - grid.w) * sc / (COLS - 1)
+    });
+  }
+  grid.track = pts.length >= 2 ? pts : [];
+  return grid.track;
+}
+
+function frontAny() { return frontTrack().length >= 2; }
+
+function smoothPath(pts) {
+  var out = pts;
+  for (var pass = 0; pass < 3; pass++) {
+    if (out.length < 3) return out;
+    var next = [out[0]];
+    for (var i = 0; i < out.length - 1; i++) {
+      var p = out[i], q = out[i + 1];
+      next.push([p[0] * 0.75 + q[0] * 0.25, p[1] * 0.75 + q[1] * 0.25]);
+      next.push([p[0] * 0.25 + q[0] * 0.75, p[1] * 0.25 + q[1] * 0.75]);
+    }
+    next.push(out[out.length - 1]);
+    out = next;
   }
   return out;
 }
 
-function pointKey(p) {
-  return Math.round(p[0] * 2) + ':' + Math.round(p[1] * 2);
-}
-
-function chainSegments(segs) {
-  var ends = {}, used = new Array(segs.length), lines = [], i, k, line, key, next;
-  function link(p, idx) {
-    var kk = pointKey(p);
-    if (!ends[kk]) ends[kk] = [];
-    ends[kk].push(idx);
-  }
-  function take(p) {
-    var list = ends[pointKey(p)] || [];
-    for (var j = 0; j < list.length; j++) {
-      if (!used[list[j]]) return list[j];
-    }
-    return -1;
-  }
-  for (i = 0; i < segs.length; i++) { link(segs[i][0], i); link(segs[i][1], i); }
-  for (i = 0; i < segs.length; i++) {
-    if (used[i]) continue;
-    used[i] = true;
-    line = [segs[i][0], segs[i][1]];
-    while ((next = take(line[line.length - 1])) !== -1) {
-      used[next] = true;
-      k = segs[next];
-      line.push(pointKey(k[0]) === pointKey(line[line.length - 1]) ? k[1] : k[0]);
-    }
-    line.reverse();
-    while ((next = take(line[line.length - 1])) !== -1) {
-      used[next] = true;
-      k = segs[next];
-      line.push(pointKey(k[0]) === pointKey(line[line.length - 1]) ? k[1] : k[0]);
-    }
-    lines.push(line);
-  }
-  return lines;
-}
-
-function lineLength(line) {
-  var total = 0;
-  for (var i = 1; i < line.length; i++) total += Math.hypot(line[i][0] - line[i - 1][0], line[i][1] - line[i - 1][1]);
-  return total;
-}
-
-function smoothLine(line) {
-  var pts = line;
-  for (var pass = 0; pass < 2; pass++) {
-    var out = [pts[0]];
-    for (var i = 0; i < pts.length - 1; i++) {
-      var p = pts[i], q = pts[i + 1];
-      out.push([p[0] * 0.75 + q[0] * 0.25, p[1] * 0.75 + q[1] * 0.25]);
-      out.push([p[0] * 0.25 + q[0] * 0.75, p[1] * 0.25 + q[1] * 0.75]);
-    }
-    out.push(pts[pts.length - 1]);
-    pts = out;
-  }
-  return pts;
-}
-
-function strokeLine(ctx, line, color, halo, width, dash) {
-  ctx.setLineDash(dash);
+function strokePath(ctx, pts, color, halo, width) {
+  if (pts.length < 2) return;
   [[halo, width + 3], [color, width]].forEach(function (pass) {
     ctx.beginPath();
-    ctx.moveTo(line[0][0], line[0][1]);
-    for (var i = 1; i < line.length; i++) ctx.lineTo(line[i][0], line[i][1]);
+    ctx.moveTo(pts[0][0], pts[0][1]);
+    for (var i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
     ctx.strokeStyle = pass[0];
     ctx.lineWidth = pass[1];
     ctx.stroke();
   });
-  ctx.setLineDash([]);
-}
-
-function buildLines(field, sw, sh, step, minimum, mask) {
-  var segs = [], x, y, i, found;
-  for (y = 0; y < sh - 1; y++) {
-    for (x = 0; x < sw - 1; x++) {
-      i = y * sw + x;
-      if (mask && (mask[i] >= minimum || mask[i + 1] >= minimum || mask[i + sw] >= minimum || mask[i + sw + 1] >= minimum)) continue;
-      found = contour(field, i, sw, minimum, x, y, step);
-      if (found) found.forEach(function (s) { segs.push(s); });
-    }
-  }
-  return chainSegments(segs).filter(function (l) { return lineLength(l) >= 48; }).map(smoothLine);
-}
-
-function nearestHit(pt) {
-  var best = null, bestD = 18;
-  for (var i = 0; i < frontHits.length; i++) {
-    var d = Math.hypot(pt.x - frontHits[i].x, pt.y - frontHits[i].y);
-    if (d < bestD) { best = frontHits[i]; bestD = d; }
-  }
-  return best;
 }
 
 function paintFront(ctx, m, size) {
-  var step = 8, sw = Math.ceil(size.x / step) + 2, sh = Math.ceil(size.y / step) + 2, total = sw * sh;
-  var past = new Float32Array(total), trend = new Float32Array(total), next = new Float32Array(total);
-  var x, y, i;
-  for (y = 0; y < sh; y++) {
-    for (x = 0; x < sw; x++) {
-      var ll = m.containerPointToLatLng([x * step, y * step]), f = frontAt(ll.lat, lonFor(ll));
-      i = y * sw + x;
-      past[i] = f.past; trend[i] = f.trend; next[i] = f.next;
+  frontHits = [];
+  var track = frontTrack();
+  if (track.length < 2) return;
+  var screen = track.map(function (k) {
+    var pt = m.latLngToContainerPoint([k.lat, k.lon]);
+    return {t:k.t, x:pt.x, y:pt.y};
+  });
+  var blue = [], gray = [], cur = null, i;
+  if (screen[0].t >= 0) {
+    cur = screen[0];
+    gray = screen.map(function (k) { return [k.x, k.y]; });
+  } else if (screen[screen.length - 1].t <= 0) {
+    cur = screen[screen.length - 1];
+    blue = screen.map(function (k) { return [k.x, k.y]; });
+  } else {
+    for (i = 0; i < screen.length - 1; i++) {
+      var a = screen[i], b = screen[i + 1];
+      if (a.t <= 0 && b.t > 0) {
+        var f = (0 - a.t) / (b.t - a.t);
+        cur = {x:a.x + (b.x - a.x) * f, y:a.y + (b.y - a.y) * f};
+        blue = screen.slice(0, i + 1).map(function (k) { return [k.x, k.y]; });
+        blue.push([cur.x, cur.y]);
+        gray = [[cur.x, cur.y]].concat(screen.slice(i + 1).map(function (k) { return [k.x, k.y]; }));
+        break;
+      }
     }
   }
-  past = smoothField(past, sw, sh);
-  trend = smoothField(trend, sw, sh);
-  next = smoothField(next, sw, sh);
-  var minimum = FRONT.levels[0];
-  var blue = buildLines(past, sw, sh, step, minimum, null);
-  var gray = buildLines(next, sw, sh, step, minimum, past);
   var halo = state.dark ? 'rgba(0,0,0,.38)' : 'rgba(255,255,255,.7)';
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
-  gray.forEach(function (l) { strokeLine(ctx, l, state.dark ? '#d0d0d0' : '#757575', halo, 2.6, []); });
-  blue.forEach(function (l) { strokeLine(ctx, l, '#1e88e5', halo, 3, []); });
-  var spots = [];
-  blue.forEach(function (l) {
-    var best = null, bestV = FRONT.recent;
-    l.forEach(function (p) {
-      var v = trend[Math.min(sh - 1, Math.max(0, Math.round(p[1] / step))) * sw + Math.min(sw - 1, Math.max(0, Math.round(p[0] / step)))];
-      if (v >= bestV) { bestV = v; best = p; }
-    });
-    if (best) spots.push({x:best[0], y:best[1], value:bestV});
-  });
-  spots.forEach(function (d) {
-    ctx.beginPath();
-    ctx.arc(d.x, d.y, 12, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(30,136,229,.28)';
-    ctx.fill();
-    ctx.beginPath();
-    ctx.arc(d.x, d.y, 6.5, 0, Math.PI * 2);
-    ctx.fillStyle = '#1e88e5';
-    ctx.fill();
-    ctx.lineWidth = 2.2;
-    ctx.strokeStyle = '#ffffff';
-    ctx.stroke();
-  });
-  frontHits = spots;
+  strokePath(ctx, smoothPath(gray), state.dark ? '#d0d0d0' : '#757575', halo, 3);
+  strokePath(ctx, smoothPath(blue), '#1e88e5', halo, 3);
+  if (!cur) return;
+  ctx.beginPath();
+  ctx.arc(cur.x, cur.y, 7, 0, Math.PI * 2);
+  ctx.fillStyle = '#1e88e5';
+  ctx.fill();
+  ctx.lineWidth = 2.4;
+  ctx.strokeStyle = '#ffffff';
+  ctx.stroke();
+  frontHits = [{x:cur.x, y:cur.y}];
 }
 
 map.on('click', function (ev) {
   if (state.layer !== 'coldfront' || !frontHits.length) return;
-  var hit = nearestHit(ev.containerPoint);
-  if (!hit) return;
-  var html = '<b>' + esc(lbl('cfNow', 'Cold front is here now')) + '</b>';
-  L.popup({closeButton:false}).setLatLng(ev.latlng).setContent(html).openOn(map);
+  var hit = frontHits[0];
+  if (Math.hypot(ev.containerPoint.x - hit.x, ev.containerPoint.y - hit.y) > 18) return;
+  L.popup({closeButton:false}).setLatLng(ev.latlng).setContent('<b>' + esc(lbl('cfNow', 'Cold front is here now')) + '</b>').openOn(map);
 });
 
 function stormRadii(kt) {
