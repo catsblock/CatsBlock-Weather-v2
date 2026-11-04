@@ -17,11 +17,9 @@ var FRONT = {
   levels:[3, 6, 10],
   recent:1.5,
   blue:[[100, 181, 246], [30, 136, 229], [13, 71, 161]],
-  alpha:[84, 112, 140],
-  grayAlpha:[56, 78, 100],
   width:[2, 3.2, 4.6]
 };
-var frontSmall = null, zoneCanvas = null;
+var frontHits = [], zoneCanvas = null;
 var gridCache = null, gridToken = 0, gridCtl = null, gridSignal = null;
 
 map.createPane('zonepane').style.zIndex = 400;
@@ -401,9 +399,53 @@ function strokeSegments(ctx, segs, color, halo, width, dash) {
   ctx.setLineDash([]);
 }
 
+function dilate(src, sw, sh) {
+  var out = new Float32Array(src.length);
+  for (var y = 0; y < sh; y++) {
+    for (var x = 0; x < sw; x++) {
+      var top = 0;
+      for (var dy = -2; dy <= 2; dy++) {
+        for (var dx = -2; dx <= 2; dx++) {
+          var yy = y + dy, xx = x + dx;
+          if (yy < 0 || xx < 0 || yy >= sh || xx >= sw) continue;
+          var v = src[yy * sw + xx];
+          if (v > top) top = v;
+        }
+      }
+      out[y * sw + x] = top;
+    }
+  }
+  return out;
+}
+
+function segDist(p, a, b) {
+  var dx = b[0] - a[0], dy = b[1] - a[1], len = dx * dx + dy * dy;
+  var t = len === 0 ? 0 : Math.max(0, Math.min(1, ((p.x - a[0]) * dx + (p.y - a[1]) * dy) / len));
+  return Math.hypot(p.x - (a[0] + t * dx), p.y - (a[1] + t * dy));
+}
+
+function nearestHit(pt) {
+  var best = null, bestD = 16, i, h, d;
+  for (i = 0; i < frontHits.length; i++) {
+    h = frontHits[i];
+    if (!h.dot) continue;
+    d = Math.hypot(pt.x - h.x, pt.y - h.y);
+    if (d < bestD) { best = h; bestD = d; }
+  }
+  if (best) return best;
+  bestD = 14;
+  for (i = 0; i < frontHits.length; i++) {
+    h = frontHits[i];
+    if (h.dot) continue;
+    d = segDist(pt, h.a, h.b);
+    if (d < bestD) { best = h; bestD = d; }
+  }
+  return best;
+}
+
 function paintFront(ctx, m, size) {
   var step = 6, sw = Math.ceil(size.x / step) + 2, sh = Math.ceil(size.y / step) + 2, total = sw * sh;
-  var past = new Float32Array(total), trend = new Float32Array(total), next = new Float32Array(total), near = new Float32Array(total);
+  var past = new Float32Array(total), trend = new Float32Array(total), next = new Float32Array(total);
   var x, y, i;
   for (y = 0; y < sh; y++) {
     for (x = 0; x < sw; x++) {
@@ -412,49 +454,32 @@ function paintFront(ctx, m, size) {
       past[i] = f.past; trend[i] = f.trend; next[i] = f.next;
     }
   }
-  for (y = 0; y < sh; y++) {
-    for (x = 0; x < sw; x++) {
-      var top = 0;
-      for (var dy = -2; dy <= 2; dy++) {
-        for (var dx = -2; dx <= 2; dx++) {
-          var yy = y + dy, xx = x + dx;
-          if (yy < 0 || xx < 0 || yy >= sh || xx >= sw) continue;
-          var v = past[yy * sw + xx];
-          if (v > top) top = v;
-        }
-      }
-      near[y * sw + x] = top;
-    }
-  }
-  if (!frontSmall) frontSmall = document.createElement('canvas');
-  frontSmall.width = sw; frontSmall.height = sh;
-  var sctx = frontSmall.getContext('2d'), img = sctx.createImageData(sw, sh), grey = state.dark ? 196 : 124;
-  for (i = 0; i < total; i++) {
-    var o = i * 4, lv = frontLevel(past[i]);
-    if (lv === 0) continue;
-    if (trend[i] >= FRONT.recent) {
-      var c = FRONT.blue[lv - 1];
-      img.data[o] = c[0]; img.data[o + 1] = c[1]; img.data[o + 2] = c[2]; img.data[o + 3] = FRONT.alpha[lv - 1];
-    } else {
-      img.data[o] = grey; img.data[o + 1] = grey; img.data[o + 2] = grey; img.data[o + 3] = FRONT.grayAlpha[lv - 1];
-    }
-  }
-  sctx.putImageData(img, 0, 0);
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = 'high';
-  ctx.drawImage(frontSmall, -step / 2, -step / 2, sw * step, sh * step);
-  var minimum = FRONT.levels[0], blue = [[], [], []], gray = [];
+  var nearPast = dilate(past, sw, sh), nearNext = dilate(next, sw, sh);
+  var minimum = FRONT.levels[0], blue = [[], [], []], gray = [], hits = [], spots = [], taken = {};
   for (y = 0; y < sh - 1; y++) {
     for (x = 0; x < sw - 1; x++) {
       i = y * sw + x;
       var segs = contour(past, i, sw, minimum, x, y, step);
       if (segs) {
-        var level = Math.max(1, frontLevel(near[i]));
-        segs.forEach(function (s) { blue[level - 1].push(s); });
+        var level = Math.max(1, frontLevel(nearPast[i]));
+        segs.forEach(function (s) {
+          blue[level - 1].push(s);
+          hits.push({a:s[0], b:s[1], kind:'passed', level:level, value:nearPast[i]});
+          if (trend[i] >= FRONT.recent) {
+            var mx = (s[0][0] + s[1][0]) / 2, my = (s[0][1] + s[1][1]) / 2, key = Math.round(mx / 36) + ':' + Math.round(my / 36);
+            if (!taken[key]) { taken[key] = true; spots.push({dot:true, x:mx, y:my, level:level, value:nearPast[i]}); }
+          }
+        });
       }
       if (past[i] < minimum && past[i + 1] < minimum && past[i + sw] < minimum && past[i + sw + 1] < minimum) {
         var ahead = contour(next, i, sw, minimum, x, y, step);
-        if (ahead) ahead.forEach(function (s) { gray.push(s); });
+        if (ahead) {
+          var upcoming = Math.max(1, frontLevel(nearNext[i]));
+          ahead.forEach(function (s) {
+            gray.push(s);
+            hits.push({a:s[0], b:s[1], kind:'ahead', level:upcoming, value:nearNext[i]});
+          });
+        }
       }
     }
   }
@@ -465,23 +490,31 @@ function paintFront(ctx, m, size) {
   for (i = 0; i < 3; i++) {
     strokeSegments(ctx, blue[i], rgb(FRONT.blue[i]), halo, FRONT.width[i], []);
   }
+  spots.forEach(function (d) {
+    ctx.beginPath();
+    ctx.arc(d.x, d.y, 12, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(30,136,229,.28)';
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(d.x, d.y, 6.5, 0, Math.PI * 2);
+    ctx.fillStyle = '#1e88e5';
+    ctx.fill();
+    ctx.lineWidth = 2.2;
+    ctx.strokeStyle = '#ffffff';
+    ctx.stroke();
+  });
+  frontHits = spots.concat(hits);
 }
 
 map.on('click', function (ev) {
-  if (state.layer !== 'coldfront' || !grid || !grid.cp) return;
-  var f = frontAt(ev.latlng.lat, lonFor(ev.latlng));
-  var level = frontLevel(f.past), coming = frontLevel(f.next);
-  var names = [lbl('cfWeak', 'Weak'), lbl('cfModerate', 'Moderate'), lbl('cfStrong', 'Strong')], html;
-  if (level > 0) {
-    var title = f.trend >= FRONT.recent ? lbl('cfNow', 'Cold being felt now') : lbl('cfPassed', 'Cold front passed');
-    html = '<b>' + esc(title) + '</b><br>' + esc(lbl('cfStrength', 'Strength')) + ': ' + esc(names[level - 1]) +
-      '<br>' + esc(lbl('cfDropPast', 'Temperature drop in 24 h')) + ': -' + fmtDelta(f.past);
-  } else if (coming > 0) {
-    html = '<b>' + esc(lbl('cfComing', 'Cold front approaching')) + '</b><br>' + esc(lbl('cfStrength', 'Strength')) + ': ' + esc(names[coming - 1]) +
-      '<br>' + esc(lbl('cfDropNext', 'Expected drop in 24 h')) + ': -' + fmtDelta(f.next);
-  } else {
-    return;
-  }
+  if (state.layer !== 'coldfront' || !frontHits.length) return;
+  var hit = nearestHit(ev.containerPoint);
+  if (!hit) return;
+  var names = [lbl('cfWeak', 'Weak'), lbl('cfModerate', 'Moderate'), lbl('cfStrong', 'Strong')];
+  var title = hit.dot ? lbl('cfNow', 'Cold front is here now') : (hit.kind === 'passed' ? lbl('cfPassed', 'Cold front passed') : lbl('cfComing', 'Cold front approaching'));
+  var drop = hit.kind === 'ahead' ? lbl('cfDropNext', 'Expected drop in 24 h') : lbl('cfDropPast', 'Temperature drop in 24 h');
+  var html = '<b>' + esc(title) + '</b><br>' + esc(lbl('cfStrength', 'Strength')) + ': ' + esc(names[hit.level - 1]) +
+    '<br>' + esc(drop) + ': -' + fmtDelta(hit.value);
   L.popup({closeButton:false}).setLatLng(ev.latlng).setContent(html).openOn(map);
 });
 
