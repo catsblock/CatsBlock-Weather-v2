@@ -878,4 +878,4 @@ private val travelStrings: Map<String, Array<out String>> = mapOf(
 )
 
 private val table: Map<String, Array<out String>> =
-    alertStrings + commonStrings + forecastStrings + featureStrings + policyStrings + cloudStrings + policyTable + detailStrings + sunMoonStrings + shellStrings + developerStrings + appearanceStrings + travelStrings + agentStrings
+    mapStrings + alertStrings + commonStrings + forecastStrings + featureStrings + policyStrings + cloudStrings + policyTable + detailStrings + sunMoonStrings + shellStrings + developerStrings + appearanceStrings + travelStrings + agentStrings
