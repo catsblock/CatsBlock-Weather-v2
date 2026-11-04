@@ -14,3 +14,4 @@ dependencyResolutionManagement {
 }
 rootProject.name = "CatsBlockWeather"
 include(":app")
+include(":desktop")
