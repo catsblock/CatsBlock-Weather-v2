@@ -157,10 +157,10 @@ function setLegend(extra) {
   else if (id === 'drought') { grad = hard(DRY.map(rgb)); lo = lbl('d0', 'Slightly dry'); hi = lbl('d4', 'Extreme dry'); }
   else if (id === 'coldfront') {
     grad = hard(FRONT.blue.map(rgb)); lo = lbl('cfWeak', 'Weak'); hi = lbl('cfStrong', 'Strong');
-    if (!extra && grid) extra = frontAny() ? lbl('cfKey', 'Blue: passed · Gray: approaching') : lbl('cfNone', 'No cold fronts right now');
+    if (!extra && grid) extra = frontAny() ? lbl('cfKeyLine', 'Lines: blue passed · gray ahead') + '\n' + lbl('cfKeyArea', 'Areas: blue now · gray before') : lbl('cfNone', 'No cold fronts right now');
   }
   var html = '<div class="t">' + esc(state.title) + '</div>';
-  if (extra) html += '<div class="m">' + esc(extra) + '</div>';
+  if (extra) html += '<div class="m">' + esc(extra).replace(/\n/g, '<br>') + '</div>';
   legend.innerHTML = html;
   legend.className = 'on';
   if (grad) {
@@ -291,7 +291,49 @@ var FieldLayer = L.Layer.extend({
   }
 });
 
+var ZoneLayer = L.Layer.extend({
+  initialize: function (paint) { this._paintFn = paint; },
+  onAdd: function (m) {
+    this._cv = L.DomUtil.create('canvas', 'fc');
+    this._cv.style.opacity = 0;
+    m.getPane('fieldpane').appendChild(this._cv);
+    this._hide = this._hide.bind(this);
+    this.refresh = this.refresh.bind(this);
+    m.on('moveend zoomend resize', this.refresh);
+    m.on('zoomstart', this._hide);
+    this.refresh();
+  },
+  onRemove: function (m) {
+    L.DomUtil.remove(this._cv);
+    m.off('moveend zoomend resize', this.refresh);
+    m.off('zoomstart', this._hide);
+    if (this._raf) cancelAnimationFrame(this._raf);
+    this._map = null;
+  },
+  _hide: function () {
+    this._cv.style.opacity = 0;
+  },
+  refresh: function () {
+    var self = this;
+    if (!self._map || self._raf) return;
+    self._raf = requestAnimationFrame(function () {
+      self._raf = 0;
+      var m = self._map;
+      if (!m) return;
+      var size = m.getSize(), cv = self._cv;
+      L.DomUtil.setPosition(cv, m.containerPointToLayerPoint([0, 0]));
+      if (cv.width !== size.x || cv.height !== size.y) { cv.width = size.x; cv.height = size.y; }
+      var ctx = cv.getContext('2d');
+      ctx.clearRect(0, 0, size.x, size.y);
+      self._paintFn(ctx, m, size);
+      cv.style.opacity = 1;
+    });
+  }
+});
+
 function clearOverlay() {
+  gridToken++;
+  if (gridCtl) { gridCtl.abort(); gridCtl = null; }
   if (off) { off(); off = null; }
   if (overlay) { map.removeLayer(overlay); overlay = null; }
   if (extra) { map.removeLayer(extra); extra = null; }
@@ -341,7 +383,7 @@ function stormIcon(cat, kt, name) {
 }
 
 function buildStorms(events) {
-  var group = L.layerGroup(), halo = L.layerGroup(), lines = L.layerGroup(), marks = L.layerGroup(), count = 0;
+  var group = L.layerGroup(), halo = L.layerGroup(), lines = L.layerGroup(), marks = L.layerGroup(), count = 0, zones = [];
   var haloColor = state.dark ? 'rgba(255,255,255,.22)' : 'rgba(0,0,0,.22)';
   events.forEach(function (ev) {
     if (!/cyclone|hurricane|typhoon|tropical|depression/i.test(ev.title || '')) return;
@@ -355,8 +397,13 @@ function buildStorms(events) {
       while (pts[i].lon - pts[i - 1].lon > 180) pts[i].lon -= 360;
       while (pts[i - 1].lon - pts[i].lon > 180) pts[i].lon += 360;
     }
+    var trail = pts.length > 1 ? smooth(pts) : pts.slice();
+    trail.forEach(function (q, idx) {
+      var tip = idx === trail.length - 1;
+      if (tip || idx % 2 === 0) zones.push({lat:q.lat, lon:q.lon, kt:q.kt, now:tip});
+    });
     if (pts.length > 1) {
-      var path = smooth(pts);
+      var path = trail;
       for (var j = 0; j < path.length - 1; j++) {
         var a = path[j], b = path[j + 1], kt = (a.kt + b.kt) / 2;
         var w = 2.5 + Math.min(1, kt / 140) * 6.5;
@@ -369,12 +416,13 @@ function buildStorms(events) {
     var m = L.marker([last.lat, last.lon], {icon:stormIcon(cat, last.kt, ev.title), pane:'stormpane', keyboard:false});
     var info = '<b>' + esc(ev.title) + '</b><br>' + esc(lbl(cat.k, cat.k.toUpperCase()));
     if (last.kt > 0) info += '<br>' + esc(lbl('winds', 'Max winds')) + ': ' + Math.round(last.kt * 1.852) + ' km/h (' + Math.round(last.kt) + ' kt)';
+    info += '<br>' + esc(lbl('stReach', 'Storm winds reach')) + ': ' + Math.round(stormRadii(last.kt).outer) + ' km';
     m.bindPopup(info, {closeButton:false, offset:[0, -badgeSize(last.kt) / 3]});
     marks.addLayer(m);
     count++;
   });
   group.addLayer(halo); group.addLayer(lines); group.addLayer(marks);
-  return {group:group, count:count};
+  return {group:group, count:count, zones:zones};
 }
 
 function loadStorms(seq) {
@@ -386,9 +434,10 @@ function loadStorms(seq) {
   p.then(function (events) {
     if (seq !== state.seq) return;
     var built = buildStorms(events);
-    overlay = built.group.addTo(map);
+    var zone = new ZoneLayer(function (ctx, m, size) { paintStorms(ctx, m, size, built.zones); });
+    overlay = L.layerGroup([zone, built.group]).addTo(map);
     state.busy = false;
-    setLegend(built.count ? '' : lbl('none', 'No active storms right now'));
+    setLegend(built.count ? lbl('stKey', 'Blue: active now · Gray: already passed') : lbl('none', 'No active storms right now'));
   }).catch(function () {
     if (seq === state.seq) { state.busy = false; setLegend(state.err); }
   });
@@ -459,9 +508,9 @@ map.on('moveend', function () {
   timer = setTimeout(function () {
     var inside = grid && map.getBounds().getSouth() >= grid.s && map.getBounds().getNorth() <= grid.n &&
       map.getBounds().getWest() >= grid.w && map.getBounds().getEast() <= grid.e;
-    var fresh = Date.now() - gridAt < 600000 && Math.abs(map.getZoom() - gridZoom) < 1.2;
+    var fresh = Date.now() - gridAt < 600000 && Math.abs(map.getZoom() - gridZoom) < 0.5;
     if (!(inside && fresh)) loadGrid(false);
-  }, 700);
+  }, 350);
 });
 
 window.MapApi = {setTheme:setTheme, setLayer:setLayer, setCity:setCity, setInsets:setInsets, locate:locate};
