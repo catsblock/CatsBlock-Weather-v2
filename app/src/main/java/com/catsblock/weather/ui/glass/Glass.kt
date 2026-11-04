@@ -34,6 +34,26 @@ val LocalEntrance = compositionLocalOf<EntranceCounter?> { null }
 
 fun Modifier.hazeBackdropSource(state: HazeState): Modifier = hazeSource(state = state)
 
+fun Modifier.weatherGlassChrome(
+    state: HazeState,
+    shape: Shape,
+    tint: Color,
+    edge: Color
+): Modifier = this
+    .clip(shape)
+    .hazeEffect(
+        state = state,
+        style = HazeStyle(
+            backgroundColor = tint,
+            blurRadius = 14.dp,
+            noiseFactor = 0.0f
+        )
+    ) {
+        blurRadius = 14.dp
+        noiseFactor = 0.0f
+    }
+    .border(1.dp, edge, shape)
+
 @Composable
 fun Modifier.cardEntrance(): Modifier {
     val counter = LocalEntrance.current
