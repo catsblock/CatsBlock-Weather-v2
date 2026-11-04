@@ -17,7 +17,7 @@ var FRONT = {drop:4, none:999, step:3, window:2};
 var frontHits = [], zoneCanvas = null;
 
 var requestCache = new Map(), requestQueue = [], requestActive = 0, requestNextStart = 0;
-var REQUEST_CACHE_LIMIT = 48, REQUEST_CONCURRENCY = 3, REQUEST_INTERVAL = 180;
+var REQUEST_CACHE_LIMIT = 48, REQUEST_CONCURRENCY = 1, REQUEST_INTERVAL = 350, REQUEST_TIMEOUT = 15000;
 
 function cloneJson(value) {
   return value === null || value === undefined ? value : JSON.parse(JSON.stringify(value));
@@ -51,7 +51,16 @@ function drainRequests() {
     var now = Date.now(), wait = Math.max(0, requestNextStart - now);
     requestNextStart = now + wait + REQUEST_INTERVAL;
     setTimeout(function (current) {
-      current.run().then(current.resolve, current.reject).then(function () {
+      if (current.signal && current.signal.aborted) {
+        current.reject(new Error('aborted'));
+        requestActive--;
+        drainRequests();
+        return;
+      }
+      Promise.resolve().then(current.run).then(current.resolve, current.reject).then(function () {
+        requestActive--;
+        drainRequests();
+      }, function () {
         requestActive--;
         drainRequests();
       });
@@ -63,6 +72,49 @@ function scheduleRequest(run, signal) {
   return new Promise(function (resolve, reject) {
     requestQueue.push({run:run, signal:signal, resolve:resolve, reject:reject});
     drainRequests();
+  });
+}
+
+function fetchMapLayerJson(url, options, timeoutMs) {
+  options = options || {};
+  var controller = new AbortController(), externalSignal = options.signal, timedOut = false;
+  var requestOptions = {};
+  Object.keys(options).forEach(function (key) {
+    if (key !== 'signal') requestOptions[key] = options[key];
+  });
+  requestOptions.signal = controller.signal;
+  var abortExternal = function () { controller.abort(); };
+  if (externalSignal) {
+    if (externalSignal.aborted) controller.abort();
+    else externalSignal.addEventListener('abort', abortExternal, {once:true});
+  }
+  var timer = setTimeout(function () {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs || REQUEST_TIMEOUT);
+  return Promise.resolve().then(function () { return fetch(url, requestOptions); }).then(function (response) {
+    if (!response.ok) {
+      var error = new Error('HTTP ' + response.status);
+      error.status = response.status;
+      error.retryAfter = response.headers.get('Retry-After');
+      throw error;
+    }
+    return response.json();
+  }).catch(function (error) {
+    if (timedOut) {
+      var timeoutError = new Error('Request timed out');
+      timeoutError.name = 'TimeoutError';
+      throw timeoutError;
+    }
+    throw error;
+  }).then(function (data) {
+    clearTimeout(timer);
+    if (externalSignal) externalSignal.removeEventListener('abort', abortExternal);
+    return data;
+  }, function (error) {
+    clearTimeout(timer);
+    if (externalSignal) externalSignal.removeEventListener('abort', abortExternal);
+    throw error;
   });
 }
 
@@ -86,19 +138,11 @@ function requestJson(url, options, ttl) {
   function attempt(index) {
     return scheduleRequest(function () {
       if (signal && signal.aborted) throw new Error('aborted');
-      return fetch(url, options).then(function (response) {
-        if (!response.ok) {
-          var error = new Error('HTTP ' + response.status);
-          error.status = response.status;
-          error.retryAfter = response.headers.get('Retry-After');
-          throw error;
-        }
-        return response.json();
-      });
+      return fetchMapLayerJson(url, options, REQUEST_TIMEOUT);
     }, signal).catch(function (error) {
       if (signal && signal.aborted) throw error;
       var status = error && error.status;
-      if (index >= 3 || (status && status < 500 && status !== 429)) {
+      if (index >= 2 || (status && status < 500 && status !== 408 && status !== 429)) {
         var stale = staleJson(key);
         if (stale !== null) return stale;
         throw error;
