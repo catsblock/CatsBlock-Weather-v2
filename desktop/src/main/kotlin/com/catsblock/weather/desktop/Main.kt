@@ -17,6 +17,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
@@ -39,9 +40,11 @@ import androidx.compose.ui.window.rememberWindowState
 import androidx.compose.foundation.gestures.detectTapGestures
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 private const val REFRESH_MS = 15 * 60_000L
+private const val UPDATE_CHECK_MS = 6 * 60 * 60_000L
 
 fun main() = application {
     var settings by remember { mutableStateOf(SettingsStore.load()) }
@@ -51,6 +54,9 @@ fun main() = application {
     var mainVisible by remember { mutableStateOf(true) }
     var tab by remember { mutableIntStateOf(0) }
     var focusTick by remember { mutableIntStateOf(0) }
+    var pending by remember { mutableStateOf<WindowsRelease?>(null) }
+    var updateStatus by remember { mutableStateOf(UpdateStatus.Idle) }
+    val scope = rememberCoroutineScope()
 
     uiLanguage.value = settings.language
 
@@ -63,6 +69,37 @@ fun main() = application {
         if (settingsTab) tab = 1
         mainVisible = true
         focusTick++
+    }
+
+    fun checkUpdates() {
+        if (updateStatus == UpdateStatus.Checking || updateStatus == UpdateStatus.Downloading) return
+        updateStatus = UpdateStatus.Checking
+        scope.launch {
+            val result = withContext(Dispatchers.IO) { runCatching { WindowsUpdater.latest() } }
+            result.onSuccess { release ->
+                pending = release
+                updateStatus = if (release == null) UpdateStatus.Current else UpdateStatus.Idle
+            }.onFailure {
+                updateStatus = UpdateStatus.Failed
+            }
+        }
+    }
+
+    fun installUpdate() {
+        val release = pending ?: return
+        if (updateStatus == UpdateStatus.Downloading) return
+        updateStatus = UpdateStatus.Downloading
+        scope.launch {
+            val result = withContext(Dispatchers.IO) { runCatching { WindowsUpdater.install(WindowsUpdater.download(release)) } }
+            if (result.isSuccess) exitApplication() else updateStatus = UpdateStatus.Failed
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            checkUpdates()
+            delay(UPDATE_CHECK_MS)
+        }
     }
 
     LaunchedEffect(settings.lat, settings.lon, settings.hasCity, reload) {
@@ -91,6 +128,24 @@ fun main() = application {
         menu = {
             Item(t("Open CatsBlock Weather")) { openApp(false) }
             Item(t("Settings")) { openApp(true) }
+            val release = pending
+            if (release != null) {
+                Item(
+                    if (updateStatus == UpdateStatus.Downloading) updateText("Downloading update…")
+                    else updateText("Install update") + " (" + release.name + ")",
+                    enabled = updateStatus != UpdateStatus.Downloading
+                ) { installUpdate() }
+            } else {
+                Item(
+                    when (updateStatus) {
+                        UpdateStatus.Checking -> updateText("Checking for updates…")
+                        UpdateStatus.Current -> updateText("Up to date")
+                        UpdateStatus.Failed -> updateText("Update failed. Try again")
+                        else -> updateText("Check for updates")
+                    },
+                    enabled = updateStatus != UpdateStatus.Checking
+                ) { checkUpdates() }
+            }
             Item(t("Exit")) { exitApplication() }
         }
     )
