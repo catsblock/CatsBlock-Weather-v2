@@ -1,94 +1,66 @@
 package com.catsblock.weather.desktop
 
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.graphics.Color
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.net.URI
-import java.net.URLEncoder
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.time.Duration
 import java.time.LocalDate
-import java.time.format.TextStyle
+import java.time.LocalDateTime
+import java.time.ZoneOffset
+import java.time.temporal.ChronoUnit
 import java.util.Locale
 import java.util.Properties
+import kotlin.math.PI
+import kotlin.math.cos
 import kotlin.math.roundToInt
 
-val LANGUAGES = listOf(
-    "en" to "English", "pt-BR" to "Português (BR)", "pt-PT" to "Português (PT)", "es" to "Español",
-    "fr" to "Français", "ru" to "Русский", "de" to "Deutsch", "it" to "Italiano", "ko" to "한국어", "id" to "Bahasa Indonesia"
-)
-
-val uiLanguage = mutableStateOf("en")
-
-private fun row(key: String, vararg values: String): Pair<String, List<String>> = key to values.toList()
-
-private val STRINGS: Map<String, List<String>> = mapOf(
-    row("Weather", "Clima", "Meteorologia", "Clima", "Météo", "Погода", "Wetter", "Meteo", "날씨", "Cuaca"),
-    row("Settings", "Configurações", "Definições", "Ajustes", "Paramètres", "Настройки", "Einstellungen", "Impostazioni", "설정", "Pengaturan"),
-    row("Widget", "Widget", "Widget", "Widget", "Widget", "Виджет", "Widget", "Widget", "위젯", "Widget"),
-    row("Show floating widget", "Mostrar widget flutuante", "Mostrar widget flutuante", "Mostrar widget flotante", "Afficher le widget flottant", "Показывать плавающий виджет", "Schwebendes Widget anzeigen", "Mostra widget flottante", "플로팅 위젯 표시", "Tampilkan widget mengambang"),
-    row("Widget color", "Cor do widget", "Cor do widget", "Color del widget", "Couleur du widget", "Цвет виджета", "Widget-Farbe", "Colore del widget", "위젯 색상", "Warna widget"),
-    row("Follow the weather", "Seguir o clima", "Seguir o tempo", "Seguir el clima", "Suivre la météo", "По погоде", "Dem Wetter folgen", "Segui il meteo", "날씨에 따라 변경", "Ikuti cuaca"),
-    row("Fixed color", "Cor fixa", "Cor fixa", "Color fijo", "Couleur fixe", "Фиксированный цвет", "Feste Farbe", "Colore fisso", "고정 색상", "Warna tetap"),
-    row("Inactive opacity", "Opacidade inativa", "Opacidade inativa", "Opacidad inactiva", "Opacité inactive", "Прозрачность в покое", "Deckkraft im Ruhezustand", "Opacità inattiva", "비활성 투명도", "Opasitas nonaktif"),
-    row("Return to inactive after", "Voltar a inativo após", "Voltar a inativo após", "Volver a inactivo tras", "Redevenir inactif après", "Становиться неактивным через", "Wieder inaktiv nach", "Torna inattivo dopo", "비활성 전환 시간", "Kembali nonaktif setelah"),
-    row("Never", "Nunca", "Nunca", "Nunca", "Jamais", "Никогда", "Nie", "Mai", "안 함", "Tidak pernah"),
-    row("Always on top", "Sempre no topo", "Sempre no topo", "Siempre visible", "Toujours au premier plan", "Поверх всех окон", "Immer im Vordergrund", "Sempre in primo piano", "항상 위에 표시", "Selalu di atas"),
-    row("Temperature unit", "Unidade de temperatura", "Unidade de temperatura", "Unidad de temperatura", "Unité de température", "Единица температуры", "Temperatureinheit", "Unità di temperatura", "온도 단위", "Satuan suhu"),
-    row("Celsius", "Celsius", "Celsius", "Celsius", "Celsius", "Цельсий", "Celsius", "Celsius", "섭씨", "Celsius"),
-    row("Fahrenheit", "Fahrenheit", "Fahrenheit", "Fahrenheit", "Fahrenheit", "Фаренгейт", "Fahrenheit", "Fahrenheit", "화씨", "Fahrenheit"),
-    row("Language", "Idioma", "Idioma", "Idioma", "Langue", "Язык", "Sprache", "Lingua", "언어", "Bahasa"),
-    row("City", "Cidade", "Cidade", "Ciudad", "Ville", "Город", "Stadt", "Città", "도시", "Kota"),
-    row("Search city", "Buscar cidade", "Pesquisar cidade", "Buscar ciudad", "Rechercher une ville", "Поиск города", "Stadt suchen", "Cerca città", "도시 검색", "Cari kota"),
-    row("No results", "Sem resultados", "Sem resultados", "Sin resultados", "Aucun résultat", "Ничего не найдено", "Keine Ergebnisse", "Nessun risultato", "결과 없음", "Tidak ada hasil"),
-    row("Choose a city to begin", "Escolha uma cidade para começar", "Escolha uma cidade para começar", "Elige una ciudad para empezar", "Choisissez une ville pour commencer", "Выберите город, чтобы начать", "Wähle eine Stadt, um zu beginnen", "Scegli una città per iniziare", "시작하려면 도시를 선택하세요", "Pilih kota untuk memulai"),
-    row("Feels like", "Sensação térmica", "Sensação térmica", "Sensación térmica", "Ressenti", "Ощущается как", "Gefühlt", "Percepita", "체감", "Terasa seperti"),
-    row("Humidity", "Umidade", "Humidade", "Humedad", "Humidité", "Влажность", "Luftfeuchtigkeit", "Umidità", "습도", "Kelembapan"),
-    row("Wind", "Vento", "Vento", "Viento", "Vent", "Ветер", "Wind", "Vento", "바람", "Angin"),
-    row("Hourly", "Por hora", "Por hora", "Por horas", "Par heure", "По часам", "Stündlich", "Orario", "시간별", "Per jam"),
-    row("Daily", "Diário", "Diário", "Diario", "Par jour", "По дням", "Täglich", "Giornaliero", "일별", "Harian"),
-    row("Loading…", "Carregando…", "A carregar…", "Cargando…", "Chargement…", "Загрузка…", "Wird geladen …", "Caricamento…", "불러오는 중…", "Memuat…"),
-    row("Weather unavailable", "Clima indisponível", "Tempo indisponível", "Clima no disponible", "Météo indisponible", "Погода недоступна", "Wetter nicht verfügbar", "Meteo non disponibile", "날씨를 불러올 수 없음", "Cuaca tidak tersedia"),
-    row("Retry", "Tentar novamente", "Tentar novamente", "Reintentar", "Réessayer", "Повторить", "Erneut versuchen", "Riprova", "다시 시도", "Coba lagi"),
-    row("Open CatsBlock Weather", "Abrir CatsBlock Weather", "Abrir CatsBlock Weather", "Abrir CatsBlock Weather", "Ouvrir CatsBlock Weather", "Открыть CatsBlock Weather", "CatsBlock Weather öffnen", "Apri CatsBlock Weather", "CatsBlock Weather 열기", "Buka CatsBlock Weather"),
-    row("Exit", "Sair", "Sair", "Salir", "Quitter", "Выход", "Beenden", "Esci", "종료", "Keluar"),
-    row("Clear sky", "Céu limpo", "Céu limpo", "Cielo despejado", "Ciel dégagé", "Ясное небо", "Klarer Himmel", "Cielo sereno", "맑음", "Langit cerah"),
-    row("Partly cloudy", "Parcialmente nublado", "Parcialmente nublado", "Parcialmente nublado", "Partiellement nuageux", "Переменная облачность", "Teilweise bewölkt", "Parzialmente nuvoloso", "구름 조금", "Berawan sebagian"),
-    row("Cloudy", "Nublado", "Nublado", "Nublado", "Nuageux", "Облачно", "Bewölkt", "Nuvoloso", "흐림", "Berawan"),
-    row("Fog", "Neblina", "Nevoeiro", "Niebla", "Brouillard", "Туман", "Nebel", "Nebbia", "안개", "Kabut"),
-    row("Drizzle", "Garoa", "Chuvisco", "Llovizna", "Bruine", "Морось", "Nieselregen", "Pioviggine", "이슬비", "Gerimis"),
-    row("Rain", "Chuva", "Chuva", "Lluvia", "Pluie", "Дождь", "Regen", "Pioggia", "비", "Hujan"),
-    row("Snow", "Neve", "Neve", "Nieve", "Neige", "Снег", "Schnee", "Neve", "눈", "Salju"),
-    row("Thunderstorm", "Tempestade", "Trovoada", "Tormenta", "Orage", "Гроза", "Gewitter", "Temporale", "뇌우", "Badai petir"),
-    row("Today", "Hoje", "Hoje", "Hoy", "Aujourd'hui", "Сегодня", "Heute", "Oggi", "오늘", "Hari ini")
-)
-
-fun t(key: String): String {
-    val index = LANGUAGES.indexOfFirst { it.first == uiLanguage.value }
-    if (index <= 0) return key
-    return STRINGS[key]?.getOrNull(index - 1)?.takeIf { it.isNotEmpty() } ?: key
+object AppPaths {
+    val dir: File = File(System.getProperty("user.home"), ".catsblock-weather")
 }
 
-fun uiLocale(): Locale = Locale.forLanguageTag(uiLanguage.value)
+enum class ThemeMode { System, Light, Dark }
+
+enum class WindUnit(val label: String, val factor: Double) {
+    Kmh("km/h", 1.0), Mph("mph", 0.621371), Ms("m/s", 0.277778), Knots("kn", 0.539957)
+}
+
+enum class PressureUnit(val label: String, val factor: Double, val decimals: Int) {
+    Hpa("hPa", 1.0, 0), Kpa("kPa", 0.1, 1), InHg("inHg", 0.02953, 2), MmHg("mmHg", 0.750062, 0)
+}
+
+data class SavedCity(val name: String, val country: String, val lat: Double, val lon: Double) {
+    val id: String get() = String.format(Locale.US, "%.2f,%.2f", lat, lon)
+    val title: String get() = if (country.isBlank()) name else "$name, $country"
+}
 
 data class DesktopSettings(
     val language: String = defaultLanguage(),
     val fahrenheit: Boolean = false,
+    val windUnit: WindUnit = WindUnit.Kmh,
+    val pressureUnit: PressureUnit = PressureUnit.Hpa,
+    val theme: ThemeMode = ThemeMode.System,
     val widgetVisible: Boolean = true,
     val colorMode: String = "weather",
     val fixedColor: Int = 0,
     val inactivePercent: Int = 25,
     val idleSeconds: Int = 5,
     val alwaysOnTop: Boolean = true,
-    val city: String = "",
-    val country: String = "",
-    val lat: Double = 0.0,
-    val lon: Double = 0.0
+    val widgetX: Int = -1,
+    val widgetY: Int = -1,
+    val startWithWindows: Boolean = true,
+    val setupDone: Boolean = false,
+    val cities: List<SavedCity> = emptyList(),
+    val selected: Int = 0
 ) {
-    val hasCity: Boolean get() = city.isNotBlank()
+    val city: SavedCity? get() = cities.getOrNull(selected)
+    val hasCity: Boolean get() = city != null
 }
 
 fun defaultLanguage(): String {
@@ -103,7 +75,7 @@ fun defaultLanguage(): String {
 
 object SettingsStore {
 
-    private val file = File(System.getProperty("user.home"), ".catsblock-weather/settings.properties")
+    private val file = File(AppPaths.dir, "settings.properties")
 
     fun load(): DesktopSettings {
         val d = DesktopSettings()
@@ -111,19 +83,40 @@ object SettingsStore {
         val p = Properties()
         runCatching { file.inputStream().use { p.load(it) } }
         fun s(k: String, def: String) = p.getProperty(k) ?: def
+        val cities = ArrayList<SavedCity>()
+        val count = s("cities", "0").toIntOrNull()?.coerceIn(0, 50) ?: 0
+        for (i in 0 until count) {
+            val parts = s("city.$i", "").split('\t')
+            if (parts.size != 4) continue
+            val lat = parts[2].toDoubleOrNull() ?: continue
+            val lon = parts[3].toDoubleOrNull() ?: continue
+            if (lat !in -90.0..90.0 || lon !in -180.0..180.0 || parts[0].isBlank()) continue
+            cities.add(SavedCity(parts[0], parts[1], lat, lon))
+        }
+        val legacy = s("city", "")
+        if (cities.isEmpty() && legacy.isNotBlank()) {
+            val lat = s("lat", "0").toDoubleOrNull() ?: 0.0
+            val lon = s("lon", "0").toDoubleOrNull() ?: 0.0
+            if (lat in -90.0..90.0 && lon in -180.0..180.0) cities.add(SavedCity(legacy, s("country", ""), lat, lon))
+        }
         return DesktopSettings(
             language = s("language", d.language).takeIf { code -> LANGUAGES.any { it.first == code } } ?: d.language,
             fahrenheit = s("fahrenheit", "false").toBoolean(),
+            windUnit = WindUnit.entries.firstOrNull { it.name == s("windUnit", "") } ?: d.windUnit,
+            pressureUnit = PressureUnit.entries.firstOrNull { it.name == s("pressureUnit", "") } ?: d.pressureUnit,
+            theme = ThemeMode.entries.firstOrNull { it.name == s("theme", "") } ?: d.theme,
             widgetVisible = s("widgetVisible", "true").toBoolean(),
-            colorMode = s("colorMode", "weather"),
+            colorMode = s("colorMode", "weather").takeIf { it == "weather" || it == "fixed" } ?: "weather",
             fixedColor = s("fixedColor", "0").toIntOrNull()?.coerceIn(0, FIXED_COLORS.lastIndex) ?: 0,
             inactivePercent = s("inactivePercent", "25").toIntOrNull()?.coerceIn(10, 60) ?: 25,
             idleSeconds = s("idleSeconds", "5").toIntOrNull()?.coerceIn(0, 120) ?: 5,
             alwaysOnTop = s("alwaysOnTop", "true").toBoolean(),
-            city = s("city", ""),
-            country = s("country", ""),
-            lat = s("lat", "0").toDoubleOrNull() ?: 0.0,
-            lon = s("lon", "0").toDoubleOrNull() ?: 0.0
+            widgetX = s("widgetX", "-1").toIntOrNull() ?: -1,
+            widgetY = s("widgetY", "-1").toIntOrNull() ?: -1,
+            startWithWindows = s("startWithWindows", "true").toBoolean(),
+            setupDone = s("setupDone", if (cities.isNotEmpty()) "true" else "false").toBoolean(),
+            cities = cities,
+            selected = (s("selected", "0").toIntOrNull() ?: 0).coerceIn(0, maxOf(0, cities.lastIndex))
         )
     }
 
@@ -131,30 +124,97 @@ object SettingsStore {
         val p = Properties()
         p["language"] = v.language
         p["fahrenheit"] = v.fahrenheit.toString()
+        p["windUnit"] = v.windUnit.name
+        p["pressureUnit"] = v.pressureUnit.name
+        p["theme"] = v.theme.name
         p["widgetVisible"] = v.widgetVisible.toString()
         p["colorMode"] = v.colorMode
         p["fixedColor"] = v.fixedColor.toString()
         p["inactivePercent"] = v.inactivePercent.toString()
         p["idleSeconds"] = v.idleSeconds.toString()
         p["alwaysOnTop"] = v.alwaysOnTop.toString()
-        p["city"] = v.city
-        p["country"] = v.country
-        p["lat"] = v.lat.toString()
-        p["lon"] = v.lon.toString()
+        p["widgetX"] = v.widgetX.toString()
+        p["widgetY"] = v.widgetY.toString()
+        p["startWithWindows"] = v.startWithWindows.toString()
+        p["setupDone"] = v.setupDone.toString()
+        p["cities"] = v.cities.size.toString()
+        p["selected"] = v.selected.toString()
+        v.cities.forEachIndexed { i, c ->
+            fun clean(s: String) = s.replace('\t', ' ').replace('\n', ' ').replace('\r', ' ')
+            p["city.$i"] = listOf(clean(c.name), clean(c.country), c.lat.toString(), c.lon.toString()).joinToString("\t")
+        }
         runCatching {
             file.parentFile.mkdirs()
-            file.outputStream().use { p.store(it, null) }
+            val temp = File(file.parentFile, "settings.properties.tmp")
+            temp.outputStream().use { p.store(it, null) }
+            Files.move(temp.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING)
         }
     }
 }
 
-data class Place(val name: String, val country: String, val lat: Double, val lon: Double)
-data class HourPoint(val label: String, val tempC: Double, val code: Int)
-data class DayPoint(val label: String, val maxC: Double, val minC: Double, val code: Int)
+enum class Kind(val key: String) {
+    Clear("Clear"), FewClouds("Mostly clear"), MoreClouds("Partly cloudy"), Cloudy("Cloudy"), Fog("Fog"),
+    Drizzle("Drizzle"), Rain("Rain"), Storm("Thunderstorm"), Sleet("Wintry mix"), Hail("Hail"),
+    Snow("Snow"), HeavySnow("Heavy snow"), Blizzard("Blizzard");
+
+    val isSnow: Boolean get() = this == Snow || this == HeavySnow || this == Blizzard
+    val isWet: Boolean get() = ordinal >= Drizzle.ordinal
+    fun label(isDay: Boolean): String = if (this == Clear && isDay) t("Sunny") else t(key)
+}
+
+fun kindOf(code: Int, windKmh: Double = 0.0): Kind {
+    val snow = when (code) {
+        71, 73, 85 -> Kind.Snow
+        75, 86 -> Kind.HeavySnow
+        77 -> Kind.Hail
+        else -> null
+    }
+    if (snow != null) return if (windKmh >= 45.0 && snow != Kind.Hail) Kind.Blizzard else snow
+    return when (code) {
+        0 -> Kind.Clear
+        1 -> Kind.FewClouds
+        2 -> Kind.MoreClouds
+        3 -> Kind.Cloudy
+        45, 48 -> Kind.Fog
+        51, 53, 55, 61, 80 -> Kind.Drizzle
+        56, 57, 66, 67 -> Kind.Sleet
+        63, 65, 81, 82 -> Kind.Rain
+        in 95..99 -> Kind.Storm
+        else -> Kind.Cloudy
+    }
+}
+
+data class Hour(
+    val time: LocalDateTime, val temp: Double, val code: Int, val isDay: Boolean,
+    val precip: Double, val prob: Int, val windKmh: Double, val uv: Double,
+    val pressure: Double, val visibilityM: Double
+) {
+    val kind: Kind get() = kindOf(code, windKmh)
+}
+
+data class Day(
+    val date: LocalDate, val max: Double, val min: Double, val code: Int, val precipSum: Double,
+    val prob: Int, val sunrise: LocalDateTime, val sunset: LocalDateTime, val uvMax: Double
+) {
+    val kind: Kind get() = kindOf(code)
+}
+
 data class Conditions(
-    val tempC: Double, val feelsC: Double, val humidity: Int, val windKmh: Double,
-    val code: Int, val day: Boolean, val hourly: List<HourPoint>, val daily: List<DayPoint>
-)
+    val now: LocalDateTime, val temp: Double, val feels: Double, val humidity: Int,
+    val windKmh: Double, val windDir: Double, val code: Int, val isDay: Boolean, val uv: Double,
+    val aqi: Double?, val pressure: Double, val visibilityM: Double,
+    val hours: List<Hour>, val days: List<Day>
+) {
+    val kind: Kind get() = kindOf(code, windKmh)
+    val nextHours: List<Hour>
+        get() = hours.filter { !it.time.isBefore(now.truncatedTo(ChronoUnit.HOURS)) }.take(36)
+    fun hoursOf(day: Day): List<Hour> = hours.filter { it.time.toLocalDate() == day.date }
+    val today: Day? get() = days.firstOrNull()
+    val wetAhead: Hour?
+        get() = nextHours.take(8).firstOrNull { it.kind.isWet && (it.prob >= 50 || it.precip >= 0.2) }
+}
+
+data class Place(val name: String, val country: String, val lat: Double, val lon: Double)
 
 object WeatherClient {
 
@@ -163,102 +223,142 @@ object WeatherClient {
     private fun get(url: String): JSONObject? = runCatching {
         val request = HttpRequest.newBuilder(URI.create(url))
             .timeout(Duration.ofSeconds(20))
-            .header("User-Agent", "CatsBlockWeather-Desktop/2.0")
+            .header("User-Agent", "CatsBlockWeather-Desktop/2.0 (+https://github.com/catsblock/CatsBlock-Weather-v2)")
             .GET().build()
         val response = http.send(request, HttpResponse.BodyHandlers.ofString())
-        if (response.statusCode() in 200..299) JSONObject(response.body()) else null
+        if (response.statusCode() in 200..299 && response.body().length < 4_000_000) JSONObject(response.body()) else null
     }.getOrNull()
 
+    private fun JSONArray?.num(i: Int, def: Double): Double =
+        if (this == null || i >= length() || isNull(i)) def else optDouble(i, def)
+
     fun search(query: String, language: String): List<Place> {
-        val q = URLEncoder.encode(query.trim(), "UTF-8")
+        val q = java.net.URLEncoder.encode(query.trim().take(80), "UTF-8")
         val lang = language.substringBefore('-')
         val root = get("https://geocoding-api.open-meteo.com/v1/search?name=$q&count=6&language=$lang") ?: return emptyList()
         val results = root.optJSONArray("results") ?: return emptyList()
         return (0 until results.length()).mapNotNull { i ->
             val r = results.optJSONObject(i) ?: return@mapNotNull null
-            Place(r.optString("name"), r.optString("country"), r.optDouble("latitude"), r.optDouble("longitude"))
+            val lat = r.optDouble("latitude")
+            val lon = r.optDouble("longitude")
+            if (lat.isNaN() || lon.isNaN() || lat !in -90.0..90.0 || lon !in -180.0..180.0) return@mapNotNull null
+            Place(r.optString("name"), r.optString("country"), lat, lon)
         }
+    }
+
+    private fun airQuality(lat: Double, lon: Double): Double? {
+        val root = get(
+            String.format(Locale.US, "https://air-quality-api.open-meteo.com/v1/air-quality?latitude=%.4f&longitude=%.4f&current=us_aqi&timezone=auto", lat, lon)
+        ) ?: return null
+        val cur = root.optJSONObject("current") ?: return null
+        return if (cur.isNull("us_aqi")) null else cur.optDouble("us_aqi").takeIf { !it.isNaN() }
     }
 
     fun forecast(lat: Double, lon: Double): Conditions? {
         val root = get(
-            "https://api.open-meteo.com/v1/forecast?latitude=$lat&longitude=$lon" +
-                "&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m,is_day" +
-                "&hourly=temperature_2m,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min" +
+            String.format(Locale.US, "https://api.open-meteo.com/v1/forecast?latitude=%.4f&longitude=%.4f", lat, lon) +
+                "&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m,wind_direction_10m,is_day,uv_index,pressure_msl,visibility" +
+                "&hourly=temperature_2m,weather_code,is_day,precipitation,precipitation_probability,wind_speed_10m,uv_index,pressure_msl,visibility" +
+                "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,sunrise,sunset,uv_index_max" +
                 "&forecast_days=7&timezone=auto"
         ) ?: return null
         val cur = root.optJSONObject("current") ?: return null
-        val hours = root.optJSONObject("hourly")
-        val days = root.optJSONObject("daily")
-        val now = cur.optString("time")
-        val hourly = ArrayList<HourPoint>()
-        if (hours != null) {
-            val times = hours.optJSONArray("time")
-            val temps = hours.optJSONArray("temperature_2m")
-            val codes = hours.optJSONArray("weather_code")
-            if (times != null && temps != null && codes != null) {
-                val start = (0 until times.length()).firstOrNull { times.getString(it) >= now } ?: 0
-                for (i in start until minOf(start + 12, times.length())) {
-                    hourly.add(HourPoint(times.getString(i).substringAfter('T'), temps.optDouble(i), codes.optInt(i)))
-                }
+        val h = root.optJSONObject("hourly") ?: return null
+        val d = root.optJSONObject("daily") ?: return null
+        return runCatching {
+            val times = h.getJSONArray("time")
+            val temps = h.optJSONArray("temperature_2m")
+            val codes = h.optJSONArray("weather_code")
+            val isDay = h.optJSONArray("is_day")
+            val precip = h.optJSONArray("precipitation")
+            val prob = h.optJSONArray("precipitation_probability")
+            val wind = h.optJSONArray("wind_speed_10m")
+            val uv = h.optJSONArray("uv_index")
+            val pressure = h.optJSONArray("pressure_msl")
+            val vis = h.optJSONArray("visibility")
+            val hours = (0 until times.length()).map { i ->
+                Hour(
+                    LocalDateTime.parse(times.getString(i)), temps.num(i, 0.0), codes.num(i, 3.0).toInt(),
+                    isDay.num(i, 1.0) > 0.5, precip.num(i, 0.0), prob.num(i, 0.0).toInt(),
+                    wind.num(i, 0.0), uv.num(i, 0.0), pressure.num(i, 1013.0), vis.num(i, 10000.0)
+                )
             }
-        }
-        val daily = ArrayList<DayPoint>()
-        if (days != null) {
-            val dates = days.optJSONArray("time")
-            val max = days.optJSONArray("temperature_2m_max")
-            val min = days.optJSONArray("temperature_2m_min")
-            val codes = days.optJSONArray("weather_code")
-            if (dates != null && max != null && min != null && codes != null) {
-                for (i in 0 until dates.length()) {
-                    val label = if (i == 0) t("Today") else
-                        LocalDate.parse(dates.getString(i)).dayOfWeek.getDisplayName(TextStyle.SHORT, uiLocale())
-                    daily.add(DayPoint(label, max.optDouble(i), min.optDouble(i), codes.optInt(i)))
-                }
+            val dates = d.getJSONArray("time")
+            val dMax = d.optJSONArray("temperature_2m_max")
+            val dMin = d.optJSONArray("temperature_2m_min")
+            val dCode = d.optJSONArray("weather_code")
+            val dSum = d.optJSONArray("precipitation_sum")
+            val dProb = d.optJSONArray("precipitation_probability_max")
+            val dUv = d.optJSONArray("uv_index_max")
+            val rise = d.getJSONArray("sunrise")
+            val set = d.getJSONArray("sunset")
+            val days = (0 until dates.length()).map { i ->
+                Day(
+                    LocalDate.parse(dates.getString(i)), dMax.num(i, 0.0), dMin.num(i, 0.0), dCode.num(i, 3.0).toInt(),
+                    dSum.num(i, 0.0), dProb.num(i, 0.0).toInt(),
+                    LocalDateTime.parse(rise.getString(i)), LocalDateTime.parse(set.getString(i)), dUv.num(i, 0.0)
+                )
             }
-        }
-        return Conditions(
-            cur.optDouble("temperature_2m"), cur.optDouble("apparent_temperature"),
-            cur.optInt("relative_humidity_2m"), cur.optDouble("wind_speed_10m"),
-            cur.optInt("weather_code"), cur.optInt("is_day", 1) == 1, hourly, daily
-        )
+            Conditions(
+                LocalDateTime.parse(cur.getString("time")), cur.optDouble("temperature_2m"), cur.optDouble("apparent_temperature"),
+                cur.optInt("relative_humidity_2m"), cur.optDouble("wind_speed_10m"), cur.optDouble("wind_direction_10m", 0.0),
+                cur.optInt("weather_code"), cur.optInt("is_day", 1) == 1, cur.optDouble("uv_index", 0.0),
+                airQuality(lat, lon), cur.optDouble("pressure_msl", 1013.0), cur.optDouble("visibility", 10000.0), hours, days
+            )
+        }.getOrNull()
     }
 }
 
-fun conditionKey(code: Int): String = when (code) {
-    0, 1 -> "Clear sky"
-    2 -> "Partly cloudy"
-    3 -> "Cloudy"
-    45, 48 -> "Fog"
-    in 51..57 -> "Drizzle"
-    in 61..67, in 80..82 -> "Rain"
-    in 71..77, 85, 86 -> "Snow"
-    in 95..99 -> "Thunderstorm"
-    else -> "Cloudy"
+data class MoonPhase(val fraction: Double, val illumination: Double, val key: String)
+
+fun moonPhase(date: LocalDateTime = LocalDateTime.now(ZoneOffset.UTC)): MoonPhase {
+    val synodic = 29.530588853
+    val reference = LocalDateTime.of(2000, 1, 6, 18, 14).toEpochSecond(ZoneOffset.UTC) / 86400.0
+    val days = date.toEpochSecond(ZoneOffset.UTC) / 86400.0 - reference
+    val f = ((days / synodic) % 1.0 + 1.0) % 1.0
+    val key = when ((f * 8).roundToInt() % 8) {
+        0 -> "New moon"; 1 -> "Waxing crescent"; 2 -> "First quarter"; 3 -> "Waxing gibbous"
+        4 -> "Full moon"; 5 -> "Waning gibbous"; 6 -> "Last quarter"; else -> "Waning crescent"
+    }
+    return MoonPhase(f, (1 - cos(2 * PI * f)) / 2, key)
 }
 
 fun formatTemp(celsius: Double, fahrenheit: Boolean): String =
     (if (fahrenheit) (celsius * 9 / 5 + 32).roundToInt() else celsius.roundToInt()).toString() + "°"
 
+fun formatWind(kmh: Double, unit: WindUnit): String = "${(kmh * unit.factor).roundToInt()} ${unit.label}"
+
+fun formatPressure(hpa: Double, unit: PressureUnit): String =
+    String.format(Locale.US, "%.${unit.decimals}f %s", hpa * unit.factor, unit.label)
+
+fun formatVisibility(meters: Double): String =
+    if (meters >= 10_000) "10+ km" else String.format(Locale.US, "%.1f km", meters / 1000.0)
+
+fun aqiLabel(v: Double): String = when {
+    v <= 50 -> "Good"; v <= 100 -> "Moderate"; v <= 150 -> "Poor"; v <= 200 -> "Very poor"; else -> "Extreme"
+}
+
+fun uvLabel(v: Double): String = when {
+    v < 3 -> "Low"; v < 6 -> "Moderate"; v < 8 -> "High"; v < 11 -> "Very high"; else -> "Extreme"
+}
+
 val FIXED_COLORS = listOf(
     Color(0xFF1E1E1E), Color(0xFF2F6F9F), Color(0xFFE0A100), Color(0xFF3E7D4F), Color(0xFFB3402F), Color(0xFF5B4B8A)
 )
 
-fun weatherColor(code: Int, day: Boolean): Color = when (code) {
-    0, 1 -> if (day) Color(0xFFE0A100) else Color(0xFF26335F)
-    2 -> if (day) Color(0xFF5B8DB8) else Color(0xFF2F4058)
-    3 -> Color(0xFF6B7683)
-    45, 48 -> Color(0xFF8A9199)
-    in 51..57 -> Color(0xFF4F86A6)
-    in 61..67, in 80..82 -> Color(0xFF2F6F9F)
-    in 71..77, 85, 86 -> Color(0xFF7F9BB3)
-    in 95..99 -> Color(0xFF4B3F72)
-    else -> Color(0xFF6B7683)
+fun weatherColor(kind: Kind, day: Boolean): Color = when (kind) {
+    Kind.Clear, Kind.FewClouds -> if (day) Color(0xFFE0A100) else Color(0xFF26335F)
+    Kind.MoreClouds -> if (day) Color(0xFF5B8DB8) else Color(0xFF2F4058)
+    Kind.Cloudy -> Color(0xFF6B7683)
+    Kind.Fog -> Color(0xFF8A9199)
+    Kind.Drizzle -> Color(0xFF4F86A6)
+    Kind.Rain -> Color(0xFF2F6F9F)
+    Kind.Storm -> Color(0xFF4B3F72)
+    else -> Color(0xFF7F9BB3)
 }
 
-fun widgetColor(settings: DesktopSettings, conditions: Conditions?): Color =
-    if (settings.colorMode == "fixed" || conditions == null) FIXED_COLORS[settings.fixedColor]
-    else weatherColor(conditions.code, conditions.day)
+fun widgetColor(settings: DesktopSettings, c: Conditions?): Color =
+    if (settings.colorMode == "fixed" || c == null) FIXED_COLORS[settings.fixedColor] else weatherColor(c.kind, c.isDay)
 
 fun inkFor(background: Color): Color {
     val luminance = 0.299f * background.red + 0.587f * background.green + 0.114f * background.blue
