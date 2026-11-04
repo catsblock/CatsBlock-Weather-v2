@@ -79,7 +79,6 @@ private fun levelColor(level: String): Color = when (level) {
     "danger", "severe" -> Color(0xFFE53935)
     "alert" -> Color(0xFFFF6D00)
     "moderate", "warning" -> Color(0xFFFFD600)
-    "minor" -> Color(0xFF2979FF)
     else -> Color(0xFF9E9E9E)
 }
 
@@ -112,7 +111,6 @@ internal fun MapDetailSheet(detail: MapDetail, onDismiss: () -> Unit) {
             when (detail.type) {
                 "alert" -> AlertBody(data)
                 "fire" -> FireBody(data)
-                "blackout" -> BlackoutBody(data)
                 else -> Header(tr("Municipality details"), null, Color.Unspecified)
             }
             MunicipalityBlock(meta, loading)
@@ -255,48 +253,6 @@ private fun FireBody(d: JSONObject) {
     }
     if (modeled.isNotEmpty()) Note(tr("Values marked ≈ are modeled estimates, not official figures."))
     Note(tr("Source") + ": NASA FIRMS · NIFC")
-}
-
-@Composable
-private fun BlackoutBody(d: JSONObject) {
-    val level = d.optString("level")
-    val label = when (level) {
-        "severe" -> tr("Severe outage")
-        "moderate" -> tr("Moderate outage")
-        else -> tr("Minor outage")
-    }
-    Header(d.optString("name"), label, levelColor(level))
-    val population = d.optLong("population", 0L)
-    val people = d.optLong("people", 0L)
-    val lightsTotal = d.optLong("lightsTotal", 0L)
-    val lightsOff = d.optLong("lightsOffline", 0L)
-    val shopsTotal = d.optLong("businessesTotal", 0L)
-    val shops = d.optLong("businesses", 0L)
-    fun share(part: Long, whole: Long) = if (whole > 0) " (" + decimal(part * 100.0 / whole, 0) + "%)" else ""
-    Block(null) {
-        Field(tr("Date and time"), formatTime(d.optString("timestamp")))
-        Field(tr("Outage severity"), label)
-        Field(tr("Affected people"), "≈ " + count(people) + share(people, population))
-        Field(
-            tr("Likely cause"),
-            when (d.optString("driver")) {
-                "storm" -> tr("Thunderstorms")
-                "ice" -> tr("Freezing rain")
-                "snow" -> tr("Heavy snow")
-                "rain" -> tr("Heavy rain")
-                else -> tr("Strong winds")
-            }
-        )
-    }
-    Block(tr("Power grid infrastructure")) {
-        Field(tr("Light points monitored"), "≈ " + count(lightsTotal))
-        Field(tr("Light points offline"), "≈ " + count(lightsOff) + share(lightsOff, lightsTotal))
-        Field(tr("Light points online"), "≈ " + count((lightsTotal - lightsOff).coerceAtLeast(0L)))
-    }
-    Block(tr("Impacted businesses")) {
-        Field(tr("Impacted businesses"), "≈ " + count(shops) + share(shops, shopsTotal))
-    }
-    Note(tr("Estimated by a weather-stress model. No live utility data was available."))
 }
 
 @Composable
