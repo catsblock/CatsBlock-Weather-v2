@@ -14,19 +14,6 @@ import java.security.MessageDigest
 import java.security.SecureRandom
 import kotlin.concurrent.thread
 
-/**
- * Enforces one running instance per Windows user, independent of where the executable lives.
- *
- * Mechanism:
- *  1. An exclusive [FileLock] on `instance.lock` in the per-user data directory. The OS releases it
- *     automatically when the process dies, so a crash can never leave a stale lock behind.
- *  2. The winner opens a loopback-only [ServerSocket] on a random port and publishes the port and a
- *     random 256-bit token in `instance.port`. Only a process that can read the user's profile
- *     directory knows the token, so other local users or web pages cannot trigger the window.
- *  3. A second launch (even from a temporary folder or an extracted ZIP) fails to take the lock,
- *     reads the port file, sends the token plus a command and exits. SHOW brings the running
- *     instance's window to the foreground; PING (used by the silent startup launch) does nothing.
- */
 object SingleInstance {
 
     private val lockFile = File(AppPaths.dir, "instance.lock")
@@ -35,7 +22,6 @@ object SingleInstance {
     private var lock: FileLock? = null
     private var server: ServerSocket? = null
 
-    /** Returns true when this process is the primary instance. [onShow] runs on a background thread. */
     fun acquire(silent: Boolean, onShow: () -> Unit): Boolean {
         AppPaths.dir.mkdirs()
         val ch = FileChannel.open(lockFile.toPath(), StandardOpenOption.CREATE, StandardOpenOption.WRITE)
@@ -123,7 +109,6 @@ object SingleInstance {
     }
 }
 
-/** Cross-thread bridge from the single-instance listener to the Compose application. */
 object AppEvents {
     val showRequests = kotlinx.coroutines.flow.MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     fun show() {
