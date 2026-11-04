@@ -143,6 +143,7 @@ internal enum class MapLayer(val id: String, val label: String, val icon: ImageV
     Precipitation("precip", "Precipitation", Icons.Rounded.Umbrella),
     Temperature("temp", "Temperature", Icons.Rounded.Thermostat),
     Clouds("clouds", "Cloudiness", Icons.Rounded.Cloud),
+    SatelliteClouds("satellite", "Satellite clouds", Icons.Rounded.SatelliteAlt),
     Wind("wind", "Wind speed", Icons.Rounded.Air),
     Pressure("pressure", "Pressure", Icons.Rounded.Speed),
     Cyclones("cyclones", "Hurricanes & cyclones", CycloneIcon),
@@ -325,16 +326,30 @@ fun MapScreen(vm: WeatherViewModel) {
         ThemeMode.Dark -> true
     }
     val context = LocalContext.current
-    val surface = MaterialTheme.colorScheme.surface.toArgb()
+    val colorScheme = MaterialTheme.colorScheme
+    val surface = colorScheme.surface.toArgb()
+    val mapPalette = remember(
+        colorScheme.surface, colorScheme.onSurface, colorScheme.surfaceContainerHigh,
+        colorScheme.onSurfaceVariant, colorScheme.outlineVariant
+    ) {
+        JSONObject()
+            .put("bg", String.format("#%06X", colorScheme.surface.toArgb() and 0xFFFFFF))
+            .put("fg", String.format("#%06X", colorScheme.onSurface.toArgb() and 0xFFFFFF))
+            .put("chip", String.format("#%06X", colorScheme.surfaceContainerHigh.toArgb() and 0xFFFFFF))
+            .put("sub", String.format("#%06X", colorScheme.onSurfaceVariant.toArgb() and 0xFFFFFF))
+            .put("edge", String.format("#%06X", colorScheme.outlineVariant.toArgb() and 0xFFFFFF))
+            .toString()
+    }
     val layer = MapHost.layer
     val ready = MapHost.ready
     val topInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val bottomInset = LocalBottomInset.current
     val scope = rememberCoroutineScope()
-    val initJson = remember {
+    val initJson = remember(dark, topInset, bottomInset, city?.id, layer, settings.fahrenheit, settings.language, mapPalette) {
         val target = city
         JSONObject()
             .put("dark", dark)
+            .put("palette", JSONObject(mapPalette))
             .put("top", topInset.value.toDouble())
             .put("bottom", bottomInset.value.toDouble())
             .put("hasCity", target != null)
@@ -351,8 +366,8 @@ fun MapScreen(vm: WeatherViewModel) {
     var sheetOpen by remember { mutableStateOf(false) }
     val locate = remember { Animatable(0f) }
 
-    LaunchedEffect(ready, dark) {
-        if (ready) MapHost.run("MapApi.setTheme(" + dark + ")")
+    LaunchedEffect(ready, dark, mapPalette) {
+        if (ready) MapHost.run("MapApi.setTheme(" + dark + "," + mapPalette + ")")
     }
     LaunchedEffect(ready, topInset, bottomInset) {
         if (ready) MapHost.run("MapApi.setInsets(" + topInset.value + "," + bottomInset.value + ")")
@@ -379,6 +394,7 @@ fun MapScreen(vm: WeatherViewModel) {
             modifier = Modifier.fillMaxSize().clipToBounds(),
             factory = { ctx ->
                 val web = MapHost.obtain(ctx, surface, initJson)
+                web.setLayerType(View.LAYER_TYPE_HARDWARE, null)
                 (web.parent as? ViewGroup)?.removeView(web)
                 FrameLayout(ctx).also { frame ->
                     frame.addView(web, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
