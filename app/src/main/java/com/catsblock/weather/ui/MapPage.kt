@@ -156,7 +156,6 @@ function setLegend(extra) {
   else if (id === 'alerts') { grad = hard([LEVEL_COLORS.warning, LEVEL_COLORS.alert, LEVEL_COLORS.danger]); lo = lbl('lvWarn', 'Warning'); hi = lbl('lvDanger', 'Danger'); }
   else if (id === 'drought') { grad = hard(DRY.map(rgb)); lo = lbl('d0', 'Slightly dry'); hi = lbl('d4', 'Extreme dry'); }
   else if (id === 'coldfront') {
-    grad = hard(FRONT.blue.map(rgb)); lo = lbl('cfWeak', 'Weak'); hi = lbl('cfStrong', 'Strong');
     if (!extra && grid) extra = frontAny() ? lbl('cfKeyLine', 'Lines: blue passed · gray ahead') + '\n' + lbl('cfKeyArea', 'Blue dot: cold front is here now') : lbl('cfNone', 'No cold fronts right now');
   }
   var html = '<div class="t">' + esc(state.title) + '</div>';
