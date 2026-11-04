@@ -17,10 +17,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import org.json.JSONObject
 import java.io.File
-
-private const val REPO = "catsblock/CatsBlock-Weather-v2"
 
 data class UpdateInfo(val build: Int, val versionName: String, val sizeBytes: Long, val url: String)
 
@@ -75,27 +72,8 @@ class UpdateViewModel(private val app: Application) : AndroidViewModel(app) {
 
     private fun fetchLatest(): UpdateState {
         cleanup()
-        val req = Request.Builder()
-            .url("https://api.github.com/repos/$REPO/releases/latest")
-            .header("Accept", "application/vnd.github+json")
-            .build()
-        client.newCall(req).execute().use { r ->
-            if (r.code == 404) return UpdateState.UpToDate
-            if (!r.isSuccessful) error("http ${r.code}")
-            val o = JSONObject(r.body!!.string())
-            val build = Regex("\\d+").find(o.getString("tag_name"))?.value?.toIntOrNull() ?: error("tag")
-            if (build <= installedBuild()) return UpdateState.UpToDate
-            val assets = o.getJSONArray("assets")
-            for (i in 0 until assets.length()) {
-                val a = assets.getJSONObject(i)
-                if (a.getString("name").endsWith(".apk")) {
-                    return UpdateState.Available(
-                        UpdateInfo(build, o.optString("name").trim().ifEmpty { "Build $build" }, a.getLong("size"), a.getString("browser_download_url"))
-                    )
-                }
-            }
-            return UpdateState.UpToDate
-        }
+        val info = AndroidReleases.latest(client, installedBuild()) ?: return UpdateState.UpToDate
+        return UpdateState.Available(info)
     }
 
     fun update() {
