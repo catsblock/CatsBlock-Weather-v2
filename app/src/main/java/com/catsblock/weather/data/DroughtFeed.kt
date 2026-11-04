@@ -2,8 +2,6 @@ package com.catsblock.weather.data
 
 import org.json.JSONArray
 import org.json.JSONObject
-import java.time.LocalDate
-import java.time.format.DateTimeFormatter
 
 object DroughtFeed {
 
@@ -11,16 +9,8 @@ object DroughtFeed {
     private const val CURRENT = "current"
 
     private val cache = TimedCache<ByteArray>(6 * 3600_000L)
-    private val format = DateTimeFormatter.BASIC_ISO_DATE
-    private val pattern = Regex("\\d{8}")
 
-    fun json(date: String? = null): ByteArray? {
-        if (date == null) return load("usdm_current.json", CURRENT)
-        if (!pattern.matches(date)) return null
-        val day = runCatching { LocalDate.parse(date, format) }.getOrNull() ?: return null
-        return load("usdm_$date.json", date)
-            ?: load("usdm_" + format.format(day.minusWeeks(1)) + ".json", date)
-    }
+    fun json(): ByteArray? = load("usdm_current.json", CURRENT)
 
     private fun load(file: String, key: String): ByteArray? {
         cache.get(key)?.let { return it }
