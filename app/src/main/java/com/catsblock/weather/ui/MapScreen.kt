@@ -18,10 +18,8 @@ import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
@@ -30,7 +28,6 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -40,14 +37,13 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -100,6 +96,7 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -109,6 +106,9 @@ import com.catsblock.weather.data.ThemeMode
 import com.catsblock.weather.i18n.tr
 import com.catsblock.weather.ui.components.ExpressiveLoader
 import com.catsblock.weather.ui.components.ExpressiveProgressBar
+import com.catsblock.weather.ui.glass.weatherGlassChrome
+import com.catsblock.weather.ui.glass.hazeBackdropSource
+import dev.chrisbanes.haze.HazeState
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 import java.io.ByteArrayInputStream
@@ -312,6 +312,22 @@ internal fun mapLabels(): JSONObject = JSONObject()
     .put("cfNone", tr("No cold fronts right now"))
     .put("cfDropPast", tr("Temperature drop in 24 h"))
     .put("cfDropNext", tr("Expected drop in 24 h"))
+    .put("temp", tr("Temperature"))
+    .put("precip", tr("Precipitation"))
+    .put("clouds", tr("Cloudiness"))
+    .put("wind", tr("Wind speed"))
+    .put("pressure", tr("Pressure"))
+    .put("dew", tr("Dew point"))
+    .put("uv", tr("UV index"))
+    .put("aqi", tr("Air quality"))
+    .put("sea", tr("Sea level"))
+    .put("sst", tr("Sea-surface temperature"))
+    .put("drought", tr("Dryness ratio"))
+    .put("precipSource", tr("Model estimate"))
+    .put("cfDrop", tr("Temperature drop in 24 h"))
+    .put("hoursFromNow", tr("Hours from now"))
+    .put("sstValue", tr("Sea-surface temperature"))
+    .put("noData", tr("Details unavailable"))
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -325,6 +341,7 @@ fun MapScreen(vm: WeatherViewModel) {
         ThemeMode.Dark -> true
     }
     val context = LocalContext.current
+    val hazeState = remember { HazeState() }
     val colorScheme = MaterialTheme.colorScheme
     val surface = colorScheme.surface.toArgb()
     val mapPalette = remember(
@@ -390,7 +407,7 @@ fun MapScreen(vm: WeatherViewModel) {
 
     Box(Modifier.fillMaxSize().clipToBounds().background(MaterialTheme.colorScheme.surface)) {
         AndroidView(
-            modifier = Modifier.fillMaxSize().clipToBounds(),
+            modifier = Modifier.fillMaxSize().clipToBounds().hazeBackdropSource(hazeState),
             factory = { ctx ->
                 val web = MapHost.obtain(ctx, surface, initJson)
                 web.setLayerType(View.LAYER_TYPE_HARDWARE, null)
@@ -416,7 +433,7 @@ fun MapScreen(vm: WeatherViewModel) {
             enter = fadeIn(tween(200)) + scaleIn(initialScale = 0.9f),
             exit = fadeOut(tween(200)) + scaleOut(targetScale = 0.9f)
         ) {
-            StatusPill {
+            StatusPill(hazeState) {
                 ExpressiveLoader(size = 28.dp)
                 Spacer(Modifier.width(12.dp))
                 Text(tr("Loading map…"), style = MaterialTheme.typography.titleSmall)
@@ -429,7 +446,7 @@ fun MapScreen(vm: WeatherViewModel) {
             enter = fadeIn(tween(200)) + scaleIn(initialScale = 0.9f),
             exit = fadeOut(tween(200)) + scaleOut(targetScale = 0.9f)
         ) {
-            StatusPill {
+            StatusPill(hazeState) {
                 Text(tr("Map data unavailable"), style = MaterialTheme.typography.titleSmall)
                 Spacer(Modifier.width(8.dp))
                 TextButton(onClick = MapHost::reload) { Text(tr("Retry")) }
@@ -438,8 +455,8 @@ fun MapScreen(vm: WeatherViewModel) {
 
         Column(
             Modifier
-                .align(Alignment.BottomStart)
-                .padding(start = 16.dp, bottom = bottomInset + 8.dp),
+                .align(Alignment.BottomEnd)
+                .padding(end = 16.dp, bottom = bottomInset + 8.dp),
             verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp)
         ) {
             val rotation by animateFloatAsState(
@@ -449,9 +466,14 @@ fun MapScreen(vm: WeatherViewModel) {
             )
             FloatingActionButton(
                 onClick = { sheetOpen = true },
-                containerColor = MaterialTheme.colorScheme.primaryContainer,
-                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                shape = MaterialTheme.shapes.large
+                modifier = Modifier.weatherGlassChrome(
+                    hazeState, RoundedCornerShape(4.dp),
+                    MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.76f),
+                    MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.72f)
+                ),
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.34f),
+                contentColor = MaterialTheme.colorScheme.onSurface,
+                shape = RoundedCornerShape(4.dp)
             ) {
                 Icon(
                     Icons.Rounded.Layers,
@@ -469,10 +491,16 @@ fun MapScreen(vm: WeatherViewModel) {
                         }
                     }
                 },
-                containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                shape = CircleShape,
-                modifier = Modifier.padding(start = 4.dp)
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.34f),
+                contentColor = MaterialTheme.colorScheme.onSurface,
+                shape = RoundedCornerShape(4.dp),
+                modifier = Modifier
+                    .size(48.dp)
+                    .weatherGlassChrome(
+                        hazeState, RoundedCornerShape(4.dp),
+                        MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.76f),
+                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.72f)
+                    )
             ) {
                 Icon(
                     Icons.Rounded.MyLocation,
@@ -495,7 +523,8 @@ fun MapScreen(vm: WeatherViewModel) {
         ModalBottomSheet(
             onDismissRequest = { sheetOpen = false },
             sheetState = sheetState,
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+            shape = RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp)
         ) {
             Column(
                 Modifier
@@ -525,14 +554,23 @@ fun MapScreen(vm: WeatherViewModel) {
 }
 
 @Composable
-private fun StatusPill(content: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit) {
+private fun StatusPill(
+    hazeState: HazeState,
+    content: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit
+) {
+    val shape = RoundedCornerShape(4.dp)
     Surface(
-        shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.95f),
-        shadowElevation = 6.dp
+        modifier = Modifier.weatherGlassChrome(
+            hazeState, shape,
+            MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.78f),
+            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.72f)
+        ),
+        shape = shape,
+        color = Color.Transparent,
+        shadowElevation = 0.dp
     ) {
         Row(
-            Modifier.padding(horizontal = 20.dp, vertical = 10.dp),
+            Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
             content = content
         )
@@ -542,47 +580,31 @@ private fun StatusPill(content: @Composable androidx.compose.foundation.layout.R
 @Composable
 private fun LayerRow(item: MapLayer, selected: Boolean, onClick: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
-    val corner by animateDpAsState(if (selected) 32.dp else 18.dp, spring(0.7f, Spring.StiffnessMediumLow), label = "corner")
-    val container by animateColorAsState(if (selected) scheme.secondaryContainer else scheme.surfaceContainerHigh, tween(260), label = "container")
-    val badge by animateColorAsState(if (selected) scheme.secondary else scheme.surfaceContainerHighest, tween(260), label = "badge")
-    val badgeInk by animateColorAsState(if (selected) scheme.onSecondary else scheme.onSurfaceVariant, tween(260), label = "badgeInk")
-    val pop by animateFloatAsState(if (selected) 1f else 0.9f, spring(0.4f, Spring.StiffnessMedium), label = "pop")
     Row(
         Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(corner))
-            .background(container)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 12.dp),
+            .clip(RoundedCornerShape(4.dp))
+            .background(if (selected) scheme.secondaryContainer.copy(alpha = 0.72f) else Color.Transparent)
+            .selectable(selected = selected, role = Role.RadioButton, onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 13.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(
-            Modifier
-                .size(42.dp)
-                .graphicsLayer {
-                    scaleX = pop
-                    scaleY = pop
-                }
-                .clip(CircleShape)
-                .background(badge),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(item.icon, null, Modifier.size(22.dp), tint = badgeInk)
-        }
-        Spacer(Modifier.width(14.dp))
+        Icon(
+            item.icon,
+            contentDescription = null,
+            modifier = Modifier.size(22.dp),
+            tint = if (selected) scheme.onSecondaryContainer else scheme.onSurfaceVariant
+        )
+        Spacer(Modifier.width(16.dp))
         Text(
             tr(item.label),
             Modifier.weight(1f),
-            style = MaterialTheme.typography.titleMedium,
+            style = MaterialTheme.typography.titleSmall,
             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
             color = if (selected) scheme.onSecondaryContainer else scheme.onSurface
         )
-        AnimatedVisibility(
-            visible = selected,
-            enter = scaleIn(spring(0.45f, Spring.StiffnessMedium)) + fadeIn(),
-            exit = scaleOut() + fadeOut()
-        ) {
-            Icon(Icons.Rounded.Check, null, Modifier.size(24.dp), tint = scheme.onSecondaryContainer)
+        if (selected) {
+            Icon(Icons.Rounded.Check, null, Modifier.size(20.dp), tint = scheme.onSecondaryContainer)
         }
     }
 }
