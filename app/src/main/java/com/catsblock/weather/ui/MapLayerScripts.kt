@@ -15,9 +15,7 @@ var LAND_URLS = [
 ];
 var FRONT = {
   levels:[3, 6, 10],
-  recent:1.5,
-  blue:[[100, 181, 246], [30, 136, 229], [13, 71, 161]],
-  width:[2, 3.2, 4.6]
+  recent:1.5
 };
 var frontHits = [], zoneCanvas = null;
 var gridCache = null, gridToken = 0, gridCtl = null, gridSignal = null;
@@ -383,15 +381,91 @@ function contour(f, i, sw, t, x, y, step) {
   return null;
 }
 
-function strokeSegments(ctx, segs, color, halo, width, dash) {
-  if (!segs.length) return;
+function smoothField(src, sw, sh) {
+  var out = new Float32Array(src.length);
+  for (var y = 0; y < sh; y++) {
+    for (var x = 0; x < sw; x++) {
+      var sum = 0, count = 0;
+      for (var dy = -1; dy <= 1; dy++) {
+        for (var dx = -1; dx <= 1; dx++) {
+          var yy = y + dy, xx = x + dx;
+          if (yy < 0 || xx < 0 || yy >= sh || xx >= sw) continue;
+          sum += src[yy * sw + xx];
+          count++;
+        }
+      }
+      out[y * sw + x] = sum / count;
+    }
+  }
+  return out;
+}
+
+function pointKey(p) {
+  return Math.round(p[0] * 2) + ':' + Math.round(p[1] * 2);
+}
+
+function chainSegments(segs) {
+  var ends = {}, used = new Array(segs.length), lines = [], i, k, line, key, next;
+  function link(p, idx) {
+    var kk = pointKey(p);
+    if (!ends[kk]) ends[kk] = [];
+    ends[kk].push(idx);
+  }
+  function take(p) {
+    var list = ends[pointKey(p)] || [];
+    for (var j = 0; j < list.length; j++) {
+      if (!used[list[j]]) return list[j];
+    }
+    return -1;
+  }
+  for (i = 0; i < segs.length; i++) { link(segs[i][0], i); link(segs[i][1], i); }
+  for (i = 0; i < segs.length; i++) {
+    if (used[i]) continue;
+    used[i] = true;
+    line = [segs[i][0], segs[i][1]];
+    while ((next = take(line[line.length - 1])) !== -1) {
+      used[next] = true;
+      k = segs[next];
+      line.push(pointKey(k[0]) === pointKey(line[line.length - 1]) ? k[1] : k[0]);
+    }
+    line.reverse();
+    while ((next = take(line[line.length - 1])) !== -1) {
+      used[next] = true;
+      k = segs[next];
+      line.push(pointKey(k[0]) === pointKey(line[line.length - 1]) ? k[1] : k[0]);
+    }
+    lines.push(line);
+  }
+  return lines;
+}
+
+function lineLength(line) {
+  var total = 0;
+  for (var i = 1; i < line.length; i++) total += Math.hypot(line[i][0] - line[i - 1][0], line[i][1] - line[i - 1][1]);
+  return total;
+}
+
+function smoothLine(line) {
+  var pts = line;
+  for (var pass = 0; pass < 2; pass++) {
+    var out = [pts[0]];
+    for (var i = 0; i < pts.length - 1; i++) {
+      var p = pts[i], q = pts[i + 1];
+      out.push([p[0] * 0.75 + q[0] * 0.25, p[1] * 0.75 + q[1] * 0.25]);
+      out.push([p[0] * 0.25 + q[0] * 0.75, p[1] * 0.25 + q[1] * 0.75]);
+    }
+    out.push(pts[pts.length - 1]);
+    pts = out;
+  }
+  return pts;
+}
+
+function strokeLine(ctx, line, color, halo, width, dash) {
   ctx.setLineDash(dash);
   [[halo, width + 3], [color, width]].forEach(function (pass) {
     ctx.beginPath();
-    segs.forEach(function (s) {
-      ctx.moveTo(s[0][0], s[0][1]);
-      ctx.lineTo(s[1][0], s[1][1]);
-    });
+    ctx.moveTo(line[0][0], line[0][1]);
+    for (var i = 1; i < line.length; i++) ctx.lineTo(line[i][0], line[i][1]);
     ctx.strokeStyle = pass[0];
     ctx.lineWidth = pass[1];
     ctx.stroke();
@@ -399,52 +473,30 @@ function strokeSegments(ctx, segs, color, halo, width, dash) {
   ctx.setLineDash([]);
 }
 
-function dilate(src, sw, sh) {
-  var out = new Float32Array(src.length);
-  for (var y = 0; y < sh; y++) {
-    for (var x = 0; x < sw; x++) {
-      var top = 0;
-      for (var dy = -2; dy <= 2; dy++) {
-        for (var dx = -2; dx <= 2; dx++) {
-          var yy = y + dy, xx = x + dx;
-          if (yy < 0 || xx < 0 || yy >= sh || xx >= sw) continue;
-          var v = src[yy * sw + xx];
-          if (v > top) top = v;
-        }
-      }
-      out[y * sw + x] = top;
+function buildLines(field, sw, sh, step, minimum, mask) {
+  var segs = [], x, y, i, found;
+  for (y = 0; y < sh - 1; y++) {
+    for (x = 0; x < sw - 1; x++) {
+      i = y * sw + x;
+      if (mask && (mask[i] >= minimum || mask[i + 1] >= minimum || mask[i + sw] >= minimum || mask[i + sw + 1] >= minimum)) continue;
+      found = contour(field, i, sw, minimum, x, y, step);
+      if (found) found.forEach(function (s) { segs.push(s); });
     }
   }
-  return out;
-}
-
-function segDist(p, a, b) {
-  var dx = b[0] - a[0], dy = b[1] - a[1], len = dx * dx + dy * dy;
-  var t = len === 0 ? 0 : Math.max(0, Math.min(1, ((p.x - a[0]) * dx + (p.y - a[1]) * dy) / len));
-  return Math.hypot(p.x - (a[0] + t * dx), p.y - (a[1] + t * dy));
+  return chainSegments(segs).filter(function (l) { return lineLength(l) >= 48; }).map(smoothLine);
 }
 
 function nearestHit(pt) {
-  var best = null, bestD = 16, i, h, d;
-  for (i = 0; i < frontHits.length; i++) {
-    h = frontHits[i];
-    if (!h.dot) continue;
-    d = Math.hypot(pt.x - h.x, pt.y - h.y);
-    if (d < bestD) { best = h; bestD = d; }
-  }
-  if (best) return best;
-  bestD = 14;
-  for (i = 0; i < frontHits.length; i++) {
-    h = frontHits[i];
-    if (h.dot) continue;
-    d = segDist(pt, h.a, h.b);
-    if (d < bestD) { best = h; bestD = d; }
+  var best = null, bestD = 18;
+  for (var i = 0; i < frontHits.length; i++) {
+    var d = Math.hypot(pt.x - frontHits[i].x, pt.y - frontHits[i].y);
+    if (d < bestD) { best = frontHits[i]; bestD = d; }
   }
   return best;
 }
 
 function paintFront(ctx, m, size) {
-  var step = 6, sw = Math.ceil(size.x / step) + 2, sh = Math.ceil(size.y / step) + 2, total = sw * sh;
+  var step = 8, sw = Math.ceil(size.x / step) + 2, sh = Math.ceil(size.y / step) + 2, total = sw * sh;
   var past = new Float32Array(total), trend = new Float32Array(total), next = new Float32Array(total);
   var x, y, i;
   for (y = 0; y < sh; y++) {
@@ -454,42 +506,26 @@ function paintFront(ctx, m, size) {
       past[i] = f.past; trend[i] = f.trend; next[i] = f.next;
     }
   }
-  var nearPast = dilate(past, sw, sh), nearNext = dilate(next, sw, sh);
-  var minimum = FRONT.levels[0], blue = [[], [], []], gray = [], hits = [], spots = [], taken = {};
-  for (y = 0; y < sh - 1; y++) {
-    for (x = 0; x < sw - 1; x++) {
-      i = y * sw + x;
-      var segs = contour(past, i, sw, minimum, x, y, step);
-      if (segs) {
-        var level = Math.max(1, frontLevel(nearPast[i]));
-        segs.forEach(function (s) {
-          blue[level - 1].push(s);
-          hits.push({a:s[0], b:s[1], kind:'passed', level:level, value:nearPast[i]});
-          if (trend[i] >= FRONT.recent) {
-            var mx = (s[0][0] + s[1][0]) / 2, my = (s[0][1] + s[1][1]) / 2, key = Math.round(mx / 36) + ':' + Math.round(my / 36);
-            if (!taken[key]) { taken[key] = true; spots.push({dot:true, x:mx, y:my, level:level, value:nearPast[i]}); }
-          }
-        });
-      }
-      if (past[i] < minimum && past[i + 1] < minimum && past[i + sw] < minimum && past[i + sw + 1] < minimum) {
-        var ahead = contour(next, i, sw, minimum, x, y, step);
-        if (ahead) {
-          var upcoming = Math.max(1, frontLevel(nearNext[i]));
-          ahead.forEach(function (s) {
-            gray.push(s);
-            hits.push({a:s[0], b:s[1], kind:'ahead', level:upcoming, value:nearNext[i]});
-          });
-        }
-      }
-    }
-  }
+  past = smoothField(past, sw, sh);
+  trend = smoothField(trend, sw, sh);
+  next = smoothField(next, sw, sh);
+  var minimum = FRONT.levels[0];
+  var blue = buildLines(past, sw, sh, step, minimum, null);
+  var gray = buildLines(next, sw, sh, step, minimum, past);
   var halo = state.dark ? 'rgba(0,0,0,.38)' : 'rgba(255,255,255,.7)';
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
-  strokeSegments(ctx, gray, state.dark ? '#d0d0d0' : '#757575', halo, 2.4, [7, 6]);
-  for (i = 0; i < 3; i++) {
-    strokeSegments(ctx, blue[i], rgb(FRONT.blue[i]), halo, FRONT.width[i], []);
-  }
+  gray.forEach(function (l) { strokeLine(ctx, l, state.dark ? '#d0d0d0' : '#757575', halo, 2.6, []); });
+  blue.forEach(function (l) { strokeLine(ctx, l, '#1e88e5', halo, 3, []); });
+  var spots = [];
+  blue.forEach(function (l) {
+    var best = null, bestV = FRONT.recent;
+    l.forEach(function (p) {
+      var v = trend[Math.min(sh - 1, Math.max(0, Math.round(p[1] / step))) * sw + Math.min(sw - 1, Math.max(0, Math.round(p[0] / step)))];
+      if (v >= bestV) { bestV = v; best = p; }
+    });
+    if (best) spots.push({x:best[0], y:best[1], value:bestV});
+  });
   spots.forEach(function (d) {
     ctx.beginPath();
     ctx.arc(d.x, d.y, 12, 0, Math.PI * 2);
@@ -503,18 +539,14 @@ function paintFront(ctx, m, size) {
     ctx.strokeStyle = '#ffffff';
     ctx.stroke();
   });
-  frontHits = spots.concat(hits);
+  frontHits = spots;
 }
 
 map.on('click', function (ev) {
   if (state.layer !== 'coldfront' || !frontHits.length) return;
   var hit = nearestHit(ev.containerPoint);
   if (!hit) return;
-  var names = [lbl('cfWeak', 'Weak'), lbl('cfModerate', 'Moderate'), lbl('cfStrong', 'Strong')];
-  var title = hit.dot ? lbl('cfNow', 'Cold front is here now') : (hit.kind === 'passed' ? lbl('cfPassed', 'Cold front passed') : lbl('cfComing', 'Cold front approaching'));
-  var drop = hit.kind === 'ahead' ? lbl('cfDropNext', 'Expected drop in 24 h') : lbl('cfDropPast', 'Temperature drop in 24 h');
-  var html = '<b>' + esc(title) + '</b><br>' + esc(lbl('cfStrength', 'Strength')) + ': ' + esc(names[hit.level - 1]) +
-    '<br>' + esc(drop) + ': -' + fmtDelta(hit.value);
+  var html = '<b>' + esc(lbl('cfNow', 'Cold front is here now')) + '</b>';
   L.popup({closeButton:false}).setLatLng(ev.latlng).setContent(html).openOn(map);
 });
 
