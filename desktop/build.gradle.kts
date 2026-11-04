@@ -12,13 +12,25 @@ dependencies {
     implementation("org.json:json:20240303")
 }
 
+val buildNumber = (findProperty("buildNumber") as String?)?.toIntOrNull() ?: 0
+
+val generateBuildInfo by tasks.registering {
+    val outputDir = layout.buildDirectory.dir("generated/buildinfo")
+    inputs.property("buildNumber", buildNumber)
+    outputs.dir(outputDir)
+    doLast {
+        val dir = outputDir.get().asFile
+        dir.mkdirs()
+        File(dir, "build.properties").writeText("build=$buildNumber\n")
+    }
+}
+
 tasks.processResources {
     from(rootProject.file("assets/appicon")) {
         include("Icon.jpg")
     }
+    from(generateBuildInfo)
 }
-
-val buildNumber = (findProperty("buildNumber") as String?)?.toIntOrNull() ?: 0
 
 compose.desktop {
     application {
