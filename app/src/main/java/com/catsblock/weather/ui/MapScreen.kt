@@ -2,11 +2,14 @@ package com.catsblock.weather.ui
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.webkit.ConsoleMessage
+import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
@@ -48,17 +51,25 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AcUnit
 import androidx.compose.material.icons.rounded.Air
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Cloud
+import androidx.compose.material.icons.rounded.Landscape
 import androidx.compose.material.icons.rounded.Layers
 import androidx.compose.material.icons.rounded.LayersClear
 import androidx.compose.material.icons.rounded.LocalFireDepartment
+import androidx.compose.material.icons.rounded.Masks
 import androidx.compose.material.icons.rounded.MyLocation
+import androidx.compose.material.icons.rounded.PowerOff
 import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.Thermostat
 import androidx.compose.material.icons.rounded.Umbrella
+import androidx.compose.material.icons.rounded.Warning
+import androidx.compose.material.icons.rounded.Water
+import androidx.compose.material.icons.rounded.WaterDrop
 import androidx.compose.material.icons.rounded.Waves
+import androidx.compose.material.icons.rounded.WbSunny
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -93,7 +104,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.catsblock.weather.data.FireHotspots
+import com.catsblock.weather.data.MapFeeds
 import com.catsblock.weather.data.ThemeMode
 import com.catsblock.weather.i18n.tr
 import com.catsblock.weather.ui.components.ExpressiveLoader
@@ -136,7 +147,15 @@ internal enum class MapLayer(val id: String, val label: String, val icon: ImageV
     Pressure("pressure", "Pressure", Icons.Rounded.Speed),
     Cyclones("cyclones", "Hurricanes & cyclones", CycloneIcon),
     OceanHeat("sst", "El Niño & ocean heat", Icons.Rounded.Waves),
-    Fires("fires", "Active fires", Icons.Rounded.LocalFireDepartment)
+    Fires("fires", "Active fires", Icons.Rounded.LocalFireDepartment),
+    DewPoint("dew", "Dew point", Icons.Rounded.WaterDrop),
+    UvIndex("uv", "UV index", Icons.Rounded.WbSunny),
+    AirQuality("aqi", "Air quality", Icons.Rounded.Masks),
+    SeaLevel("sea", "Sea level", Icons.Rounded.Water),
+    Alerts("alerts", "Weather alerts", Icons.Rounded.Warning),
+    ColdFronts("coldfront", "Cold fronts", Icons.Rounded.AcUnit),
+    Drought("drought", "Drought & dryness", Icons.Rounded.Landscape),
+    Blackouts("blackout", "Blackouts", Icons.Rounded.PowerOff)
 }
 
 @SuppressLint("SetJavaScriptEnabled")
@@ -156,6 +175,8 @@ internal object MapHost {
 
     var layer by mutableStateOf(MapLayer.None)
 
+    var selected by mutableStateOf<MapDetail?>(null)
+
     var cityKey: String? = null
 
     fun obtain(context: Context, background: Int, init: String): WebView {
@@ -169,11 +190,18 @@ internal object MapHost {
         web.isHorizontalScrollBarEnabled = false
         web.overScrollMode = View.OVER_SCROLL_NEVER
         web.setBackgroundColor(background)
+        web.addJavascriptInterface(object {
+            @JavascriptInterface
+            fun detail(type: String, json: String) {
+                val parsed = runCatching { JSONObject(json) }.getOrNull() ?: return
+                Handler(Looper.getMainLooper()).post { this@MapHost.selected = MapDetail(type, parsed) }
+            }
+        }, "MapBridge")
         web.webViewClient = object : WebViewClient() {
             override fun shouldInterceptRequest(webView: WebView?, request: WebResourceRequest?): WebResourceResponse? {
-                val url = request?.url?.toString().orEmpty()
-                if (!url.endsWith("__fires.json")) return null
-                val data = appContext?.let { FireHotspots.json(it) }
+                val uri = request?.url ?: return null
+                if (!MapFeeds.handles(uri)) return null
+                val data = appContext?.let { runCatching { MapFeeds.serve(it, uri) }.getOrNull() }
                 val headers = mapOf("Access-Control-Allow-Origin" to "*")
                 return if (data != null) {
                     WebResourceResponse("application/json", "utf-8", 200, "OK", headers, ByteArrayInputStream(data))
@@ -265,6 +293,21 @@ internal fun mapLabels(): JSONObject = JSONObject()
     .put("fire", tr("Wildfire"))
     .put("hotspots", tr("Hotspots"))
     .put("none", tr("No active storms right now"))
+    .put("d0", tr("Slightly dry"))
+    .put("d4", tr("Extreme dry"))
+    .put("lvWarn", tr("Warning"))
+    .put("lvAlert", tr("Alert"))
+    .put("lvDanger", tr("Danger"))
+    .put("boMinor", tr("Minor outage"))
+    .put("boModerate", tr("Moderate outage"))
+    .put("boSevere", tr("Severe outage"))
+    .put("noAlerts", tr("No active alerts right now"))
+    .put("noOutages", tr("No outages detected right now"))
+    .put("zoomIn", tr("Zoom in to see outages"))
+    .put("cfN", tr("Greenland"))
+    .put("cfS", tr("Antarctica"))
+    .put("cfAdvance", tr("Advance"))
+    .put("cf", tr("Cold fronts"))
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -426,6 +469,8 @@ fun MapScreen(vm: WeatherViewModel) {
             }
         }
     }
+
+    MapHost.selected?.let { MapDetailSheet(it) { MapHost.selected = null } }
 
     if (sheetOpen) {
         ModalBottomSheet(
