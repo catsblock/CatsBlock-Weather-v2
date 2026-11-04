@@ -19,16 +19,16 @@ html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;background:v
 #map{position:absolute;inset:0;background:var(--bg);overflow:hidden;contain:layout paint}
 .leaflet-marker-pane,.leaflet-marker-icon{overflow:visible}
 html.round,html.round body{background:transparent}
-html.round #map{border-radius:20px;overflow:hidden;isolation:isolate}
-.fc{position:absolute;left:0;top:0;pointer-events:none;transition:opacity .35s;max-width:none;max-height:none}
+html.round #map{border-radius:4px;overflow:hidden;isolation:isolate}
+.enso-label{background:var(--chip);border:1px solid var(--edge);border-radius:2px;color:var(--fg);box-shadow:none;font:600 11px sans-serif;padding:3px 5px}.fc{position:absolute;left:0;top:0;pointer-events:none;transition:opacity .35s;max-width:none;max-height:none}
 .fc.blur{filter:blur(7px)}
-#legend{position:absolute;z-index:1000;left:50%;top:calc(var(--top) + 12px);transform:translate(-50%,-140%);opacity:0;min-width:176px;max-width:84%;padding:10px 16px 12px;border-radius:24px;background:var(--chip);color:var(--fg);box-shadow:0 4px 18px rgba(0,0,0,.22);border:1px solid var(--edge);transition:transform .5s cubic-bezier(.2,0,0,1),opacity .35s;box-sizing:border-box}
+#legend{position:absolute;z-index:1000;left:50%;top:calc(var(--top) + 12px);transform:translate(-50%,-140%);opacity:0;min-width:176px;max-width:84%;padding:10px 16px 12px;border-radius:4px;background:var(--chip);color:var(--fg);box-shadow:none;border:1px solid var(--edge);transition:transform .5s cubic-bezier(.2,0,0,1),opacity .35s;box-sizing:border-box}
 #legend.on{transform:translate(-50%,0);opacity:1}
 #legend .t{font-size:14px;font-weight:600;text-align:center;white-space:nowrap}
 #legend .m{font-size:12px;color:var(--sub);text-align:center;margin-top:4px}
-#scale{position:absolute;z-index:1000;left:12px;top:50%;transform:translate(-170%,-50%);opacity:0;display:flex;flex-direction:column;align-items:center;gap:9px;padding:14px 10px;border-radius:28px;background:var(--chip);color:var(--fg);box-shadow:0 4px 18px rgba(0,0,0,.28);border:1px solid var(--edge);transition:transform .5s cubic-bezier(.2,0,0,1),opacity .35s}
+#scale{position:absolute;z-index:1000;left:12px;top:50%;transform:translate(-170%,-50%);opacity:0;display:flex;flex-direction:column;align-items:center;gap:9px;padding:14px 10px;border-radius:4px;background:var(--chip);color:var(--fg);box-shadow:none;border:1px solid var(--edge);transition:transform .5s cubic-bezier(.2,0,0,1),opacity .35s}
 #scale.on{transform:translate(0,-50%);opacity:1}
-#scale .bar{width:14px;height:200px;border-radius:7px;background:var(--grad)}
+#scale .bar{width:14px;height:200px;border-radius:2px;background:var(--grad)}
 #scale span{font-size:11px;font-weight:700;white-space:nowrap}
 #scale.busy .bar{animation:bp .9s ease-in-out infinite alternate}
 @keyframes bp{to{opacity:.35}}
@@ -193,9 +193,16 @@ function makeBase() {
   document.getElementById('map').classList.toggle('dim', state.dark);
 }
 
-function setTheme(dark) {
+function setTheme(dark, palette) {
   state.dark = dark;
   document.body.className = dark ? 'dark' : 'light';
+  if (palette) {
+    if (palette.bg) document.body.style.setProperty('--bg', palette.bg);
+    if (palette.fg) document.body.style.setProperty('--fg', palette.fg);
+    if (palette.chip) document.body.style.setProperty('--chip', palette.chip);
+    if (palette.sub) document.body.style.setProperty('--sub', palette.sub);
+    if (palette.edge) document.body.style.setProperty('--edge', palette.edge);
+  }
   makeBase();
   if (overlay && overlay.refresh) overlay.refresh();
 }
@@ -225,6 +232,109 @@ function gibs(layer, level, offset, opacity) {
   return gibsOn(layer, level, new Date(Date.now() - offset * 86400000).toISOString().slice(0, 10), opacity);
 }
 
+var ENSO_REGIONS = {
+  type:'FeatureCollection',
+  name:'NOAA Climate Prediction Center ENSO monitoring regions',
+  features:[
+    {type:'Feature', properties:{id:'nino12', name:'Niño 1+2', latitude:'10°S–0°', longitude:'90°W–80°W', source:'NOAA PSL'}, geometry:{type:'Polygon', coordinates:[[[-90,-10],[-80,-10],[-80,0],[-90,0],[-90,-10]]]}},
+    {type:'Feature', properties:{id:'nino3', name:'Niño 3', latitude:'5°S–5°N', longitude:'150°W–90°W', source:'NOAA PSL'}, geometry:{type:'Polygon', coordinates:[[[-150,-5],[-90,-5],[-90,5],[-150,5],[-150,-5]]]}},
+    {type:'Feature', properties:{id:'nino34', name:'Niño 3.4', latitude:'5°S–5°N', longitude:'170°W–120°W', source:'NOAA PSL'}, geometry:{type:'Polygon', coordinates:[[[-170,-5],[-120,-5],[-120,5],[-170,5],[-170,-5]]]}},
+    {type:'Feature', properties:{id:'nino4', name:'Niño 4', latitude:'5°S–5°N', longitude:'160°E–150°W', source:'NOAA PSL'}, geometry:{type:'MultiPolygon', coordinates:[[[[160,-5],[180,-5],[180,5],[160,5],[160,-5]]],[[[-180,-5],[-150,-5],[-150,5],[-180,5],[-180,-5]]]]}}
+  ]
+};
+
+function addEnsoRegions() {
+  var regions = L.geoJSON(ENSO_REGIONS, {
+    pane:'trackpane',
+    style:function () { return {color:state.dark ? '#f2f4f8' : '#303640', weight:1.2, opacity:0.82, fillColor:'#f6ad35', fillOpacity:0.055, dashArray:'4 4', interactive:false}; },
+    onEachFeature:function (feature, layer) {
+      var p = feature.properties;
+      layer.bindTooltip(p.name, {permanent:false, direction:'center', className:'enso-label'});
+      layer.bindPopup('<b>' + esc(p.name) + '</b><br>' + esc(p.latitude) + '<br>' + esc(p.longitude) + '<br>' + esc(lbl('source', 'Source')) + ': ' + esc(p.source), {closeButton:false});
+    }
+  });
+  regions.addTo(map);
+  extra = regions;
+}
+
+function loadSstLayer(seq) {
+  var layerName = 'GHRSST_L4_MUR_Sea_Surface_Temperature_Anomalies_v4.1_STD';
+  var offsets = [3, 4, 5, 7, 10], attempt = 0, active = null, fallbackTimer = null;
+  addEnsoRegions();
+  function useFrame() {
+    if (seq !== state.seq) return;
+    if (fallbackTimer) { clearTimeout(fallbackTimer); fallbackTimer = null; }
+    if (attempt >= offsets.length) { state.busy = false; setLegend(state.err); return; }
+    if (active) map.removeLayer(active);
+    var candidate = gibs(layerName, 7, offsets[attempt], 0.82);
+    active = candidate;
+    var loaded = false;
+    candidate.on('tileload', function () {
+      if (seq !== state.seq || active !== candidate) return;
+      loaded = true;
+      state.busy = false;
+      setLegend('');
+    });
+    candidate.on('tileerror', function () {
+      if (seq !== state.seq || active !== candidate || loaded) return;
+    });
+    candidate.addTo(map);
+    candidate.setZIndex(4);
+    overlay = candidate;
+    fallbackTimer = setTimeout(function () {
+      if (seq !== state.seq || active !== candidate || loaded) return;
+      attempt++;
+      useFrame();
+    }, 9000);
+  }
+  useFrame();
+}
+
+function loadSatelliteClouds(seq) {
+  state.busy = true;
+  setLegend('');
+  var products = [
+    {layer:'VIIRS_SNPP_CorrectedReflectance_TrueColor', level:9},
+    {layer:'MODIS_Terra_CorrectedReflectance_TrueColor', level:8},
+    {layer:'MODIS_Aqua_CorrectedReflectance_TrueColor', level:8}
+  ];
+  var productIndex = 0, dayOffset = 0, active = null, timeout = null, loaded = false;
+  var offsets = [0, 1, 2, 3, 4, 5];
+  function nextFrame() {
+    if (seq !== state.seq) return;
+    if (timeout) { clearTimeout(timeout); timeout = null; }
+    if (active) map.removeLayer(active);
+    if (dayOffset >= offsets.length) { dayOffset = 0; productIndex++; }
+    if (productIndex >= products.length) { state.busy = false; setLegend(state.err); return; }
+    var product = products[productIndex];
+    var day = new Date(Date.now() - offsets[dayOffset] * 86400000).toISOString().slice(0, 10);
+    var candidate = L.tileLayer('https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/' + product.layer + '/default/' + day + '/GoogleMapsCompatible_Level' + product.level + '/{z}/{y}/{x}.jpg', {
+      minZoom:2, maxZoom:12, maxNativeZoom:product.level, tileSize:256, opacity:0.96, updateWhenIdle:true, updateWhenZooming:false, keepBuffer:2, crossOrigin:true
+    });
+    active = candidate;
+    loaded = false;
+    candidate.on('tileload', function () {
+      if (seq !== state.seq || active !== candidate) return;
+      loaded = true;
+      state.busy = false;
+      setLegend('NASA GIBS · ' + day);
+    });
+    candidate.on('load', function () {
+      if (seq !== state.seq || active !== candidate || loaded) return;
+      dayOffset++;
+      nextFrame();
+    });
+    candidate.addTo(map);
+    candidate.setZIndex(6);
+    overlay = candidate;
+    timeout = setTimeout(function () {
+      if (seq !== state.seq || active !== candidate || loaded) return;
+      dayOffset++;
+      nextFrame();
+    }, 8500);
+  }
+  nextFrame();
+}
 function getJson(url) {
   return fetch(url).then(function (r) { if (!r.ok) throw new Error('http'); return r.json(); });
 }
@@ -232,10 +342,16 @@ function getJson(url) {
 function fitCanvas(cv, m) {
   var s = m.getSize(), pad = Math.max(32, Math.min(256, Math.round(Math.min(s.x, s.y) * 0.25)));
   var w = s.x + pad * 2, h = s.y + pad * 2;
+  var dpr = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
   L.DomUtil.setPosition(cv, m.containerPointToLayerPoint([-pad, -pad]));
-  if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
-  var ctx = cv.getContext('2d');
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  cv.style.width = w + 'px';
+  cv.style.height = h + 'px';
+  if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) {
+    cv.width = Math.round(w * dpr);
+    cv.height = Math.round(h * dpr);
+  }
+  var ctx = cv.getContext('2d', {alpha:true, desynchronized:true});
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, w, h);
   ctx.translate(pad, pad);
   return {ctx:ctx, pad:pad, x:s.x, y:s.y};
@@ -459,15 +575,16 @@ function startLayer(id) {
       if (seq !== state.seq) return;
       var frames = d.radar && d.radar.past ? d.radar.past : [], last = frames[frames.length - 1];
       if (!last) throw new Error('none');
-      overlay = L.tileLayer(d.host + last.path + '/256/{z}/{x}/{y}/2/1_1.png', {maxNativeZoom:7, opacity:0.82, tileSize:256}).addTo(map);
+      overlay = L.tileLayer(d.host + last.path + '/256/{z}/{x}/{y}/2/1_1.png', {maxNativeZoom:7, maxZoom:12, opacity:0.82, tileSize:256, updateWhenIdle:true, updateWhenZooming:false, keepBuffer:2}).addTo(map);
       overlay.setZIndex(5);
       state.busy = false; setLegend('');
     }).catch(function () { if (seq === state.seq) { state.busy = false; setLegend(state.err); } });
   } else if (id === 'cyclones') {
     loadStorms(seq);
+  } else if (id === 'satellite') {
+    loadSatelliteClouds(seq);
   } else if (id === 'sst') {
-    overlay = gibs('GHRSST_L4_MUR_Sea_Surface_Temperature_Anomalies_v4.1_STD', 7, 3, 0.8).addTo(map);
-    overlay.setZIndex(4);
+    loadSstLayer(seq);
   } else if (id === 'fires') {
     loadFires(seq);
     return;
@@ -519,7 +636,7 @@ else window.addEventListener('resize', syncSize);
 
 state.err = INIT.err;
 state.labels = INIT.labels || {};
-setTheme(INIT.dark);
+setTheme(INIT.dark, INIT.palette || null);
 setInsets(INIT.top, INIT.bottom);
 if (INIT.round) document.documentElement.className = 'round';
 if (INIT.hasCity) setCity(INIT.lat, INIT.lon, false);
