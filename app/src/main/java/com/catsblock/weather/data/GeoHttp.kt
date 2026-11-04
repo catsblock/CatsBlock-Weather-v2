@@ -1,10 +1,14 @@
 package com.catsblock.weather.data
 
+import okhttp3.Dispatcher
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONArray
 import org.json.JSONObject
+import java.util.LinkedHashMap
 import java.util.concurrent.ConcurrentHashMap
+import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
 import java.util.concurrent.TimeUnit
 import kotlin.math.abs
 import kotlin.math.cos
@@ -17,17 +21,104 @@ internal object GeoHttp {
 
     const val AGENT = "CatsBlockWeather/2.0 (+https://github.com/catsblock/CatsBlock-Weather-v2)"
 
+    private data class Entry(val value: String, val storedAt: Long, val ttl: Long)
+
+    private const val CACHE_LIMIT = 64
+    private const val CACHE_TTL = 90_000L
+    private const val STALE_TTL_MULTIPLIER = 6L
+    private val cacheLock = Any()
+    private val cache = object : LinkedHashMap<String, Entry>(CACHE_LIMIT, 0.75f, true) {}
+
+    private val dispatcher = Dispatcher().apply {
+        maxRequests = 12
+        maxRequestsPerHost = 4
+    }
+
     val client: OkHttpClient = OkHttpClient.Builder()
+        .dispatcher(dispatcher)
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(45, TimeUnit.SECONDS)
         .callTimeout(90, TimeUnit.SECONDS)
         .build()
 
-    fun text(url: String, accept: String = "application/json"): String? = runCatching {
-        client.newCall(
-            Request.Builder().url(url).header("User-Agent", AGENT).header("Accept", accept).build()
-        ).execute().use { if (it.isSuccessful) it.body?.string() else null }
-    }.getOrNull()
+    private fun cacheKey(url: String, accept: String): String = "$accept|$url"
+
+    private fun cached(key: String, allowStale: Boolean): String? = synchronized(cacheLock) {
+        val entry = cache[key] ?: return@synchronized null
+        val age = System.currentTimeMillis() - entry.storedAt
+        val limit = if (allowStale) entry.ttl * STALE_TTL_MULTIPLIER else entry.ttl
+        entry.value.takeIf { age in 0L..limit }
+    }
+
+    private fun store(key: String, value: String, ttl: Long) = synchronized(cacheLock) {
+        cache[key] = Entry(value, System.currentTimeMillis(), ttl)
+        while (cache.size > CACHE_LIMIT) {
+            val iterator = cache.entries.iterator()
+            if (iterator.hasNext()) {
+                iterator.next()
+                iterator.remove()
+            }
+        }
+    }
+
+    private fun retryDelay(response: okhttp3.Response?, attempt: Int): Long {
+        val retryAfter = response?.header("Retry-After")
+        val retryMillis = retryAfter?.toLongOrNull()?.times(1_000L)
+            ?: retryAfter?.let {
+                runCatching {
+                    ZonedDateTime.parse(it, DateTimeFormatter.RFC_1123_DATE_TIME)
+                        .toInstant().toEpochMilli() - System.currentTimeMillis()
+                }.getOrNull()
+            }
+        return (retryMillis ?: (500L shl attempt)).coerceIn(250L, 4_000L)
+    }
+
+    fun text(url: String, accept: String = "application/json"): String? {
+        val key = cacheKey(url, accept)
+        cached(key, allowStale = false)?.let { return it }
+        val ttl = when {
+            url.contains("nominatim.openstreetmap.org") -> 300_000L
+            url.contains("natural-earth") -> 86_400_000L
+            else -> CACHE_TTL
+        }
+        val request = Request.Builder()
+            .url(url)
+            .header("User-Agent", AGENT)
+            .header("Accept", accept)
+            .build()
+
+        repeat(3) { attempt ->
+            try {
+                client.newCall(request).execute().use { response ->
+                    if (response.isSuccessful) {
+                        val body = response.body?.string() ?: return cached(key, allowStale = true)
+                        store(key, body, ttl)
+                        return body
+                    }
+                    if (response.code != 429 && response.code !in 500..599) {
+                        return cached(key, allowStale = true)
+                    }
+                    if (attempt < 2) {
+                        val delay = retryDelay(response, attempt)
+                        Thread.sleep(delay)
+                    }
+                }
+            } catch (interrupted: InterruptedException) {
+                Thread.currentThread().interrupt()
+                return cached(key, allowStale = true)
+            } catch (_: Exception) {
+                if (attempt < 2) {
+                    try {
+                        Thread.sleep((500L shl attempt).coerceAtMost(4_000L))
+                    } catch (interrupted: InterruptedException) {
+                        Thread.currentThread().interrupt()
+                        return cached(key, allowStale = true)
+                    }
+                }
+            }
+        }
+        return cached(key, allowStale = true)
+    }
 
     fun json(url: String, accept: String = "application/json"): JSONObject? =
         text(url, accept)?.let { runCatching { JSONObject(it) }.getOrNull() }
