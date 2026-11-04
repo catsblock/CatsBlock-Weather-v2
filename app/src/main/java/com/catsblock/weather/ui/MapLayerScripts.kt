@@ -381,7 +381,7 @@ function loadGrid(force) {
   var seq = state.seq, id = state.layer, token = ++gridToken;
   var cached = gridCache[id];
   if (cached && Date.now() - cached.at < GRID_TTL) {
-    grid = cached.g; gridAt = cached.at; gridZoom = map.getZoom();
+    grid = cached.g; gridLayerId = id; gridAt = cached.at; gridZoom = map.getZoom();
     state.busy = false; setLegend('');
     if (overlay && overlay.refresh) overlay.refresh();
     return;
@@ -402,7 +402,7 @@ function loadGrid(force) {
     if (seq !== state.seq || token !== gridToken) return;
     g.s = GRID_BOX.s; g.n = GRID_BOX.n; g.w = GRID_BOX.w; g.e = GRID_BOX.e;
     gridCache[id] = {g:g, at:Date.now()};
-    grid = g; gridAt = Date.now(); gridZoom = map.getZoom();
+    grid = g; gridLayerId = id; gridAt = Date.now(); gridZoom = map.getZoom();
     state.busy = false; setLegend('');
     if (overlay && overlay.refresh) overlay.refresh();
    }).catch(function () {
@@ -410,6 +410,7 @@ function loadGrid(force) {
     var fallback = gridCache[id];
     if (fallback && Date.now() - fallback.at < GRID_TTL * 6) {
       grid = fallback.g;
+      gridLayerId = id;
       gridAt = fallback.at;
       gridZoom = map.getZoom();
       state.busy = false;
@@ -423,6 +424,7 @@ function loadGrid(force) {
 }
 
 function sample(arr, lat, lon) {
+  if (!grid || lat < grid.s || lat > grid.n) return NaN;
   var fx = (lon - grid.w) / (grid.e - grid.w) * (COLS - 1);
   var fy = (lat - grid.s) / (grid.n - grid.s) * (ROWS - 1);
   fx = Math.min(COLS - 1.000001, Math.max(0, fx));
@@ -436,6 +438,108 @@ function sample(arr, lat, lon) {
   }
   return wt > 0.001 ? sum / wt : NaN;
 }
+
+var mapTapSequence = 0;
+var FIELD_READINGS = {
+  temp:{key:'t', unit:'°C', fahrenheit:true},
+  clouds:{key:'c', unit:'%'},
+  wind:{key:'ws', unit:'km/h'},
+  pressure:{key:'p', unit:'hPa'},
+  dew:{key:'dp', unit:'°C', fahrenheit:true},
+  uv:{key:'uv', unit:'UV'},
+  aqi:{key:'aq', unit:'US AQI'},
+  sea:{key:'sl', unit:'m'},
+  drought:{key:'dr', unit:'ratio'}
+};
+
+function displayTemp(value) {
+  return state.f ? value * 9 / 5 + 32 : value;
+}
+
+function displayDelta(value) {
+  return state.f ? value * 9 / 5 : value;
+}
+
+function openPointReading(layer, lat, lon, reading, value, unit, source, secondary, secondaryLabel, secondaryUnit, status) {
+  var data = {layer:layer, lat:lat, lon:lon, readingLabel:reading, value:value, unit:unit, source:source};
+  if (status) data.status = status;
+  if (secondary !== undefined && secondary !== null && isFinite(secondary)) {
+    data.secondary = secondary;
+    data.secondaryLabel = secondaryLabel || '';
+    data.secondaryUnit = secondaryUnit || '';
+  }
+  openDetail('sample', data);
+}
+
+function sampleActiveField(ev) {
+  var id = state.layer, lat = ev.latlng.lat, lon = grid ? lonFor(ev.latlng) : wrapLon(ev.latlng.lng);
+  if (lat < GRID_BOX.s || lat > GRID_BOX.n || gridLayerId !== id || !grid) {
+    openPointReading(id, lat, wrapLon(lon), lbl(id, state.title), null, '', 'Open-Meteo', null, null, null, lbl('noData', 'Details unavailable'));
+    return;
+  }
+  if (id === 'coldfront') {
+    var hours = sample(grid.cp, lat, lon), drop = sample(grid.cn, lat, lon);
+    if (!isFinite(hours) || hours >= FRONT.none || !isFinite(drop) || drop <= 0) {
+      openPointReading(id, lat, wrapLon(lon), lbl('cfDrop', 'Temperature drop in 24 h'), null, '', 'Open-Meteo', null, null, null, lbl('cfNone', 'No cold fronts right now'));
+      return;
+    }
+    var unit = state.f ? '°F' : '°C';
+    openPointReading(id, lat, wrapLon(lon), lbl('cfDrop', 'Temperature drop in 24 h'), displayDelta(drop), unit, 'Open-Meteo', hours, lbl('hoursFromNow', 'Hours from now'), 'h');
+    return;
+  }
+  var meta = FIELD_READINGS[id];
+  if (!meta) return;
+  var value = sample(grid[meta.key], lat, lon);
+  if (!isFinite(value)) {
+    openPointReading(id, lat, wrapLon(lon), lbl(id, state.title), null, '', 'Open-Meteo', null, null, null, lbl('noData', 'Details unavailable'));
+    return;
+  }
+  if (meta.fahrenheit) value = displayTemp(value);
+  openPointReading(id, lat, wrapLon(lon), lbl(id, state.title), value, meta.fahrenheit && state.f ? '°F' : meta.unit, 'Open-Meteo');
+}
+
+function samplePointApi(layer, lat, lon, url, read) {
+  var token = ++mapTapSequence;
+  requestJson(url, null, 30000).then(function (data) {
+    if (token !== mapTapSequence || state.layer !== layer) return;
+    var result = read(data);
+    openPointReading(layer, lat, lon, result.label, result.value, result.unit, result.source, null, null, null, result.status);
+  }).catch(function () {
+    if (token === mapTapSequence && state.layer === layer) {
+      openPointReading(layer, lat, lon, lbl(layer, state.title), null, '', 'Open-Meteo', null, null, null, state.err);
+    }
+  });
+}
+
+function inspectLayerTap(ev) {
+  var id = state.layer, lat = ev.latlng.lat, lon = wrapLon(ev.latlng.lng);
+  if (FIELD_READINGS[id] || id === 'coldfront') {
+    sampleActiveField(ev);
+  } else if (id === 'precip') {
+    var url = OM + '?latitude=' + encodeURIComponent(lat.toFixed(3)) + '&longitude=' + encodeURIComponent(lon.toFixed(3)) + '&current=precipitation&timezone=UTC';
+    samplePointApi(id, lat, lon, url, function (data) {
+      var current = data && data.current ? data.current : {};
+      var value = current.precipitation;
+      return {label:lbl('precip', 'Precipitation'), value:value, unit:'mm', source:lbl('precipSource', 'Model estimate') + ' · Open-Meteo', status:value === null || value === undefined ? state.err : ''};
+    });
+  } else if (id === 'sst') {
+    var url = 'https://marine-api.open-meteo.com/v1/marine?latitude=' + encodeURIComponent(lat.toFixed(3)) + '&longitude=' + encodeURIComponent(lon.toFixed(3)) + '&hourly=sea_surface_temperature&forecast_days=1&timezone=UTC';
+    samplePointApi(id, lat, lon, url, function (data) {
+      var hourly = data && data.hourly ? data.hourly : {}, values = hourly.sea_surface_temperature || [], times = hourly.time || [];
+      var target = Date.now(), best = -1, distance = Infinity;
+      for (var i = 0; i < values.length; i++) {
+        var rawTime = String(times[i] || ''), parsedTime = Date.parse(/[zZ]|[+-]\d\d:?\d\d$/.test(rawTime) ? rawTime : rawTime + 'Z');
+        var d = Math.abs(parsedTime - target);
+        if (isFinite(d) && d < distance && values[i] !== null && values[i] !== undefined) { best = i; distance = d; }
+      }
+      var value = best < 0 ? null : values[best];
+      if (value !== null && state.f) value = displayTemp(value);
+      return {label:lbl('sstValue', 'Sea-surface temperature'), value:value, unit:state.f ? '°F' : '°C', source:lbl('precipSource', 'Model estimate') + ' · Open-Meteo', status:value === null ? state.err : ''};
+    });
+  }
+}
+
+map.on('click', inspectLayerTap);
 
 function colorFor(id, v, ll) {
   if (v === null || v === undefined || isNaN(v)) return [0, 0, 0, 0];
@@ -625,13 +729,6 @@ function paintFront(ctx, m, size) {
     frontHits.push({x:cur.x, y:cur.y});
   });
 }
-
-map.on('click', function (ev) {
-  if (state.layer !== 'coldfront' || !frontHits.length) return;
-  var near = frontHits.some(function (h) { return Math.hypot(ev.containerPoint.x - h.x, ev.containerPoint.y - h.y) <= 18; });
-  if (!near) return;
-  L.popup({closeButton:false}).setLatLng(ev.latlng).setContent('<b>' + esc(lbl('cfNow', 'Cold front is here now')) + '</b>').openOn(map);
-});
 
 function stormRadii(kt) {
   return {outer:110 + 2.2 * kt, inner:kt >= 64 ? 30 + 0.9 * kt : 0};
