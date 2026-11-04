@@ -33,15 +33,17 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Tray
 import androidx.compose.ui.window.Window
-import androidx.compose.ui.window.WindowDraggableArea
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.awt.MouseInfo
+import java.awt.Point
 
 private const val REFRESH_MS = 15 * 60_000L
 private const val UPDATE_CHECK_MS = 6 * 60 * 60_000L
@@ -211,35 +213,48 @@ private fun androidx.compose.ui.window.ApplicationScope.FrameWidget(
         title = "CatsBlock Weather",
         state = state
     ) {
-        WindowDraggableArea {
-            Row(
-                Modifier
-                    .fillMaxSize()
-                    .alpha(alpha)
-                    .clip(RoundedCornerShape(4.dp))
-                    .background(background)
-                    .pointerInput(active) {
-                        detectTapGestures {
-                            touched = System.currentTimeMillis()
-                            if (active) onOpen() else active = true
-                        }
+        Row(
+            Modifier
+                .fillMaxSize()
+                .alpha(alpha)
+                .clip(RoundedCornerShape(4.dp))
+                .background(background)
+                .pointerInput(active) {
+                    detectTapGestures {
+                        touched = System.currentTimeMillis()
+                        if (active) onOpen() else active = true
                     }
-                    .padding(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Image(
-                    painterResource("Icon.jpg"),
-                    contentDescription = null,
-                    modifier = Modifier.size(40.dp).clip(RoundedCornerShape(4.dp))
-                )
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    conditions?.let { formatTemp(it.tempC, settings.fahrenheit) } ?: "--°",
-                    color = ink,
-                    fontSize = 28.sp,
-                    fontWeight = FontWeight.SemiBold
-                )
-            }
+                }
+                .pointerInput(Unit) {
+                    var anchor = Point(0, 0)
+                    var origin = Point(0, 0)
+                    detectDragGestures(
+                        onDragStart = {
+                            anchor = MouseInfo.getPointerInfo().location
+                            origin = window.location
+                        },
+                        onDrag = { change, _ ->
+                            change.consume()
+                            val now = MouseInfo.getPointerInfo().location
+                            window.setLocation(origin.x + now.x - anchor.x, origin.y + now.y - anchor.y)
+                        }
+                    )
+                }
+                .padding(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Image(
+                painterResource("Icon.jpg"),
+                contentDescription = null,
+                modifier = Modifier.size(40.dp).clip(RoundedCornerShape(4.dp))
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                conditions?.let { formatTemp(it.tempC, settings.fahrenheit) } ?: "--°",
+                color = ink,
+                fontSize = 28.sp,
+                fontWeight = FontWeight.SemiBold
+            )
         }
     }
 }
