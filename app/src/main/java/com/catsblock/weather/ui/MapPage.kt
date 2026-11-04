@@ -16,10 +16,11 @@ internal object MapPage {
 body.light{--bg:#eef0f5;--fg:#1b1d24;--chip:rgba(255,255,255,.92);--sub:#5b6070;--edge:rgba(0,0,0,.08)}
 body.dark{--bg:#14161c;--fg:#e9ebf2;--chip:rgba(32,35,44,.92);--sub:#a5abbb;--edge:rgba(255,255,255,.1)}
 html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;background:var(--bg);font-family:sans-serif;-webkit-tap-highlight-color:transparent}
-#map{position:absolute;inset:0;background:var(--bg)}
+#map{position:absolute;inset:0;background:var(--bg);overflow:hidden;contain:layout paint}
+.leaflet-marker-pane,.leaflet-marker-icon{overflow:visible}
 html.round,html.round body{background:transparent}
 html.round #map{border-radius:20px;overflow:hidden;isolation:isolate}
-.fc{position:absolute;left:0;top:0;pointer-events:none;transition:opacity .35s}
+.fc{position:absolute;left:0;top:0;pointer-events:none;transition:opacity .35s;max-width:none;max-height:none}
 .fc.blur{filter:blur(7px)}
 #legend{position:absolute;z-index:1000;left:50%;top:calc(var(--top) + 12px);transform:translate(-50%,-140%);opacity:0;min-width:176px;max-width:84%;padding:10px 16px 12px;border-radius:24px;background:var(--chip);color:var(--fg);box-shadow:0 4px 18px rgba(0,0,0,.22);border:1px solid var(--edge);transition:transform .5s cubic-bezier(.2,0,0,1),opacity .35s;box-sizing:border-box}
 #legend.on{transform:translate(-50%,0);opacity:1}
@@ -45,7 +46,7 @@ html.round #map{border-radius:20px;overflow:hidden;isolation:isolate}
 .cy{position:relative;width:var(--s);height:var(--s)}
 .cy .bd{position:absolute;inset:0;box-sizing:border-box;border-radius:50%;display:flex;align-items:center;justify-content:center;background:var(--c);color:var(--t);font-weight:800;font-size:calc(var(--s) * .36);line-height:1;letter-spacing:-.02em;border:2px solid rgba(255,255,255,.92);box-shadow:0 0 0 3px var(--g),0 3px 10px rgba(0,0,0,.4);transition:background-color .6s}
 .cy:after{content:"";position:absolute;inset:-6px;border-radius:50%;border:1.5px solid var(--c);opacity:0;animation:cp 3s ease-out infinite}
-.cn{position:absolute;left:50%;top:100%;transform:translate(-50%,8px);white-space:nowrap;display:flex;align-items:center;gap:5px;padding:3px 9px 3px 6px;border-radius:12px;background:var(--chip);color:var(--fg);font-size:11px;font-weight:700;box-shadow:0 2px 8px rgba(0,0,0,.28);border:1px solid var(--edge)}
+.cn{position:absolute;left:50%;top:100%;transform:translate(-50%,8px);white-space:nowrap;max-width:60vw;overflow:hidden;text-overflow:ellipsis;pointer-events:none;display:flex;align-items:center;gap:5px;padding:3px 9px 3px 6px;border-radius:12px;background:var(--chip);color:var(--fg);font-size:11px;font-weight:700;box-shadow:0 2px 8px rgba(0,0,0,.28);border:1px solid var(--edge)}
 .cn i{width:8px;height:8px;border-radius:50%;background:var(--c);box-shadow:0 0 6px var(--c)}
 @keyframes cp{0%{transform:scale(.8);opacity:.7}100%{transform:scale(1.6);opacity:0}}
 </style>
@@ -71,7 +72,7 @@ function loadScript(urls, i, ok, bad) {
 }
 window.onerror = function (m) { console.log('MapError ' + m); };
 function start() {
-var map = L.map('map', {zoomControl:false, attributionControl:false, minZoom:INIT.minZoom || 2, maxZoom:12, zoomSnap:0.25, worldCopyJump:true}).setView([0, 0], 4);
+var map = L.map('map', {zoomControl:false, attributionControl:false, minZoom:INIT.minZoom || 2, maxZoom:12, zoomSnap:0.25, worldCopyJump:true, maxBounds:L.latLngBounds([-85.0511, -100000], [85.0511, 100000]), maxBoundsViscosity:1.0, bounceAtZoomLimits:false}).setView([0, 0], 4);
 L.control.attribution({position:'bottomright', prefix:false}).addTo(map)
   .addAttribution('© OpenStreetMap contributors · Open-Meteo · RainViewer · NASA GIBS · NASA FIRMS · NASA EONET · NIFC · Alert-Hub.org · US Drought Monitor · Natural Earth');
 
@@ -228,6 +229,18 @@ function getJson(url) {
   return fetch(url).then(function (r) { if (!r.ok) throw new Error('http'); return r.json(); });
 }
 
+function fitCanvas(cv, m) {
+  var s = m.getSize(), pad = Math.max(32, Math.min(256, Math.round(Math.min(s.x, s.y) * 0.25)));
+  var w = s.x + pad * 2, h = s.y + pad * 2;
+  L.DomUtil.setPosition(cv, m.containerPointToLayerPoint([-pad, -pad]));
+  if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
+  var ctx = cv.getContext('2d');
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  ctx.translate(pad, pad);
+  return {ctx:ctx, pad:pad, x:s.x, y:s.y};
+}
+
 var FieldLayer = L.Layer.extend({
   onAdd: function (m) {
     this._fill = L.DomUtil.create('canvas', 'fc');
@@ -257,11 +270,7 @@ var FieldLayer = L.Layer.extend({
   _paint: function () {
     var m = this._map;
     if (!m) return;
-    var size = m.getSize(), cv = this._fill;
-    L.DomUtil.setPosition(cv, m.containerPointToLayerPoint([0, 0]));
-    if (cv.width !== size.x || cv.height !== size.y) { cv.width = size.x; cv.height = size.y; }
-    var ctx = cv.getContext('2d');
-    ctx.clearRect(0, 0, size.x, size.y);
+    var cv = this._fill, fit = fitCanvas(cv, m), ctx = fit.ctx, pad = fit.pad, size = {x:fit.x, y:fit.y, pad:pad};
     var id = state.layer;
     if (!grid || !isGrid(id)) return;
     var needsLand = id === 'sea' || id === 'drought';
@@ -269,13 +278,13 @@ var FieldLayer = L.Layer.extend({
     var arr = grid[GRID_KEY[id]];
     if (!arr) return;
     if (id === 'coldfront') { paintFront(ctx, m, size); cv.style.opacity = 1; return; }
-    var step = id === 'drought' ? 4 : 5, sw = Math.ceil(size.x / step), sh = Math.ceil(size.y / step);
+    var step = id === 'drought' ? 4 : 5, sw = Math.ceil((size.x + pad * 2) / step), sh = Math.ceil((size.y + pad * 2) / step);
     if (!this._small) this._small = document.createElement('canvas');
     this._small.width = sw; this._small.height = sh;
     var sctx = this._small.getContext('2d'), img = sctx.createImageData(sw, sh);
     for (var y = 0; y < sh; y++) {
       for (var x = 0; x < sw; x++) {
-        var ll = m.containerPointToLatLng([x * step + step / 2, y * step + step / 2]);
+        var ll = m.containerPointToLatLng([x * step + step / 2 - pad, y * step + step / 2 - pad]);
         var col = colorFor(id, sample(arr, ll.lat, lonFor(ll)), ll), o = (y * sw + x) * 4;
         img.data[o] = col[0]; img.data[o + 1] = col[1]; img.data[o + 2] = col[2]; img.data[o + 3] = col[3];
       }
@@ -283,9 +292,9 @@ var FieldLayer = L.Layer.extend({
     sctx.putImageData(img, 0, 0);
     ctx.imageSmoothingEnabled = id !== 'drought';
     ctx.imageSmoothingQuality = 'high';
-    ctx.drawImage(this._small, 0, 0, sw * step, sh * step);
-    if (id === 'sea') maskLand(ctx, false);
-    else if (id === 'drought') maskLand(ctx, true);
+    ctx.drawImage(this._small, -pad, -pad, sw * step, sh * step);
+    if (id === 'sea') maskLand(ctx, false, size);
+    else if (id === 'drought') maskLand(ctx, true, size);
     cv.style.opacity = 1;
   }
 });
@@ -319,12 +328,8 @@ var ZoneLayer = L.Layer.extend({
       self._raf = 0;
       var m = self._map;
       if (!m) return;
-      var size = m.getSize(), cv = self._cv;
-      L.DomUtil.setPosition(cv, m.containerPointToLayerPoint([0, 0]));
-      if (cv.width !== size.x || cv.height !== size.y) { cv.width = size.x; cv.height = size.y; }
-      var ctx = cv.getContext('2d');
-      ctx.clearRect(0, 0, size.x, size.y);
-      self._paintFn(ctx, m, size);
+      var cv = self._cv, fit = fitCanvas(cv, m);
+      self._paintFn(fit.ctx, m, {x:fit.x, y:fit.y, pad:fit.pad});
       cv.style.opacity = 1;
     });
   }
@@ -503,9 +508,14 @@ function lonFor(latlng) {
 
 window.MapApi = {setTheme:setTheme, setLayer:setLayer, setCity:setCity, setInsets:setInsets, locate:locate};
 
-if (window.ResizeObserver) new ResizeObserver(function () { map.invalidateSize(); }).observe(document.getElementById('map'));
-window.addEventListener('resize', function () { map.invalidateSize(); });
-[0, 200, 800, 2000].forEach(function (d) { setTimeout(function () { map.invalidateSize(); }, d); });
+var sizeRaf = 0;
+function syncSize() {
+  if (sizeRaf) return;
+  sizeRaf = requestAnimationFrame(function () { sizeRaf = 0; map.invalidateSize({animate:false}); });
+}
+if (window.ResizeObserver) new ResizeObserver(syncSize).observe(document.getElementById('map'));
+else window.addEventListener('resize', syncSize);
+[0, 400].forEach(function (d) { setTimeout(syncSize, d); });
 
 state.err = INIT.err;
 state.labels = INIT.labels || {};
