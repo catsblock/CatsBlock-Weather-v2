@@ -37,7 +37,6 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import org.json.JSONObject
 import java.io.File
 
 object AppUpdates {
@@ -50,7 +49,6 @@ object AppUpdates {
     const val KEY_SIZE = "size"
     const val KEY_URL = "url"
 
-    private const val REPO = "catsblock/CatsBlock-Weather-v2"
     private const val CHANNEL = "app_updates"
     private const val FILE = "app_updates_state"
     private const val KEY_NOTIFIED = "notified_build"
@@ -78,30 +76,7 @@ object AppUpdates {
     fun apkFile(context: Context, build: Int): File = File(updatesDir(context), "update-$build.apk")
 
     suspend fun latest(context: Context): UpdateInfo? = withContext(Dispatchers.IO) {
-        val request = Request.Builder()
-            .url("https://api.github.com/repos/$REPO/releases/latest")
-            .header("Accept", "application/vnd.github+json")
-            .build()
-        client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) return@withContext null
-            val json = JSONObject(response.body?.string().orEmpty())
-            val build = Regex("\\d+").find(json.getString("tag_name"))?.value?.toIntOrNull()
-                ?: return@withContext null
-            if (build <= installedBuild(context)) return@withContext null
-            val assets = json.getJSONArray("assets")
-            for (i in 0 until assets.length()) {
-                val asset = assets.getJSONObject(i)
-                if (asset.getString("name").endsWith(".apk")) {
-                    return@withContext UpdateInfo(
-                        build,
-                        json.optString("name").trim().ifEmpty { "Build $build" },
-                        asset.getLong("size"),
-                        asset.getString("browser_download_url")
-                    )
-                }
-            }
-            null
-        }
+        AndroidReleases.latest(client, installedBuild(context))
     }
 
     @SuppressLint("MissingPermission")
