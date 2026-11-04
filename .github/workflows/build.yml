@@ -1,4 +1,4 @@
-name: Build APK
+name: Build APK and EXE
 
 on:
   workflow_dispatch:
@@ -147,3 +147,100 @@ jobs:
           name: ${{ env.RELEASE_NAME }}
           make_latest: true
           files: ${{ env.APK_PATH }}
+
+  windows:
+    needs: build
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.11.1
+
+      - name: Read release configuration
+        shell: pwsh
+        run: |
+          if (-not (Test-Path app-config.json)) {
+            Write-Output "::error::app-config.json was not found in the repository root."
+            exit 1
+          }
+          $cfg = Get-Content app-config.json -Raw | ConvertFrom-Json
+          if ($cfg.testonly -isnot [bool]) {
+            Write-Output "::error::app-config.json must contain a boolean testonly value."
+            exit 1
+          }
+          "TESTONLY=$($cfg.testonly.ToString().ToLower())" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Prepare Windows icon
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          Add-Type -AssemblyName System.Drawing
+          $src = [System.Drawing.Image]::FromFile((Resolve-Path "assets/appicon/Icon.jpg"))
+          $bmp = New-Object System.Drawing.Bitmap 256, 256
+          $g = [System.Drawing.Graphics]::FromImage($bmp)
+          $g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+          $g.DrawImage($src, 0, 0, 256, 256)
+          $png = New-Object System.IO.MemoryStream
+          $bmp.Save($png, [System.Drawing.Imaging.ImageFormat]::Png)
+          $data = $png.ToArray()
+          $out = New-Object System.IO.MemoryStream
+          $w = New-Object System.IO.BinaryWriter $out
+          $w.Write([UInt16]0); $w.Write([UInt16]1); $w.Write([UInt16]1)
+          $w.Write([byte]0); $w.Write([byte]0); $w.Write([byte]0); $w.Write([byte]0)
+          $w.Write([UInt16]1); $w.Write([UInt16]32)
+          $w.Write([UInt32]$data.Length); $w.Write([UInt32]22)
+          $w.Write($data)
+          $w.Flush()
+          [System.IO.File]::WriteAllBytes((Join-Path (Get-Location) "desktop/icon.ico"), $out.ToArray())
+
+      - name: Ensure WiX Toolset
+        shell: pwsh
+        run: |
+          $wix = Get-ChildItem "C:\Program Files (x86)" -Filter "WiX Toolset*" -Directory -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $wix) {
+            choco install wixtoolset -y --no-progress
+            $wix = Get-ChildItem "C:\Program Files (x86)" -Filter "WiX Toolset*" -Directory -ErrorAction SilentlyContinue | Select-Object -First 1
+          }
+          if (-not $wix) {
+            Write-Output "::error::WiX Toolset could not be found or installed."
+            exit 1
+          }
+          Join-Path $wix.FullName "bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Build Windows installer
+        shell: pwsh
+        run: gradle :desktop:packageExe --no-daemon --stacktrace "-PbuildNumber=${{ github.run_number }}"
+
+      - name: Locate EXE
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem desktop/build/compose/binaries -Recurse -Filter *.exe | Select-Object -First 1
+          if (-not $exe) {
+            Write-Output "::error::No EXE was produced."
+            exit 1
+          }
+          ("EXE_PATH=" + ($exe.FullName -replace '\\', '/')) | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: com.catsblock.weather.windows
+          path: ${{ env.EXE_PATH }}
+
+      - name: Attach EXE to release
+        if: env.TESTONLY == 'false'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          files: ${{ env.EXE_PATH }}
