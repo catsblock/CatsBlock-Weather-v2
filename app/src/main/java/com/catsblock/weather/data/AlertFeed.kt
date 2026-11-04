@@ -18,17 +18,15 @@ object AlertFeed {
 
     private const val PAGE_SIZE = 1000
     private const val MAX_PAGES = 4
-    private const val RANGE_KEY = "range"
 
     private val cache = TimedCache<ByteArray>(10 * 60_000L)
 
     private val stamp = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(ZoneOffset.UTC)
 
-    fun json(at: Long? = null): ByteArray? {
-        val moment = at?.let { it * 1000L } ?: System.currentTimeMillis()
-        val key = if (at == null) "live" else "at:" + moment / 3_600_000L
+    fun json(): ByteArray? {
+        val key = "live"
         cache.get(key)?.let { return it }
-        val time = stamp.format(Instant.ofEpochMilli(moment))
+        val time = stamp.format(Instant.now())
         val where = "status = 'Actual' AND msgType <> 'Cancel' AND sent <= timestamp '$time' AND " +
             "(expires IS NULL OR expires >= timestamp '$time')"
         val features = JSONArray()
@@ -58,26 +56,6 @@ object AlertFeed {
         }
         val body = JSONObject().put("type", "FeatureCollection").put("features", features)
         return cache.put(key, body.toString().toByteArray(Charsets.UTF_8))
-    }
-
-    fun range(): ByteArray? {
-        cache.get(RANGE_KEY)?.let { return it }
-        val url = ENDPOINT.toHttpUrl().newBuilder()
-            .addQueryParameter("f", "json")
-            .addQueryParameter("where", "status = 'Actual'")
-            .addQueryParameter(
-                "outStatistics",
-                "[{\"statisticType\":\"min\",\"onStatisticField\":\"sent\",\"outStatisticFieldName\":\"oldest\"}]"
-            )
-            .build()
-        val attributes = GeoHttp.json(url.toString())
-            ?.optJSONArray("features")
-            ?.optJSONObject(0)
-            ?.optJSONObject("attributes")
-        val oldest = attributes?.optLong("oldest", 0L) ?: 0L
-        if (oldest <= 0L) return cache.peek(RANGE_KEY)
-        val body = JSONObject().put("min", oldest / 1000L)
-        return cache.put(RANGE_KEY, body.toString().toByteArray(Charsets.UTF_8))
     }
 
     private fun millis(source: JSONObject, key: String): Long? {
