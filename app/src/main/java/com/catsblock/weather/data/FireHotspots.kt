@@ -14,7 +14,6 @@ object FireHotspots {
     private const val CELL = 0.25
     private const val TTL = 3 * 3600_000L
     private const val LIVE = Long.MIN_VALUE
-    private const val WEEK = "https://firms.modaps.eosdis.nasa.gov/data/active_fire/modis-c6.1/csv/MODIS_C6_1_Global_7d.csv"
 
     private val sources = listOf(
         "https://firms.modaps.eosdis.nasa.gov/data/active_fire/modis-c6.1/csv/MODIS_C6_1_Global_24h.csv",
@@ -36,21 +35,7 @@ object FireHotspots {
     fun fetchedAt(): Long = cachedAt
 
     @Synchronized
-    fun json(context: Context, day: Long? = null): ByteArray? =
-        if (day == null) live(context) else historic(context, day)
-
-    private fun historic(context: Context, day: Long): ByteArray? {
-        val now = System.currentTimeMillis()
-        val file = File(context.cacheDir, "fire_day_$day.json")
-        if (file.exists() && now - file.lastModified() < TTL) {
-            val stored = runCatching { file.readBytes() }.getOrNull()
-            if (stored != null && stored.isNotEmpty()) return stored
-        }
-        val days = runCatching { download(WEEK, true) }.getOrNull()
-        if (days == null) return if (file.exists()) runCatching { file.readBytes() }.getOrNull() else null
-        days.forEach { (key, data) -> runCatching { File(context.cacheDir, "fire_day_$key.json").writeBytes(data) } }
-        return days[day]
-    }
+    fun json(context: Context): ByteArray? = live(context)
 
     private fun live(context: Context): ByteArray? {
         val now = System.currentTimeMillis()
@@ -65,7 +50,7 @@ object FireHotspots {
             }
         }
         for (source in sources) {
-            val data = runCatching { download(source, false) }.getOrNull()?.get(LIVE)
+            val data = runCatching { download(source) }.getOrNull()?.get(LIVE)
             if (data != null) {
                 cached = data
                 cachedAt = now
@@ -106,7 +91,7 @@ object FireHotspots {
         return (day * 1440 + (hhmm / 100) * 60 + hhmm % 100).toDouble()
     }
 
-    private fun download(url: String, split: Boolean): Map<Long, ByteArray>? {
+    private fun download(url: String): Map<Long, ByteArray>? {
         client.newCall(Request.Builder().url(url).build()).execute().use { response ->
             if (!response.isSuccessful) return null
             val reader = response.body?.byteStream()?.bufferedReader() ?: return null
@@ -129,9 +114,8 @@ object FireHotspots {
                 if (p.size > need) {
                     val lat = p[iLat].toDoubleOrNull()
                     val lon = p[iLon].toDoubleOrNull()
-                    val bucket = if (split) dayOf(p.getOrNull(iDate), days) else LIVE
-                    if (lat != null && lon != null && bucket != -1L && keep(p.getOrNull(iConf))) {
-                        val cells = buckets.getOrPut(bucket) { HashMap() }
+                    if (lat != null && lon != null && keep(p.getOrNull(iConf))) {
+                        val cells = buckets.getOrPut(LIVE) { HashMap() }
                         val la = floor(lat / CELL).toInt()
                         val lo = floor(lon / CELL).toInt()
                         val key = (la.toLong() shl 32) xor (lo.toLong() and 0xffffffffL)
