@@ -639,7 +639,6 @@ private val shellStrings: Map<String, Array<out String>> = mapOf(
     row("Precipitation", "Precipitação", "Precipitação", "Precipitación", "Précipitations", "Осадки", "Niederschlag", "Precipitazioni", "강수", "Curah hujan"),
     row("Temperature", "Temperatura", "Temperatura", "Temperatura", "Température", "Температура", "Temperatur", "Temperatura", "기온", "Suhu"),
     row("Cloudiness", "Nebulosidade", "Nebulosidade", "Nubosidad", "Nébulosité", "Облачность", "Bewölkung", "Nuvolosità", "구름량", "Tutupan awan"),
-    row("Satellite clouds", "Nuvens por satélite", "Nuvens por satélite", "Nubes por satélite", "Nuages par satellite", "Спутниковые облака", "Satellitenwolken", "Nuvole satellitari", "위성 구름", "Awan satelit"),
     row("Wind speed", "Velocidade do vento", "Velocidade do vento", "Velocidad del viento", "Vitesse du vent", "Скорость ветра", "Windgeschwindigkeit", "Velocità del vento", "풍속", "Kecepatan angin"),
     row("Pressure", "Pressão", "Pressão", "Presión", "Pression", "Давление", "Luftdruck", "Pressione", "기압", "Tekanan"),
     row("Hurricanes & cyclones", "Furacões e ciclones", "Furacões e ciclones", "Huracanes y ciclones", "Ouragans et cyclones", "Ураганы и циклоны", "Hurrikane und Zyklone", "Uragani e cicloni", "허리케인 및 사이클론", "Badai dan siklon"),
