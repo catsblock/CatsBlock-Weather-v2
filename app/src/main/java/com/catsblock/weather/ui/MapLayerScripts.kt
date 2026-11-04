@@ -15,7 +15,7 @@ var LAND_URLS = [
 ];
 var FRONT = {drop:4, none:999, step:3, window:2};
 var frontHits = [], zoneCanvas = null;
-var gridCache = null, gridToken = 0, gridCtl = null, gridSignal = null;
+var gridCache = {}, GRID_TTL = 1800000, GRID_BOX = {s:-75, n:75, w:-180, e:180}, gridToken = 0, gridCtl = null, gridSignal = null;
 
 map.createPane('zonepane').style.zIndex = 400;
 
@@ -235,24 +235,29 @@ function fetchFront(p) {
 function loadGrid(force) {
   if (!isGrid(state.layer) || !state.canvas) return;
   var seq = state.seq, id = state.layer, token = ++gridToken;
+  var cached = gridCache[id];
+  if (cached && Date.now() - cached.at < GRID_TTL) {
+    grid = cached.g; gridAt = cached.at; gridZoom = map.getZoom();
+    state.busy = false; setLegend('');
+    if (overlay && overlay.refresh) overlay.refresh();
+    return;
+  }
   if (gridCtl) gridCtl.abort();
   gridCtl = window.AbortController ? new AbortController() : null;
   gridSignal = gridCtl ? gridCtl.signal : null;
-  var b = map.getBounds().pad(0.25);
-  var s = Math.max(-80, b.getSouth()), n = Math.min(80, b.getNorth()), w = b.getWest(), e = b.getEast();
-  if (e - w > 340) { w = -170; e = 170; }
   var p = {lats:[], lons:[]};
   for (var r = 0; r < ROWS; r++) {
     for (var c = 0; c < COLS; c++) {
-      p.lats.push((s + (n - s) * r / (ROWS - 1)).toFixed(3));
-      p.lons.push(wrapLon(w + (e - w) * c / (COLS - 1)).toFixed(3));
+      p.lats.push((GRID_BOX.s + (GRID_BOX.n - GRID_BOX.s) * r / (ROWS - 1)).toFixed(3));
+      p.lons.push(wrapLon(GRID_BOX.w + (GRID_BOX.e - GRID_BOX.w) * c / (COLS - 1)).toFixed(3));
     }
   }
   state.busy = true; setLegend('');
   var job = id === 'aqi' ? fetchAir(p) : (id === 'sea' ? fetchSea(p) : (id === 'drought' ? fetchDrought(p) : (id === 'coldfront' ? fetchFront(p) : fetchWeather(p, id))));
   job.then(function (g) {
     if (seq !== state.seq || token !== gridToken) return;
-    g.s = s; g.n = n; g.w = w; g.e = e;
+    g.s = GRID_BOX.s; g.n = GRID_BOX.n; g.w = GRID_BOX.w; g.e = GRID_BOX.e;
+    gridCache[id] = {g:g, at:Date.now()};
     grid = g; gridAt = Date.now(); gridZoom = map.getZoom();
     state.busy = false; setLegend('');
     if (overlay && overlay.refresh) overlay.refresh();
@@ -336,61 +341,58 @@ function loadAlerts(seq) {
 
 function fmtDelta(c) { return state.f ? Math.round(c * 9 / 5) + '°F' : Math.round(c) + '°C'; }
 
-function frontComponent(cells) {
-  var inSet = {}, seen = {}, best = [];
-  cells.forEach(function (c) { inSet[c.r + ':' + c.c] = c; });
+function frontGroups(cells) {
+  var index = {}, seen = {}, groups = [];
+  cells.forEach(function (c) { index[c.r + ':' + c.c] = c; });
   cells.forEach(function (c) {
     var key = c.r + ':' + c.c;
     if (seen[key]) return;
-    var stack = [c], comp = [];
     seen[key] = true;
+    var stack = [c], comp = [];
     while (stack.length) {
       var cur = stack.pop();
       comp.push(cur);
       for (var dr = -1; dr <= 1; dr++) {
         for (var dc = -1; dc <= 1; dc++) {
-          var k = (cur.r + dr) + ':' + (cur.c + dc);
-          if (inSet[k] && !seen[k]) { seen[k] = true; stack.push(inSet[k]); }
+          var k = (cur.r + dr) + ':' + (cur.c + dc), nb = index[k];
+          if (nb && !seen[k] && Math.abs(nb.t - cur.t) <= 18) { seen[k] = true; stack.push(nb); }
         }
       }
     }
-    if (comp.length > best.length) best = comp;
+    groups.push(comp);
   });
-  return best;
+  return groups;
 }
 
 function frontTrack() {
   if (!grid || !grid.cp) return [];
-  if (grid.track) return grid.track;
-  var cells = [], lo = Infinity, hi = -Infinity;
+  if (grid.tracks) return grid.tracks;
+  var cells = [];
   for (var r = 0; r < ROWS; r++) {
     for (var c = 0; c < COLS; c++) {
       var v = grid.cp[r * COLS + c];
       if (v === null || v === undefined || v >= FRONT.none) continue;
-      cells.push({r:r, c:c, t:v});
-      if (v < lo) lo = v;
-      if (v > hi) hi = v;
+      cells.push({r:r, c:c, t:v, lat:grid.s + (grid.n - grid.s) * r / (ROWS - 1), lon:grid.w + (grid.e - grid.w) * c / (COLS - 1)});
     }
   }
-  var pts = [];
-  for (var t = lo; t <= hi + 0.01; t += FRONT.step) {
-    var near = cells.filter(function (k) { return Math.abs(k.t - t) <= FRONT.window; });
-    var comp = frontComponent(near);
-    if (comp.length < 2) continue;
-    var sr = 0, sc = 0;
-    comp.forEach(function (k) { sr += k.r; sc += k.c; });
-    sr /= comp.length; sc /= comp.length;
-    pts.push({
-      t:t,
-      lat:grid.s + (grid.n - grid.s) * sr / (ROWS - 1),
-      lon:grid.w + (grid.e - grid.w) * sc / (COLS - 1)
-    });
-  }
-  grid.track = pts.length >= 2 ? pts : [];
-  return grid.track;
+  var tracks = frontGroups(cells).filter(function (g) { return g.length >= 6; })
+    .sort(function (a, b) { return b.length - a.length; }).slice(0, 4)
+    .map(function (g) {
+      g.sort(function (a, b) { return a.t - b.t; });
+      var bins = Math.max(3, Math.min(8, Math.floor(g.length / 3))), pts = [];
+      for (var i = 0; i < bins; i++) {
+        var part = g.slice(Math.floor(i * g.length / bins), Math.floor((i + 1) * g.length / bins)), lat = 0, lon = 0, t = 0;
+        if (!part.length) continue;
+        part.forEach(function (k) { lat += k.lat; lon += k.lon; t += k.t; });
+        pts.push({t:t / part.length, lat:lat / part.length, lon:lon / part.length});
+      }
+      return pts;
+    }).filter(function (pts) { return pts.length >= 3; });
+  grid.tracks = tracks;
+  return tracks;
 }
 
-function frontAny() { return frontTrack().length >= 2; }
+function frontAny() { return frontTrack().length > 0; }
 
 function smoothPath(pts) {
   var out = pts;
@@ -422,52 +424,55 @@ function strokePath(ctx, pts, color, halo, width) {
 
 function paintFront(ctx, m, size) {
   frontHits = [];
-  var track = frontTrack();
-  if (track.length < 2) return;
-  var screen = track.map(function (k) {
-    var pt = m.latLngToContainerPoint([k.lat, k.lon]);
-    return {t:k.t, x:pt.x, y:pt.y};
-  });
-  var blue = [], gray = [], cur = null, i;
-  if (screen[0].t >= 0) {
-    cur = screen[0];
-    gray = screen.map(function (k) { return [k.x, k.y]; });
-  } else if (screen[screen.length - 1].t <= 0) {
-    cur = screen[screen.length - 1];
-    blue = screen.map(function (k) { return [k.x, k.y]; });
-  } else {
-    for (i = 0; i < screen.length - 1; i++) {
-      var a = screen[i], b = screen[i + 1];
-      if (a.t <= 0 && b.t > 0) {
-        var f = (0 - a.t) / (b.t - a.t);
-        cur = {x:a.x + (b.x - a.x) * f, y:a.y + (b.y - a.y) * f};
-        blue = screen.slice(0, i + 1).map(function (k) { return [k.x, k.y]; });
-        blue.push([cur.x, cur.y]);
-        gray = [[cur.x, cur.y]].concat(screen.slice(i + 1).map(function (k) { return [k.x, k.y]; }));
-        break;
-      }
-    }
-  }
+  var tracks = frontTrack();
+  if (!tracks.length) return;
+  var centerLng = m.getCenter().lng;
   var halo = state.dark ? 'rgba(0,0,0,.38)' : 'rgba(255,255,255,.7)';
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
-  strokePath(ctx, smoothPath(gray), state.dark ? '#d0d0d0' : '#757575', halo, 3);
-  strokePath(ctx, smoothPath(blue), '#1e88e5', halo, 3);
-  if (!cur) return;
-  ctx.beginPath();
-  ctx.arc(cur.x, cur.y, 7, 0, Math.PI * 2);
-  ctx.fillStyle = '#1e88e5';
-  ctx.fill();
-  ctx.lineWidth = 2.4;
-  ctx.strokeStyle = '#ffffff';
-  ctx.stroke();
-  frontHits = [{x:cur.x, y:cur.y}];
+  tracks.forEach(function (track) {
+    var screen = track.map(function (k) {
+      var lon = k.lon + 360 * Math.round((centerLng - k.lon) / 360), pt = m.latLngToContainerPoint([k.lat, lon]);
+      return {t:k.t, x:pt.x, y:pt.y};
+    });
+    var blue = [], gray = [], cur = null, i;
+    if (screen[0].t >= 0) {
+      cur = screen[0];
+      gray = screen.map(function (k) { return [k.x, k.y]; });
+    } else if (screen[screen.length - 1].t <= 0) {
+      cur = screen[screen.length - 1];
+      blue = screen.map(function (k) { return [k.x, k.y]; });
+    } else {
+      for (i = 0; i < screen.length - 1; i++) {
+        var a = screen[i], b = screen[i + 1];
+        if (a.t <= 0 && b.t > 0) {
+          var f = (0 - a.t) / (b.t - a.t);
+          cur = {x:a.x + (b.x - a.x) * f, y:a.y + (b.y - a.y) * f};
+          blue = screen.slice(0, i + 1).map(function (k) { return [k.x, k.y]; });
+          blue.push([cur.x, cur.y]);
+          gray = [[cur.x, cur.y]].concat(screen.slice(i + 1).map(function (k) { return [k.x, k.y]; }));
+          break;
+        }
+      }
+    }
+    strokePath(ctx, smoothPath(gray), state.dark ? '#d0d0d0' : '#757575', halo, 3);
+    strokePath(ctx, smoothPath(blue), '#1e88e5', halo, 3);
+    if (!cur) return;
+    ctx.beginPath();
+    ctx.arc(cur.x, cur.y, 7, 0, Math.PI * 2);
+    ctx.fillStyle = '#1e88e5';
+    ctx.fill();
+    ctx.lineWidth = 2.4;
+    ctx.strokeStyle = '#ffffff';
+    ctx.stroke();
+    frontHits.push({x:cur.x, y:cur.y});
+  });
 }
 
 map.on('click', function (ev) {
   if (state.layer !== 'coldfront' || !frontHits.length) return;
-  var hit = frontHits[0];
-  if (Math.hypot(ev.containerPoint.x - hit.x, ev.containerPoint.y - hit.y) > 18) return;
+  var near = frontHits.some(function (h) { return Math.hypot(ev.containerPoint.x - h.x, ev.containerPoint.y - h.y) <= 18; });
+  if (!near) return;
   L.popup({closeButton:false}).setLatLng(ev.latlng).setContent('<b>' + esc(lbl('cfNow', 'Cold front is here now')) + '</b>').openOn(map);
 });
 
