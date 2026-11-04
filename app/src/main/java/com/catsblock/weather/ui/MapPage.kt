@@ -48,6 +48,13 @@ html.round #map{border-radius:20px;overflow:hidden;isolation:isolate}
 .cn{position:absolute;left:50%;top:100%;transform:translate(-50%,8px);white-space:nowrap;display:flex;align-items:center;gap:5px;padding:3px 9px 3px 6px;border-radius:12px;background:var(--chip);color:var(--fg);font-size:11px;font-weight:700;box-shadow:0 2px 8px rgba(0,0,0,.28);border:1px solid var(--edge)}
 .cn i{width:8px;height:8px;border-radius:50%;background:var(--c);box-shadow:0 0 6px var(--c)}
 @keyframes cp{0%{transform:scale(.8);opacity:.7}100%{transform:scale(1.6);opacity:0}}
+.cfw{background:none;border:0}
+.cfm{width:0;height:0;border-top:6px solid transparent;border-bottom:6px solid transparent;border-left:11px solid #1e88e5;filter:drop-shadow(0 0 1px rgba(255,255,255,.9))}
+.cfh{width:14px;height:14px;border-radius:50%;background:#1e88e5;border:2px solid #fff;box-shadow:0 0 0 4px rgba(30,136,229,.3);animation:cfp 1.6s ease-out infinite}
+@keyframes cfp{0%{box-shadow:0 0 0 0 rgba(30,136,229,.55)}100%{box-shadow:0 0 0 12px rgba(30,136,229,0)}}
+.cfo{transform:translate(-50%,-150%);white-space:nowrap;padding:3px 9px;border-radius:4px;background:var(--chip);color:var(--fg);font-size:11px;font-weight:700;border:1px solid var(--edge);box-shadow:0 2px 8px rgba(0,0,0,.28)}
+path.cfflow{animation:cfd 1.1s linear infinite}
+@keyframes cfd{to{stroke-dashoffset:-18}}
 </style>
 </head>
 <body class="light">
@@ -73,7 +80,7 @@ window.onerror = function (m) { console.log('MapError ' + m); };
 function start() {
 var map = L.map('map', {zoomControl:false, attributionControl:false, minZoom:INIT.minZoom || 2, maxZoom:12, zoomSnap:0.25, worldCopyJump:true}).setView([0, 0], 4);
 L.control.attribution({position:'bottomright', prefix:false}).addTo(map)
-  .addAttribution('© OpenStreetMap contributors · Open-Meteo · RainViewer · NASA GIBS · NASA FIRMS · NASA EONET');
+  .addAttribution('© OpenStreetMap contributors · Open-Meteo · RainViewer · NASA GIBS · NASA FIRMS · NASA EONET · NIFC · NWS · INMET · US Drought Monitor · Natural Earth');
 
 var state = {canvas:false, dark:false, layer:'none', title:'', err:'', f:false, lat:0, lon:0, seq:0, busy:false, labels:{}};
 var base = null, overlay = null, pin = null, grid = null, gridAt = 0, gridZoom = 0, timer = null, off = null;
@@ -85,7 +92,11 @@ var EONET = 'https://eonet.gsfc.nasa.gov/api/v3/events?status=open&limit=500&cat
 var RAMPS = {
   temp: [[-30,[122,48,176]],[-15,[48,86,226]],[0,[34,196,226]],[10,[72,198,104]],[20,[250,222,52]],[30,[250,140,28]],[40,[226,52,40]],[50,[150,24,60]]],
   wind: [[0,[42,111,219]],[15,[38,198,218]],[30,[102,187,106]],[50,[253,216,53]],[75,[251,140,0]],[100,[211,47,47]],[140,[142,36,170]]],
-  pressure: [[980,[123,50,148]],[995,[59,111,212]],[1005,[79,195,247]],[1013,[224,224,224]],[1022,[255,183,77]],[1030,[244,81,30]],[1045,[183,28,28]]]
+  pressure: [[980,[123,50,148]],[995,[59,111,212]],[1005,[79,195,247]],[1013,[224,224,224]],[1022,[255,183,77]],[1030,[244,81,30]],[1045,[183,28,28]]],
+  dew: [[-20,[110,60,170]],[-5,[60,100,210]],[5,[60,190,210]],[12,[90,200,110]],[18,[240,220,70]],[22,[250,150,40]],[26,[230,60,50]],[30,[150,20,60]]],
+  uv: [[0,[67,160,71]],[3,[250,220,52]],[6,[251,140,0]],[8,[229,57,53]],[11,[142,36,170]],[14,[90,20,130]]],
+  aqi: [[0,[0,228,0]],[50,[200,220,0]],[100,[255,126,0]],[150,[255,0,0]],[200,[153,0,76]],[300,[126,0,35]]],
+  sea: [[-2,[33,102,172]],[-1,[103,169,207]],[0,[247,247,247]],[1,[253,174,97]],[2,[215,48,39]]]
 };
 
 var CATS = [
@@ -129,7 +140,7 @@ function esc(s) {
 
 function lbl(k, d) { return state.labels && state.labels[k] ? state.labels[k] : d; }
 
-function isGrid(id) { return id === 'temp' || id === 'clouds' || id === 'wind' || id === 'pressure'; }
+function isGrid(id) { return !!GRID_KEY[id]; }
 
 function fmtTemp(c) { return state.f ? Math.round(c * 9 / 5 + 32) + '°' : Math.round(c) + '°'; }
 
@@ -145,6 +156,14 @@ function setLegend(extra) {
   else if (id === 'sst') { grad = 'linear-gradient(90deg,#2b6cb0,#e6eef7,#e53e3e)'; lo = '-3°'; hi = '+3°'; }
   else if (id === 'fires') { grad = 'linear-gradient(90deg,#ffb300,#ff5722,#d50000)'; lo = '·'; hi = '···'; }
   else if (id === 'cyclones') { grad = gradCss(CAT_STOPS); lo = 'TD'; hi = 'C5'; }
+  else if (id === 'dew') { grad = gradCss(RAMPS.dew); lo = fmtTemp(-20); hi = fmtTemp(30); }
+  else if (id === 'uv') { grad = gradCss(RAMPS.uv); lo = '0'; hi = '11+'; }
+  else if (id === 'aqi') { grad = gradCss(RAMPS.aqi); lo = '0'; hi = '300+ AQI'; }
+  else if (id === 'sea') { grad = gradCss(RAMPS.sea); lo = '-2 m'; hi = '+2 m'; }
+  else if (id === 'alerts') { grad = hard([LEVEL_COLORS.warning, LEVEL_COLORS.alert, LEVEL_COLORS.danger]); lo = lbl('lvWarn', 'Warning'); hi = lbl('lvDanger', 'Danger'); }
+  else if (id === 'drought') { grad = hard(DRY.map(rgb)); lo = lbl('d0', 'Slightly dry'); hi = lbl('d4', 'Extreme dry'); }
+  else if (id === 'blackout') { grad = hard([BLACKOUT_COLORS.minor, BLACKOUT_COLORS.moderate, BLACKOUT_COLORS.severe]); lo = lbl('boMinor', 'Minor outage'); hi = lbl('boSevere', 'Severe outage'); }
+  else if (id === 'coldfront') { grad = 'linear-gradient(90deg,#e3f2fd,#1e88e5,#0d47a1)'; lo = '0%'; hi = '100%'; }
   var html = '<div class="t">' + esc(state.title) + '</div>';
   if (extra) html += '<div class="m">' + esc(extra) + '</div>';
   legend.innerHTML = html;
@@ -193,8 +212,10 @@ function setInsets(top, bottom) {
 
 function setCity(lat, lon, fly) {
   state.lat = lat; state.lon = lon;
-  if (!pin) pin = L.marker([lat, lon], {icon:L.divIcon({className:'', html:'<div class="pin"></div>', iconSize:[22, 22], iconAnchor:[11, 11]}), interactive:false, keyboard:false}).addTo(map);
+  if (!pin) pin = L.marker([lat, lon], {icon:L.divIcon({className:'', html:'<div class="pin"></div>', iconSize:[22, 22], iconAnchor:[11, 11]}), interactive:true, keyboard:false}).addTo(map);
   else pin.setLatLng([lat, lon]);
+  pin.off('click');
+  pin.on('click', function () { openDetail('municipality', {lat:state.lat, lon:state.lon}); });
   if (fly) map.flyTo([lat, lon], Math.max(map.getZoom(), 6), {duration:1.4});
   else map.setView([lat, lon], 6, {animate:false});
 }
@@ -246,22 +267,27 @@ var FieldLayer = L.Layer.extend({
     ctx.clearRect(0, 0, size.x, size.y);
     var id = state.layer;
     if (!grid || !isGrid(id)) return;
-    var arr = id === 'temp' ? grid.t : (id === 'clouds' ? grid.c : (id === 'wind' ? grid.ws : grid.p));
-    var step = 5, sw = Math.ceil(size.x / step), sh = Math.ceil(size.y / step);
+    var needsLand = id === 'sea' || id === 'drought';
+    if (needsLand && !land) { cv.style.opacity = 0; return; }
+    var arr = grid[GRID_KEY[id]];
+    if (!arr) return;
+    var step = id === 'drought' ? 4 : 5, sw = Math.ceil(size.x / step), sh = Math.ceil(size.y / step);
     if (!this._small) this._small = document.createElement('canvas');
     this._small.width = sw; this._small.height = sh;
     var sctx = this._small.getContext('2d'), img = sctx.createImageData(sw, sh);
     for (var y = 0; y < sh; y++) {
       for (var x = 0; x < sw; x++) {
         var ll = m.containerPointToLatLng([x * step + step / 2, y * step + step / 2]);
-        var col = colorFor(id, sample(arr, ll.lat, lonFor(ll))), o = (y * sw + x) * 4;
+        var col = colorFor(id, sample(arr, ll.lat, lonFor(ll)), ll), o = (y * sw + x) * 4;
         img.data[o] = col[0]; img.data[o + 1] = col[1]; img.data[o + 2] = col[2]; img.data[o + 3] = col[3];
       }
     }
     sctx.putImageData(img, 0, 0);
-    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingEnabled = id !== 'drought';
     ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(this._small, 0, 0, sw * step, sh * step);
+    if (id === 'sea') maskLand(ctx, false);
+    else if (id === 'drought') maskLand(ctx, true);
     cv.style.opacity = 1;
   }
 });
@@ -269,6 +295,8 @@ var FieldLayer = L.Layer.extend({
 function clearOverlay() {
   if (off) { off(); off = null; }
   if (overlay) { map.removeLayer(overlay); overlay = null; }
+  if (extra) { map.removeLayer(extra); extra = null; }
+  state.usdm = false;
   grid = null;
 }
 
@@ -365,65 +393,7 @@ function loadStorms(seq) {
   });
 }
 
-function parseFires(events) {
-  var out = [];
-  events.forEach(function (ev) {
-    (ev.geometry || []).forEach(function (g) {
-      if (g.type === 'Point' && g.coordinates && g.coordinates.length >= 2) {
-        out.push([Math.floor(g.coordinates[1] / 0.25) * 0.25, Math.floor(g.coordinates[0] / 0.25) * 0.25, 1, 0]);
-      }
-    });
-  });
-  return out;
-}
-
-var HZ = ['url(#hz1)', 'url(#hz2)', 'url(#hz3)'];
-var HC = ['#ffb300', '#ff6d00', '#e53935'];
-
-function renderFires(cells, group) {
-  group.clearLayers();
-  var z = map.getZoom(), cs = z <= 3.5 ? 4 : (z <= 4.5 ? 2 : (z <= 5.5 ? 1 : (z <= 6.5 ? 0.5 : 0.25)));
-  var b = map.getBounds().pad(0.2), m = {};
-  for (var i = 0; i < cells.length; i++) {
-    var c = cells[i];
-    if (c[0] > b.getNorth() || c[0] + 0.25 < b.getSouth() || c[1] > b.getEast() || c[1] + 0.25 < b.getWest()) continue;
-    var k = Math.floor(c[0] / cs) + ':' + Math.floor(c[1] / cs), e = m[k];
-    if (!e) m[k] = {lat:Math.floor(c[0] / cs) * cs, lon:Math.floor(c[1] / cs) * cs, n:c[2], frp:c[3]};
-    else { e.n += c[2]; if (c[3] > e.frp) e.frp = c[3]; }
-  }
-  Object.keys(m).forEach(function (k) {
-    var e = m[k], lv = (e.n >= 12 || e.frp >= 150) ? 2 : ((e.n >= 3 || e.frp >= 40) ? 1 : 0);
-    var r = L.rectangle([[e.lat, e.lon], [e.lat + cs, e.lon + cs]], {pane:'trackpane', color:HC[lv], weight:1.6, opacity:0.95, fillColor:HZ[lv], fillOpacity:1, lineJoin:'round'});
-    var info = '<b>' + esc(lbl('fire', 'Wildfire')) + '</b><br>' + esc(lbl('hotspots', 'Hotspots')) + ': ' + e.n;
-    if (e.frp > 0) info += '<br>FRP: ' + Math.round(e.frp) + ' MW';
-    r.bindPopup(info, {closeButton:false});
-    group.addLayer(r);
-  });
-}
-
-function loadFires(seq) {
-  var group = L.layerGroup();
-  overlay = group.addTo(map);
-  state.busy = true; setLegend('');
-  var cells = [];
-  var redo = function () { renderFires(cells, group); };
-  map.on('moveend zoomend', redo);
-  off = function () { map.off('moveend zoomend', redo); };
-  var fresh = cache.fires && Date.now() - cache.firesAt < 600000;
-  var p = fresh ? Promise.resolve(cache.fires) : fetch('__fires.json').then(function (r) {
-    if (!r.ok) throw new Error('http');
-    return r.json();
-  }).catch(function () {
-    return getJson(EONET + 'wildfires').then(function (d) { return parseFires(d.events || []); });
-  }).then(function (c) { cache.fires = c; cache.firesAt = Date.now(); return c; });
-  p.then(function (c) {
-    if (seq !== state.seq) return;
-    cells = c;
-    redo();
-  }).catch(function () {}).then(function () {
-    if (seq === state.seq) { state.busy = false; setLegend(''); }
-  });
-}
+__LAYER_SCRIPTS__
 
 function setLayer(id, title, err, f, labels) {
   state.layer = id; state.title = title; state.err = err; state.f = f; state.busy = false; state.canvas = false;
@@ -447,6 +417,21 @@ function setLayer(id, title, err, f, labels) {
   } else if (id === 'fires') {
     loadFires(seq);
     return;
+  } else if (id === 'alerts') {
+    loadAlerts(seq);
+    return;
+  } else if (id === 'blackout') {
+    loadBlackouts(seq);
+    return;
+  } else if (id === 'coldfront') {
+    loadColdFront(seq);
+    return;
+  } else if (id === 'sea' || id === 'drought') {
+    state.canvas = true;
+    overlay = new FieldLayer().addTo(map);
+    loadGrid(true);
+    landThenRefresh(seq);
+    if (id === 'drought') loadUsdm(seq);
   } else if (isGrid(id)) {
     state.canvas = true;
     overlay = new FieldLayer().addTo(map);
@@ -459,65 +444,12 @@ var COLS = 12, ROWS = 9;
 
 function wrapLon(x) { return ((x + 540) % 360) - 180; }
 
-function loadGrid(force) {
-  if (!isGrid(state.layer) || !state.canvas) return;
-  var seq = state.seq;
-  var b = map.getBounds().pad(0.3);
-  var s = Math.max(-80, b.getSouth()), n = Math.min(80, b.getNorth()), w = b.getWest(), e = b.getEast();
-  if (e - w > 340) { w = -170; e = 170; }
-  var lats = [], lons = [];
-  for (var r = 0; r < ROWS; r++) {
-    for (var c = 0; c < COLS; c++) {
-      lats.push((s + (n - s) * r / (ROWS - 1)).toFixed(3));
-      lons.push(wrapLon(w + (e - w) * c / (COLS - 1)).toFixed(3));
-    }
-  }
-  state.busy = true; setLegend('');
-  var url = 'https://api.open-meteo.com/v1/forecast?latitude=' + lats.join(',') + '&longitude=' + lons.join(',') +
-    '&current=temperature_2m,cloud_cover,pressure_msl,wind_speed_10m,wind_direction_10m&wind_speed_unit=kmh&timezone=UTC';
-  fetch(url).then(function (r) { return r.json(); }).then(function (d) {
-    if (seq !== state.seq) return;
-    if (!Array.isArray(d)) d = [d];
-    var g = {s:s, n:n, w:w, e:e, t:[], c:[], p:[], ws:[], wd:[]};
-    for (var i = 0; i < d.length; i++) {
-      var cur = d[i].current;
-      g.t.push(cur.temperature_2m); g.c.push(cur.cloud_cover); g.p.push(cur.pressure_msl);
-      g.ws.push(cur.wind_speed_10m); g.wd.push(cur.wind_direction_10m);
-    }
-    grid = g; gridAt = Date.now(); gridZoom = map.getZoom();
-    state.busy = false; setLegend('');
-    if (overlay && overlay.refresh) overlay.refresh();
-  }).catch(function () {
-    if (seq === state.seq) { state.busy = false; setLegend(state.err); }
-  });
-}
-
-function sample(arr, lat, lon) {
-  var fx = (lon - grid.w) / (grid.e - grid.w) * (COLS - 1);
-  var fy = (lat - grid.s) / (grid.n - grid.s) * (ROWS - 1);
-  fx = Math.min(COLS - 1.001, Math.max(0, fx)); fy = Math.min(ROWS - 1.001, Math.max(0, fy));
-  var x0 = Math.floor(fx), y0 = Math.floor(fy), tx = fx - x0, ty = fy - y0;
-  tx = tx * tx * (3 - 2 * tx); ty = ty * ty * (3 - 2 * ty);
-  var a = arr[y0 * COLS + x0], b = arr[y0 * COLS + x0 + 1], c = arr[(y0 + 1) * COLS + x0], d = arr[(y0 + 1) * COLS + x0 + 1];
-  return (a * (1 - tx) + b * tx) * (1 - ty) + (c * (1 - tx) + d * tx) * ty;
-}
-
 function lonFor(latlng) {
   var x = latlng.lng;
   var mid = (grid.w + grid.e) / 2;
   while (x - mid > 180) x -= 360;
   while (mid - x > 180) x += 360;
   return x;
-}
-
-function colorFor(id, v) {
-  if (id === 'clouds') {
-    var a = Math.min(1, v / 100) * 0.85, b = state.dark ? [236, 242, 252] : [255, 255, 255];
-    return [b[0], b[1], b[2], Math.round(a * 255)];
-  }
-  var key = id === 'temp' ? 'temp' : (id === 'wind' ? 'wind' : 'pressure');
-  var c = ramp(RAMPS[key], v);
-  return [Math.round(c[0]), Math.round(c[1]), Math.round(c[2]), 184];
 }
 
 map.on('moveend', function () {
@@ -559,5 +491,5 @@ loadScript([
 </html>
 """.trimIndent()
 
-    fun page(init: String): String = html.replace("__INIT__", init)
+    fun page(init: String): String = html.replace("__LAYER_SCRIPTS__", MapLayerScripts.source).replace("__INIT__", init)
 }
