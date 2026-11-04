@@ -95,9 +95,10 @@ function loadLand(done) {
   })();
 }
 
-function landPath(ctx) {
+function landPath(ctx, size) {
   var z = map.getZoom(), scale = 256 * Math.pow(2, z), tl = map.project(map.containerPointToLatLng([0, 0]), z);
-  var b = map.getBounds(), bw = b.getWest(), be = b.getEast(), bs = b.getSouth(), bn = b.getNorth();
+  var pd = size ? size.pad : 0, vw = size ? size.x : map.getSize().x, vh = size ? size.y : map.getSize().y;
+  var b = L.latLngBounds(map.containerPointToLatLng([-pd, -pd]), map.containerPointToLatLng([vw + pd, vh + pd])), bw = b.getWest(), be = b.getEast(), bs = b.getSouth(), bn = b.getNorth();
   var k0 = Math.floor((bw + 180) / 360), k1 = Math.floor((be + 180) / 360);
   ctx.beginPath();
   for (var k = k0; k <= k1; k++) {
@@ -121,9 +122,9 @@ function landPath(ctx) {
   }
 }
 
-function maskLand(ctx, keepLand) {
+function maskLand(ctx, keepLand, size) {
   ctx.save();
-  landPath(ctx);
+  landPath(ctx, size);
   ctx.globalCompositeOperation = keepLand ? 'destination-in' : 'destination-out';
   ctx.fillStyle = '#000';
   ctx.fill('evenodd');
@@ -482,7 +483,8 @@ function stormRadii(kt) {
 
 function paintStorms(ctx, m, size, zones) {
   if (!zoneCanvas) zoneCanvas = document.createElement('canvas');
-  zoneCanvas.width = size.x; zoneCanvas.height = size.y;
+  var pad = size.pad || 0, zw = size.x + pad * 2, zh = size.y + pad * 2;
+  zoneCanvas.width = zw; zoneCanvas.height = zh;
   var zctx = zoneCanvas.getContext('2d'), scale = 156543.03392 / Math.pow(2, m.getZoom());
   var passes = [
     {now:false, inner:false, color:'#8a8f99', alpha:0.24},
@@ -491,7 +493,9 @@ function paintStorms(ctx, m, size, zones) {
     {now:true, inner:true, color:'#0d47a1', alpha:0.34}
   ];
   passes.forEach(function (ps) {
-    zctx.clearRect(0, 0, size.x, size.y);
+    zctx.setTransform(1, 0, 0, 1, 0, 0);
+    zctx.clearRect(0, 0, zw, zh);
+    zctx.translate(pad, pad);
     zctx.fillStyle = ps.color;
     var any = false;
     zones.forEach(function (z) {
@@ -501,7 +505,7 @@ function paintStorms(ctx, m, size, zones) {
       var px = km * 1000 / (scale * Math.cos(z.lat * Math.PI / 180));
       [-360, 0, 360].forEach(function (k) {
         var p = m.latLngToContainerPoint([z.lat, z.lon + k]);
-        if (p.x + px < 0 || p.y + px < 0 || p.x - px > size.x || p.y - px > size.y) return;
+        if (p.x + px < -pad || p.y + px < -pad || p.x - px > size.x + pad || p.y - px > size.y + pad) return;
         zctx.beginPath();
         zctx.arc(p.x, p.y, px, 0, Math.PI * 2);
         zctx.fill();
@@ -510,7 +514,7 @@ function paintStorms(ctx, m, size, zones) {
     });
     if (!any) return;
     ctx.globalAlpha = ps.alpha;
-    ctx.drawImage(zoneCanvas, 0, 0);
+    ctx.drawImage(zoneCanvas, -pad, -pad);
     ctx.globalAlpha = 1;
   });
 }
