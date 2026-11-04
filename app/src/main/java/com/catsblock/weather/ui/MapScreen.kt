@@ -61,7 +61,6 @@ import androidx.compose.material.icons.rounded.LayersClear
 import androidx.compose.material.icons.rounded.LocalFireDepartment
 import androidx.compose.material.icons.rounded.Masks
 import androidx.compose.material.icons.rounded.MyLocation
-import androidx.compose.material.icons.rounded.PowerOff
 import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.Thermostat
 import androidx.compose.material.icons.rounded.Umbrella
@@ -154,8 +153,7 @@ internal enum class MapLayer(val id: String, val label: String, val icon: ImageV
     SeaLevel("sea", "Sea level", Icons.Rounded.Water),
     Alerts("alerts", "Weather alerts", Icons.Rounded.Warning),
     ColdFronts("coldfront", "Cold fronts", Icons.Rounded.AcUnit),
-    Drought("drought", "Drought & dryness", Icons.Rounded.Landscape),
-    Blackouts("blackout", "Blackouts", Icons.Rounded.PowerOff)
+    Drought("drought", "Drought & dryness", Icons.Rounded.Landscape)
 }
 
 @SuppressLint("SetJavaScriptEnabled")
@@ -298,12 +296,8 @@ internal fun mapLabels(): JSONObject = JSONObject()
     .put("lvWarn", tr("Warning"))
     .put("lvAlert", tr("Alert"))
     .put("lvDanger", tr("Danger"))
-    .put("boMinor", tr("Minor outage"))
-    .put("boModerate", tr("Moderate outage"))
-    .put("boSevere", tr("Severe outage"))
     .put("noAlerts", tr("No active alerts right now"))
-    .put("noOutages", tr("No outages detected right now"))
-    .put("zoomIn", tr("Zoom in to see outages"))
+    .put("hLive", tr("Live"))
     .put("cfN", tr("Greenland"))
     .put("cfS", tr("Antarctica"))
     .put("cfAdvance", tr("Advance"))
