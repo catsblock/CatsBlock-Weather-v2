@@ -27,10 +27,6 @@ import kotlin.system.exitProcess
 private const val REFRESH_MS = 15 * 60_000L
 private const val UPDATE_CHECK_MS = 6 * 60 * 60_000L
 
-/**
- * Entry point. `--silent` is passed by the Windows startup entry and suppresses every visible window,
- * leaving only the tray icon and the floating widget. A second launch never gets past [SingleInstance].
- */
 fun main(args: Array<String>) {
     val silent = args.any { it.equals("--silent", ignoreCase = true) }
     if (!SingleInstance.acquire(silent) { AppEvents.show() }) exitProcess(0)
