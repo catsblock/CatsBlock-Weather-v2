@@ -48,13 +48,6 @@ html.round #map{border-radius:20px;overflow:hidden;isolation:isolate}
 .cn{position:absolute;left:50%;top:100%;transform:translate(-50%,8px);white-space:nowrap;display:flex;align-items:center;gap:5px;padding:3px 9px 3px 6px;border-radius:12px;background:var(--chip);color:var(--fg);font-size:11px;font-weight:700;box-shadow:0 2px 8px rgba(0,0,0,.28);border:1px solid var(--edge)}
 .cn i{width:8px;height:8px;border-radius:50%;background:var(--c);box-shadow:0 0 6px var(--c)}
 @keyframes cp{0%{transform:scale(.8);opacity:.7}100%{transform:scale(1.6);opacity:0}}
-.cfw{background:none;border:0}
-.cfm{width:0;height:0;border-top:6px solid transparent;border-bottom:6px solid transparent;border-left:11px solid #1e88e5;filter:drop-shadow(0 0 1px rgba(255,255,255,.9))}
-.cfh{width:14px;height:14px;border-radius:50%;background:#1e88e5;border:2px solid #fff;box-shadow:0 0 0 4px rgba(30,136,229,.3);animation:cfp 1.6s ease-out infinite}
-@keyframes cfp{0%{box-shadow:0 0 0 0 rgba(30,136,229,.55)}100%{box-shadow:0 0 0 12px rgba(30,136,229,0)}}
-.cfo{transform:translate(-50%,-150%);white-space:nowrap;padding:3px 9px;border-radius:4px;background:var(--chip);color:var(--fg);font-size:11px;font-weight:700;border:1px solid var(--edge);box-shadow:0 2px 8px rgba(0,0,0,.28)}
-path.cfflow{animation:cfd 1.1s linear infinite}
-@keyframes cfd{to{stroke-dashoffset:-18}}
 </style>
 </head>
 <body class="light">
@@ -82,7 +75,7 @@ var map = L.map('map', {zoomControl:false, attributionControl:false, minZoom:INI
 L.control.attribution({position:'bottomright', prefix:false}).addTo(map)
   .addAttribution('© OpenStreetMap contributors · Open-Meteo · RainViewer · NASA GIBS · NASA FIRMS · NASA EONET · NIFC · Alert-Hub.org · US Drought Monitor · Natural Earth');
 
-var state = {canvas:false, dark:false, layer:'none', title:'', err:'', f:false, lat:0, lon:0, seq:0, busy:false, labels:{}, at:null};
+var state = {canvas:false, dark:false, layer:'none', title:'', err:'', f:false, lat:0, lon:0, seq:0, busy:false, labels:{}};
 var base = null, overlay = null, pin = null, grid = null, gridAt = 0, gridZoom = 0, timer = null, off = null;
 var cache = {storms:null, stormsAt:0, fires:null, firesAt:0};
 var legend = document.getElementById('legend');
@@ -162,7 +155,10 @@ function setLegend(extra) {
   else if (id === 'sea') { grad = gradCss(RAMPS.sea); lo = '-2 m'; hi = '+2 m'; }
   else if (id === 'alerts') { grad = hard([LEVEL_COLORS.warning, LEVEL_COLORS.alert, LEVEL_COLORS.danger]); lo = lbl('lvWarn', 'Warning'); hi = lbl('lvDanger', 'Danger'); }
   else if (id === 'drought') { grad = hard(DRY.map(rgb)); lo = lbl('d0', 'Slightly dry'); hi = lbl('d4', 'Extreme dry'); }
-  else if (id === 'coldfront') { grad = 'linear-gradient(90deg,#e3f2fd,#1e88e5,#0d47a1)'; lo = '0%'; hi = '100%'; }
+  else if (id === 'coldfront') {
+    grad = hard(FRONT.blue.map(rgb)); lo = lbl('cfWeak', 'Weak'); hi = lbl('cfStrong', 'Strong');
+    if (!extra && grid) extra = frontAny() ? lbl('cfKey', 'Blue: passed · Gray: approaching') : lbl('cfNone', 'No cold fronts right now');
+  }
   var html = '<div class="t">' + esc(state.title) + '</div>';
   if (extra) html += '<div class="m">' + esc(extra) + '</div>';
   legend.innerHTML = html;
@@ -273,6 +269,7 @@ var FieldLayer = L.Layer.extend({
     if (needsLand && !land) { cv.style.opacity = 0; return; }
     var arr = grid[GRID_KEY[id]];
     if (!arr) return;
+    if (id === 'coldfront') { paintFront(ctx, m, size); cv.style.opacity = 1; return; }
     var step = id === 'drought' ? 4 : 5, sw = Math.ceil(size.x / step), sh = Math.ceil(size.y / step);
     if (!this._small) this._small = document.createElement('canvas');
     this._small.width = sw; this._small.height = sh;
@@ -343,16 +340,15 @@ function stormIcon(cat, kt, name) {
   return L.divIcon({className:'cyw', html:html, iconSize:[s, s], iconAnchor:[s / 2, s / 2]});
 }
 
-function buildStorms(events, limit) {
+function buildStorms(events) {
   var group = L.layerGroup(), halo = L.layerGroup(), lines = L.layerGroup(), marks = L.layerGroup(), count = 0;
   var haloColor = state.dark ? 'rgba(255,255,255,.22)' : 'rgba(0,0,0,.22)';
   events.forEach(function (ev) {
     if (!/cyclone|hurricane|typhoon|tropical|depression/i.test(ev.title || '')) return;
     var geo = (ev.geometry || []).filter(function (g) {
-      return g.type === 'Point' && g.coordinates && g.coordinates.length >= 2 && (!limit || new Date(g.date).getTime() <= limit);
+      return g.type === 'Point' && g.coordinates && g.coordinates.length >= 2;
     });
     geo.sort(function (a, b) { return new Date(a.date) - new Date(b.date); });
-    if (limit && geo.length && limit - new Date(geo[geo.length - 1].date).getTime() > 4 * 86400000) return;
     var pts = geo.map(function (g) { return {lat:g.coordinates[1], lon:g.coordinates[0], kt:toKt(g.magnitudeValue, g.magnitudeUnit)}; });
     if (!pts.length) return;
     for (var i = 1; i < pts.length; i++) {
@@ -383,19 +379,13 @@ function buildStorms(events, limit) {
 
 function loadStorms(seq) {
   state.busy = true; setLegend('');
-  var at = state.at, p;
-  if (at === null) {
-    var fresh = cache.storms && Date.now() - cache.stormsAt < 600000;
-    p = fresh ? Promise.resolve(cache.storms) : getJson(EONET + 'severeStorms').then(function (d) {
-      cache.storms = d.events || []; cache.stormsAt = Date.now(); return cache.storms;
-    });
-  } else {
-    var from = new Date(at - 20 * 86400000).toISOString().slice(0, 10), to = new Date(at + 86400000).toISOString().slice(0, 10);
-    p = getJson('https://eonet.gsfc.nasa.gov/api/v3/events?status=all&limit=500&start=' + from + '&end=' + to + '&category=severeStorms').then(function (d) { return d.events || []; });
-  }
+  var fresh = cache.storms && Date.now() - cache.stormsAt < 600000;
+  var p = fresh ? Promise.resolve(cache.storms) : getJson(EONET + 'severeStorms').then(function (d) {
+    cache.storms = d.events || []; cache.stormsAt = Date.now(); return cache.storms;
+  });
   p.then(function (events) {
     if (seq !== state.seq) return;
-    var built = buildStorms(events, at === null ? 0 : at + 86400000 - 1);
+    var built = buildStorms(events);
     overlay = built.group.addTo(map);
     state.busy = false;
     setLegend(built.count ? '' : lbl('none', 'No active storms right now'));
@@ -414,22 +404,22 @@ function startLayer(id) {
     state.busy = true;
     fetch('https://api.rainviewer.com/public/weather-maps.json').then(function (r) { return r.json(); }).then(function (d) {
       if (seq !== state.seq) return;
-      framesReady(d.host, d.radar.past);
+      var frames = d.radar && d.radar.past ? d.radar.past : [], last = frames[frames.length - 1];
+      if (!last) throw new Error('none');
+      overlay = L.tileLayer(d.host + last.path + '/256/{z}/{x}/{y}/2/1_1.png', {maxNativeZoom:7, opacity:0.82, tileSize:256}).addTo(map);
+      overlay.setZIndex(5);
       state.busy = false; setLegend('');
     }).catch(function () { if (seq === state.seq) { state.busy = false; setLegend(state.err); } });
   } else if (id === 'cyclones') {
     loadStorms(seq);
   } else if (id === 'sst') {
-    overlay = (state.at === null ? gibs('GHRSST_L4_MUR_Sea_Surface_Temperature_Anomalies_v4.1_STD', 7, 3, 0.8) : gibsOn('GHRSST_L4_MUR_Sea_Surface_Temperature_Anomalies_v4.1_STD', 7, new Date(state.at).toISOString().slice(0, 10), 0.8)).addTo(map);
+    overlay = gibs('GHRSST_L4_MUR_Sea_Surface_Temperature_Anomalies_v4.1_STD', 7, 3, 0.8).addTo(map);
     overlay.setZIndex(4);
   } else if (id === 'fires') {
     loadFires(seq);
     return;
   } else if (id === 'alerts') {
     loadAlerts(seq);
-    return;
-  } else if (id === 'coldfront') {
-    loadColdFront(seq);
     return;
   } else if (id === 'sea' || id === 'drought') {
     state.canvas = true;
@@ -446,9 +436,8 @@ function startLayer(id) {
 }
 
 function setLayer(id, title, err, f, labels) {
-  state.layer = id; state.title = title; state.err = err; state.f = f; state.at = null;
+  state.layer = id; state.title = title; state.err = err; state.f = f;
   if (labels) state.labels = typeof labels === 'string' ? JSON.parse(labels) : labels;
-  histSetup(id);
   startLayer(id);
 }
 
