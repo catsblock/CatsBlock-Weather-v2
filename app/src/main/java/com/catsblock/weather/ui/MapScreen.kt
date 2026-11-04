@@ -143,7 +143,6 @@ internal enum class MapLayer(val id: String, val label: String, val icon: ImageV
     Precipitation("precip", "Precipitation", Icons.Rounded.Umbrella),
     Temperature("temp", "Temperature", Icons.Rounded.Thermostat),
     Clouds("clouds", "Cloudiness", Icons.Rounded.Cloud),
-    SatelliteClouds("satellite", "Satellite clouds", Icons.Rounded.Layers),
     Wind("wind", "Wind speed", Icons.Rounded.Air),
     Pressure("pressure", "Pressure", Icons.Rounded.Speed),
     Cyclones("cyclones", "Hurricanes & cyclones", CycloneIcon),
