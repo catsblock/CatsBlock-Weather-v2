@@ -1,85 +1,101 @@
 package com.catsblock.weather.data
 
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.json.JSONArray
 import org.json.JSONObject
-import org.json.JSONTokener
-import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.Executors
-import java.util.concurrent.TimeUnit
+import java.time.Instant
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
 
 object AlertFeed {
 
-    private const val KEY = "alerts"
-    private const val ZONE_BUDGET = 160
+    private const val ENDPOINT =
+        "https://services9.arcgis.com/RHVPKKiFTONKtxq3/ArcGIS/rest/services/CAP_Alerts_Feed/FeatureServer/0/query"
+
+    private const val FIELDS =
+        "identifier,event,headline,description,instruction,severity,urgency,certainty," +
+            "senderName,orgName,areaDesc,sent,effective,onset,expires"
+
+    private const val PAGE_SIZE = 1000
+    private const val MAX_PAGES = 4
+    private const val RANGE_KEY = "range"
 
     private val cache = TimedCache<ByteArray>(10 * 60_000L)
-    private val zones = ConcurrentHashMap<String, JSONObject>()
-    private val failed = ConcurrentHashMap.newKeySet<String>()
 
-    fun json(): ByteArray? {
-        cache.get(KEY)?.let { return it }
+    private val stamp = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(ZoneOffset.UTC)
+
+    fun json(at: Long? = null): ByteArray? {
+        val moment = at?.let { it * 1000L } ?: System.currentTimeMillis()
+        val key = if (at == null) "live" else "at:" + moment / 3_600_000L
+        cache.get(key)?.let { return it }
+        val time = stamp.format(Instant.ofEpochMilli(moment))
+        val where = "status = 'Actual' AND msgType <> 'Cancel' AND sent <= timestamp '$time' AND " +
+            "(expires IS NULL OR expires >= timestamp '$time')"
         val features = JSONArray()
-        val nws = collectNws(features)
-        val inmet = collectInmet(features)
-        if (!nws && !inmet) return cache.peek(KEY)
-        val body = JSONObject().put("type", "FeatureCollection").put("features", features)
-        return cache.put(KEY, body.toString().toByteArray(Charsets.UTF_8))
-    }
-
-    private fun rank(severity: String): Int = when (severity) {
-        "Extreme" -> 3
-        "Severe" -> 2
-        else -> 1
-    }
-
-    private fun collectNws(out: JSONArray): Boolean {
-        val root = GeoHttp.json(
-            "https://api.weather.gov/alerts/active?status=actual&message_type=alert,update",
-            "application/geo+json"
-        ) ?: return false
-        val items = root.optJSONArray("features") ?: return false
-        val entries = (0 until items.length()).mapNotNull { items.optJSONObject(it) }
-            .sortedByDescending { rank(it.optJSONObject("properties")?.str("severity").orEmpty()) }
-        val needed = LinkedHashSet<String>()
-        for (entry in entries) {
-            if (!entry.isNull("geometry")) continue
-            val list = entry.optJSONObject("properties")?.optJSONArray("affectedZones") ?: continue
-            for (i in 0 until list.length()) if (needed.size < ZONE_BUDGET) needed.add(list.getString(i))
-        }
-        fetchZones(needed)
-        for (entry in entries) nwsFeature(entry)?.let { out.put(it) }
-        return true
-    }
-
-    private fun fetchZones(urls: Collection<String>) {
-        val todo = urls.filter { !zones.containsKey(it) && !failed.contains(it) }
-        if (todo.isEmpty()) return
-        val pool = Executors.newFixedThreadPool(8)
-        try {
-            val jobs = todo.map { url ->
-                pool.submit {
-                    val geometry = GeoHttp.json(url, "application/geo+json")?.optJSONObject("geometry")
-                    val compact = geometry?.let { GeoMath.compactGeometry(it, 3) }
-                    if (compact != null) zones[url] = compact else failed.add(url)
-                }
+        val seen = HashSet<String>()
+        for (page in 0 until MAX_PAGES) {
+            val url = ENDPOINT.toHttpUrl().newBuilder()
+                .addQueryParameter("f", "geojson")
+                .addQueryParameter("where", where)
+                .addQueryParameter("outFields", FIELDS)
+                .addQueryParameter("returnGeometry", "true")
+                .addQueryParameter("outSR", "4326")
+                .addQueryParameter("maxAllowableOffset", "0.03")
+                .addQueryParameter("geometryPrecision", "3")
+                .addQueryParameter("orderByFields", "sent DESC")
+                .addQueryParameter("resultOffset", (page * PAGE_SIZE).toString())
+                .addQueryParameter("resultRecordCount", PAGE_SIZE.toString())
+                .build()
+            val items = GeoHttp.json(url.toString())?.optJSONArray("features")
+            if (items == null) {
+                if (page == 0) return cache.peek(key)
+                break
             }
-            jobs.forEach { runCatching { it.get(60, TimeUnit.SECONDS) } }
-        } finally {
-            pool.shutdownNow()
+            for (i in 0 until items.length()) {
+                feature(items.getJSONObject(i), seen)?.let { features.put(it) }
+            }
+            if (items.length() < PAGE_SIZE) break
+        }
+        val body = JSONObject().put("type", "FeatureCollection").put("features", features)
+        return cache.put(key, body.toString().toByteArray(Charsets.UTF_8))
+    }
+
+    fun range(): ByteArray? {
+        cache.get(RANGE_KEY)?.let { return it }
+        val url = ENDPOINT.toHttpUrl().newBuilder()
+            .addQueryParameter("f", "json")
+            .addQueryParameter("where", "status = 'Actual'")
+            .addQueryParameter(
+                "outStatistics",
+                "[{\"statisticType\":\"min\",\"onStatisticField\":\"sent\",\"outStatisticFieldName\":\"oldest\"}]"
+            )
+            .build()
+        val attributes = GeoHttp.json(url.toString())
+            ?.optJSONArray("features")
+            ?.optJSONObject(0)
+            ?.optJSONObject("attributes")
+        val oldest = attributes?.optLong("oldest", 0L) ?: 0L
+        if (oldest <= 0L) return cache.peek(RANGE_KEY)
+        val body = JSONObject().put("min", oldest / 1000L)
+        return cache.put(RANGE_KEY, body.toString().toByteArray(Charsets.UTF_8))
+    }
+
+    private fun millis(source: JSONObject, key: String): Long? {
+        if (source.isNull(key)) return null
+        return when (val value = source.opt(key)) {
+            is Number -> value.toLong().takeIf { it > 0L }
+            is String -> runCatching { Instant.parse(value).toEpochMilli() }.getOrNull()
+            else -> null
         }
     }
 
-    private fun nwsFeature(entry: JSONObject): JSONObject? {
+    private fun iso(millis: Long?): String = millis?.let { Instant.ofEpochMilli(it).toString() }.orEmpty()
+
+    private fun feature(entry: JSONObject, seen: MutableSet<String>): JSONObject? {
         val p = entry.optJSONObject("properties") ?: return null
-        val geometry: JSONObject = if (!entry.isNull("geometry")) {
-            entry.optJSONObject("geometry")?.let { GeoMath.compactGeometry(it, 3) } ?: return null
-        } else {
-            val list = p.optJSONArray("affectedZones") ?: return null
-            val parts = ArrayList<JSONArray>()
-            for (i in 0 until list.length()) zones[list.getString(i)]?.let { parts.addAll(GeoMath.polygons(it)) }
-            if (parts.isEmpty()) return null
-            GeoMath.multi(parts)
-        }
+        val geometry = entry.optJSONObject("geometry")?.let { GeoMath.compactGeometry(it, 3) } ?: return null
+        val id = p.str("identifier")
+        if (id.isNotBlank() && !seen.add(id)) return null
         val severity = p.str("severity")
         val level = when (severity) {
             "Extreme" -> "danger"
@@ -87,79 +103,20 @@ object AlertFeed {
             else -> "warning"
         }
         val props = JSONObject()
-            .put("id", p.str("id"))
+            .put("id", id)
             .put("event", p.str("event"))
             .put("level", level)
             .put("severity", severity)
             .put("urgency", p.str("urgency"))
             .put("certainty", p.str("certainty"))
-            .put("sender", p.str("senderName"))
-            .put("effective", p.str("onset").ifBlank { p.str("effective") })
-            .put("expires", p.str("ends").ifBlank { p.str("expires") })
+            .put("sender", p.str("senderName").ifBlank { p.str("orgName") })
+            .put("effective", iso(millis(p, "onset") ?: millis(p, "effective") ?: millis(p, "sent")))
+            .put("expires", iso(millis(p, "expires")))
             .put("area", p.str("areaDesc"))
             .put("headline", p.str("headline"))
             .put("description", p.str("description").take(2500))
             .put("instruction", p.str("instruction").take(1200))
-            .put("source", "NWS")
+            .put("source", "Alert-Hub.org")
         return JSONObject().put("type", "Feature").put("geometry", geometry).put("properties", props)
-    }
-
-    private fun collectInmet(out: JSONArray): Boolean {
-        val raw = GeoHttp.text("https://apiprevmet3.inmet.gov.br/avisos/ativos") ?: return false
-        val root = runCatching { JSONTokener(raw).nextValue() }.getOrNull() ?: return false
-        val items = ArrayList<JSONObject>()
-        gather(root, items)
-        for (item in items) inmetFeature(item)?.let { out.put(it) }
-        return true
-    }
-
-    private fun gather(node: Any?, out: MutableList<JSONObject>) {
-        when (node) {
-            is JSONArray -> for (i in 0 until node.length()) gather(node.opt(i), out)
-            is JSONObject -> {
-                if (node.has("descricao") || node.has("severidade") || node.has("aviso_severidade")) out.add(node)
-                else node.keys().forEach { gather(node.opt(it), out) }
-            }
-        }
-    }
-
-    private fun inmetFeature(item: JSONObject): JSONObject? {
-        var geometry: JSONObject? = null
-        for (key in listOf("geometry", "geojson", "poligono", "polygon", "wkt", "area")) {
-            val value = item.opt(key)
-            geometry = when (value) {
-                is JSONObject -> value.takeIf { it.has("type") }
-                is String -> GeoMath.fromText(value)
-                else -> null
-            }
-            if (geometry != null) break
-        }
-        val shape = geometry?.let { GeoMath.compactGeometry(it, 3) } ?: return null
-        val label = listOf("severidade", "aviso_severidade", "aviso_cor", "cor")
-            .joinToString(" ") { item.str(it) }.lowercase()
-        val level = when {
-            label.contains("grande perigo") || label.contains("vermelho") -> "danger"
-            label.contains("perigo potencial") || label.contains("amarelo") -> "warning"
-            label.contains("perigo") || label.contains("laranja") -> "alert"
-            else -> "warning"
-        }
-        fun stamp(date: String, hour: String, fallback: String): String =
-            if (date.isNotBlank()) (date + " " + hour).trim() else fallback
-        val props = JSONObject()
-            .put("id", item.str("id"))
-            .put("event", item.str("descricao"))
-            .put("level", level)
-            .put("severity", item.str("severidade"))
-            .put("urgency", "")
-            .put("certainty", "")
-            .put("sender", "INMET")
-            .put("effective", stamp(item.str("data_inicio"), item.str("hora_inicio"), item.str("inicio")))
-            .put("expires", stamp(item.str("data_fim"), item.str("hora_fim"), item.str("fim")))
-            .put("area", item.str("municipios").ifBlank { item.str("estados") })
-            .put("headline", item.str("descricao"))
-            .put("description", item.str("riscos").take(2500))
-            .put("instruction", item.str("instrucoes").take(1200))
-            .put("source", "INMET")
-        return JSONObject().put("type", "Feature").put("geometry", shape).put("properties", props)
     }
 }
