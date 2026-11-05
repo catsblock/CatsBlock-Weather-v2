@@ -105,13 +105,20 @@ private val STRINGS: Map<String, List<String>> = mapOf(
     row("Illumination", "Iluminação", "Iluminação", "Iluminación", "Illumination", "Освещённость", "Beleuchtung", "Illuminazione", "조명률", "Iluminasi"),
     row("Rain expected within %d h", "Chuva prevista em até %d h", "Chuva prevista em até %d h", "Lluvia prevista en %d h", "Pluie prévue d'ici %d h", "Дождь ожидается в течение %d ч", "Regen in den nächsten %d h erwartet", "Pioggia prevista entro %d h", "%d시간 내 비 예상", "Hujan diperkirakan dalam %d jam"),
     row("No rain expected soon", "Sem chuva prevista em breve", "Sem chuva prevista em breve", "No se espera lluvia pronto", "Pas de pluie prévue prochainement", "Дождь в ближайшее время не ожидается", "Kein Regen in Kürze erwartet", "Nessuna pioggia prevista a breve", "곧 비 소식 없음", "Tidak ada hujan dalam waktu dekat"),
+    row("Weather background", "Fundo do clima", "Fundo do tempo", "Fondo del clima", "Arrière-plan météo", "Фон погоды", "Wetterhintergrund", "Sfondo meteo", "날씨 배경", "Latar cuaca"),
+    row("Widget size", "Tamanho do widget", "Tamanho do widget", "Tamaño del widget", "Taille du widget", "Размер виджета", "Widget-Größe", "Dimensione del widget", "위젯 크기", "Ukuran widget"),
+    row("Gusts", "Rajadas", "Rajadas", "Ráfagas", "Rafales", "Порывы", "Böen", "Raffiche", "돌풍", "Embusan"),
+    row("Radar", "Radar", "Radar", "Radar", "Radar", "Радар", "Radar", "Radar", "레이더", "Radar"),
+    row("Satellite", "Satélite", "Satélite", "Satélite", "Satellite", "Спутник", "Satellit", "Satellite", "위성", "Satelit"),
     row("Running in the background", "Em execução em segundo plano", "A executar em segundo plano", "Ejecutándose en segundo plano", "S'exécute en arrière-plan", "Работает в фоне", "Läuft im Hintergrund", "In esecuzione in background", "백그라운드에서 실행 중", "Berjalan di latar belakang")
 )
 
 fun t(key: String): String {
     val index = LANGUAGES.indexOfFirst { it.first == uiLanguage.value }
-    if (index <= 0) return key
-    return STRINGS[key]?.getOrNull(index - 1)?.takeIf { it.isNotEmpty() } ?: key
+    if (index <= 0) return androidEnglish[key] ?: key
+    return STRINGS[key]?.getOrNull(index - 1)?.takeIf { it.isNotEmpty() }
+        ?: androidTable[key]?.getOrNull(index - 1)?.takeIf { it.isNotEmpty() }
+        ?: androidEnglish[key] ?: key
 }
 
 fun uiLocale(): Locale = Locale.forLanguageTag(uiLanguage.value)
