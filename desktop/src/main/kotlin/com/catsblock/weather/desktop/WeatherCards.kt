@@ -28,6 +28,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.text.Shadow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -36,6 +37,7 @@ import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
 import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.max
 import kotlin.math.cos
 import kotlin.math.roundToInt
 import kotlin.math.sin
@@ -47,28 +49,32 @@ private fun dayLabel(c: Conditions, d: Day): String =
 
 @Composable
 fun HeroCard(s: DesktopSettings, c: Conditions, modifier: Modifier = Modifier) {
-    val background = weatherColor(c.kind, c.isDay)
-    val ink = inkFor(background)
-    Row(
-        modifier.background(background, CardShape).padding(24.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(s.city?.title.orEmpty(), color = ink, style = MaterialTheme.typography.titleMedium)
-            Text(formatTemp(c.temp, s.fahrenheit), color = ink, fontSize = 80.sp, fontWeight = FontWeight.Light)
-            Text(c.kind.label(c.isDay), color = ink, style = MaterialTheme.typography.titleLarge)
+    val ink = Color.White
+    val shadow = Shadow(Color.Black.copy(alpha = 0.35f), Offset(0f, 2f), 10f)
+    val compact = s.compactHero
+    Row(modifier.padding(vertical = if (compact) 4.dp else 16.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(s.city?.title.orEmpty(), color = ink, style = MaterialTheme.typography.titleLarge.copy(shadow = shadow))
+            Text(
+                formatTemp(c.temp, s.fahrenheit), color = ink, fontSize = if (compact) 64.sp else 108.sp, fontWeight = FontWeight.Light,
+                style = MaterialTheme.typography.displayLarge.copy(shadow = shadow, fontSize = if (compact) 64.sp else 108.sp, fontWeight = FontWeight.Light)
+            )
+            Text(c.kind.label(c.isDay), color = ink, style = MaterialTheme.typography.headlineSmall.copy(shadow = shadow))
             val today = c.today
-            val range = if (today != null) "  ·  ${formatTemp(today.max, s.fahrenheit)} / ${formatTemp(today.min, s.fahrenheit)}" else ""
-            Text(t("Feels like") + " " + formatTemp(c.feels, s.fahrenheit) + range, color = ink.copy(alpha = 0.85f))
+            val range = if (today != null) "  ·  ↑ ${formatTemp(today.max, s.fahrenheit)}  ↓ ${formatTemp(today.min, s.fahrenheit)}" else ""
+            Text(
+                t("Feels like") + " " + formatTemp(c.feels, s.fahrenheit) + range,
+                color = ink.copy(alpha = 0.92f), style = MaterialTheme.typography.titleMedium.copy(shadow = shadow)
+            )
         }
-        WeatherIcon(c.kind, c.isDay, 112.dp, ink)
+        WeatherIcon(c.kind, c.isDay, if (compact) 96.dp else 148.dp, ink)
     }
 }
 
 @Composable
-fun AlertCard(c: Conditions, modifier: Modifier = Modifier) {
+fun AlertCard(c: Conditions, onClick: (() -> Unit)? = null, modifier: Modifier = Modifier) {
     val wet = c.wetAhead
-    Card(modifier, t("Precipitation")) {
+    Card(modifier, t("Precipitation"), onClick) {
         if (wet == null) {
             Text(t("No rain expected soon"), style = MaterialTheme.typography.titleMedium)
         } else {
@@ -115,7 +121,9 @@ fun DailyCard(s: DesktopSettings, c: Conditions, onDay: (Day) -> Unit, modifier:
                 Spacer(Modifier.width(16.dp))
                 Text(d.kind.label(true), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
                 Text(if (d.prob >= 20) "${d.prob}%" else "", Modifier.width(48.dp), color = MaterialTheme.colorScheme.secondary)
-                Text(formatTemp(d.max, s.fahrenheit) + " / " + formatTemp(d.min, s.fahrenheit), style = MaterialTheme.typography.bodyLarge)
+                Text(formatTemp(d.min, s.fahrenheit), Modifier.width(44.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                RangeBar(c, d, Modifier.width(96.dp))
+                Text(formatTemp(d.max, s.fahrenheit), Modifier.width(44.dp), textAlign = androidx.compose.ui.text.style.TextAlign.End, style = MaterialTheme.typography.bodyLarge)
             }
         }
     }
@@ -143,10 +151,10 @@ private fun BigValue(value: String, caption: String? = null) {
 }
 
 @Composable
-fun WindCard(s: DesktopSettings, c: Conditions, modifier: Modifier = Modifier) {
+fun WindCard(s: DesktopSettings, c: Conditions, onClick: (() -> Unit)? = null, modifier: Modifier = Modifier) {
     val line = MaterialTheme.colorScheme.onSurface
     val faint = MaterialTheme.colorScheme.outlineVariant
-    Card(modifier, t("Wind")) {
+    Card(modifier, t("Wind"), onClick) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(24.dp)) {
             Box(Modifier.size(96.dp), contentAlignment = Alignment.TopCenter) {
                 Canvas(Modifier.size(96.dp)) {
@@ -169,14 +177,14 @@ fun WindCard(s: DesktopSettings, c: Conditions, modifier: Modifier = Modifier) {
                 }
                 Text("N", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Column { BigValue(formatWind(c.windKmh, s.windUnit), c.windDir.roundToInt().toString() + "°") }
+            Column { BigValue(formatWind(c.windKmh, s.windUnit), t("From") + " " + compass(c.windDir) + " · " + c.windDir.roundToInt() + "°") }
         }
     }
 }
 
 @Composable
-fun AirCard(c: Conditions, modifier: Modifier = Modifier) {
-    Card(modifier, t("Air quality")) {
+fun AirCard(c: Conditions, onClick: (() -> Unit)? = null, modifier: Modifier = Modifier) {
+    Card(modifier, t("Air quality"), onClick) {
         val aqi = c.aqi
         if (aqi == null) Text("—", fontSize = 28.sp) else {
             BigValue(aqi.roundToInt().toString(), t(aqiLabel(aqi)))
@@ -186,29 +194,40 @@ fun AirCard(c: Conditions, modifier: Modifier = Modifier) {
 }
 
 @Composable
-fun UvCard(c: Conditions, modifier: Modifier = Modifier) {
-    Card(modifier, t("UV index")) {
+fun UvCard(c: Conditions, onClick: (() -> Unit)? = null, modifier: Modifier = Modifier) {
+    Card(modifier, t("UV index"), onClick) {
         BigValue(c.uv.roundToInt().toString(), t(uvLabel(c.uv)))
         SegmentBar((c.uv / 12.0).toFloat(), UvColors)
     }
 }
 
 @Composable
-fun HumidityCard(c: Conditions, modifier: Modifier = Modifier) {
-    Card(modifier, t("Humidity")) { BigValue(c.humidity.toString() + "%") }
+fun HumidityCard(s: DesktopSettings, c: Conditions, onClick: (() -> Unit)? = null, modifier: Modifier = Modifier) {
+    Card(modifier, t("Humidity"), onClick) {
+        BigValue(c.humidity.toString() + "%", t("Dew point") + " " + formatTemp(c.dew, s.fahrenheit))
+        SegmentBar(c.humidity / 100f, listOf(Color(0xFFE0B100), Color(0xFF3E9B5B), Color(0xFF4F86A6), Color(0xFF2F6F9F)))
+    }
 }
 
 @Composable
-fun PressureCard(s: DesktopSettings, c: Conditions, modifier: Modifier = Modifier) {
-    Card(modifier, t("Pressure")) {
+fun CloudCard(c: Conditions, onClick: (() -> Unit)? = null, modifier: Modifier = Modifier) {
+    Card(modifier, t("Cloud cover"), onClick) {
+        BigValue(c.cloud.toString() + "%")
+        SegmentBar(c.cloud / 100f, listOf(Color(0xFFDDE5EC), Color(0xFFB0BEC5), Color(0xFF8493A0), Color(0xFF5E6B77)))
+    }
+}
+
+@Composable
+fun PressureCard(s: DesktopSettings, c: Conditions, onClick: (() -> Unit)? = null, modifier: Modifier = Modifier) {
+    Card(modifier, t("Atmospheric pressure"), onClick) {
         BigValue(formatPressure(c.pressure, s.pressureUnit))
         SegmentBar(((c.pressure - 960.0) / 90.0).toFloat(), listOf(Color(0xFF4F86A6), Color(0xFF6B7683), Color(0xFFE0A100)))
     }
 }
 
 @Composable
-fun VisibilityCard(c: Conditions, modifier: Modifier = Modifier) {
-    Card(modifier, t("Visibility")) { BigValue(formatVisibility(c.visibilityM)) }
+fun VisibilityCard(c: Conditions, onClick: (() -> Unit)? = null, modifier: Modifier = Modifier) {
+    Card(modifier, t("Visibility"), onClick) { BigValue(formatVisibility(c.visibilityM)) }
 }
 
 @Composable
@@ -269,5 +288,20 @@ fun MoonCard(modifier: Modifier = Modifier) {
                 Text(t("Illumination") + " " + (phase.illumination * 100).roundToInt() + "%", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
+    }
+}
+
+@Composable
+private fun RangeBar(c: Conditions, d: Day, modifier: Modifier = Modifier) {
+    val lo = c.days.minOf { it.min }
+    val hi = c.days.maxOf { it.max }
+    val span = (hi - lo).coerceAtLeast(1.0)
+    val track = MaterialTheme.colorScheme.outlineVariant
+    val fill = MaterialTheme.colorScheme.primary
+    Canvas(modifier.height(8.dp)) {
+        val a = ((d.min - lo) / span).toFloat() * size.width
+        val b = ((d.max - lo) / span).toFloat() * size.width
+        drawRoundRect(track, cornerRadius = androidx.compose.ui.geometry.CornerRadius(4f, 4f))
+        drawRoundRect(fill, Offset(a, 0f), Size(max(b - a, 8f), size.height), androidx.compose.ui.geometry.CornerRadius(4f, 4f))
     }
 }
