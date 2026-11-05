@@ -27,6 +27,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -53,6 +54,8 @@ fun MainWindow(
 ) {
     var metric by remember { mutableStateOf<Metric?>(null) }
     var legal by remember { mutableStateOf<String?>(null) }
+    val agentScope = rememberCoroutineScope()
+    val chat = remember { AgentChat(agentScope) }
     LaunchedEffect(tab) {
         metric = null
         legal = null
@@ -66,6 +69,7 @@ fun MainWindow(
                 Box(Modifier.weight(1f).fillMaxHeight()) {
                     when (tab) {
                         2 -> Box(Modifier.fillMaxSize().padding(20.dp)) { MapPage(settings, dark) }
+                        3 -> Box(Modifier.fillMaxSize().padding(24.dp)) { AgentPage(chat, settings) { onTab(2) } }
                         1 -> ScrollPage {
                             when (legal) {
                                 "privacy" -> PrivacyPage { legal = null }
@@ -100,7 +104,7 @@ private fun NavRail(tab: Int, onTab: (Int) -> Unit) {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        listOf(Triple(0, Glyph.Sun, t("Weather")), Triple(2, Glyph.Map, t("Weather map")), Triple(1, Glyph.Settings, t("Settings"))).forEach { (index, glyph, label) ->
+        listOf(Triple(0, Glyph.Sun, t("Weather")), Triple(2, Glyph.Map, t("Weather map")), Triple(3, null, ta("Agent")), Triple(1, Glyph.Settings, t("Settings"))).forEach { (index, glyph, label) ->
             val on = tab == index
             Column(
                 Modifier.width(80.dp).clip(RoundedCornerShape(16.dp))
@@ -109,7 +113,8 @@ private fun NavRail(tab: Int, onTab: (Int) -> Unit) {
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                GlyphIcon(glyph, if (on) scheme.onPrimaryContainer else scheme.onSurfaceVariant, 24.dp)
+                val tint = if (on) scheme.onPrimaryContainer else scheme.onSurfaceVariant
+                if (glyph == null) AgentGlyph(tint, 24.dp) else GlyphIcon(glyph, tint, 24.dp)
                 Text(
                     label, fontSize = 11.sp, textAlign = TextAlign.Center, maxLines = 2,
                     fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal,
