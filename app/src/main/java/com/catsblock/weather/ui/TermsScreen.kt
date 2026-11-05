@@ -34,7 +34,7 @@ private val termsSections = listOf(
     "The Agent" to
         "The Agent is an AI that answers questions about the weather. Its replies are generated automatically, may be inaccurate or incomplete, and are not professional weather, safety or emergency advice. Always check the official forecast and warnings from your local authorities.",
     "Agent usage limits" to
-        "Agent usage is limited by the number of tokens it spends, up to 2,500 tokens per device within 24 hours. When the limit is reached, the message box is replaced by a notice with the time it will return. Messages sent in quick succession are queued, and sending too many messages in a short time blocks further messages for one minute.",
+        "Agent usage is limited by the number of tokens it spends, up to 10,000 tokens per device within 5 hours. When the limit is reached, the message box is replaced by a notice with the time it will return. Messages sent in quick succession are queued, and sending too many messages in a short time blocks further messages for one minute.",
     "Acceptable use" to
         "Do not use the Agent for anything inappropriate, unlawful or against these terms, including crimes, harassment, attempts to bypass its rules or safety measures, and requests unrelated to the weather. Messages that violate these terms are not answered and are marked as a violation. Do not attempt to bypass limits, impersonate other devices, overload the servers or access the service by automated means.",
     "Servers and third-party services" to
