@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
@@ -23,6 +24,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.awt.ComposePanel
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -54,15 +57,23 @@ class WidgetWindow(
     init {
         window.type = Window.Type.UTILITY
         window.focusableWindowState = false
-        window.setSize(WIDTH, HEIGHT)
-        runCatching { window.shape = RoundRectangle2D.Float(0f, 0f, WIDTH.toFloat(), HEIGHT.toFloat(), 8f, 8f) }
+        applySize(100)
         val panel = ComposePanel()
         panel.setContent { WidgetContent(model, window, onOpen, onMoved) }
         window.contentPane.add(panel)
     }
 
+    private fun applySize(percent: Int) {
+        val w = (WIDTH * percent / 100f).toInt().coerceAtLeast(80)
+        val h = (HEIGHT * percent / 100f).toInt().coerceAtLeast(26)
+        if (window.width == w && window.height == h) return
+        window.setSize(w, h)
+        runCatching { window.shape = RoundRectangle2D.Float(0f, 0f, w.toFloat(), h.toFloat(), 8f * percent / 100f, 8f * percent / 100f) }
+    }
+
     fun configure(settings: DesktopSettings) {
         window.isAlwaysOnTop = settings.alwaysOnTop
+        applySize(settings.widgetScale)
         if (!placed) {
             window.location = initialLocation(settings)
             placed = true
@@ -71,12 +82,12 @@ class WidgetWindow(
     }
 
     private fun initialLocation(settings: DesktopSettings): Point {
-        val saved = Rectangle(settings.widgetX, settings.widgetY, WIDTH, HEIGHT)
+        val saved = Rectangle(settings.widgetX, settings.widgetY, window.width, window.height)
         val onScreen = settings.widgetX >= 0 && GraphicsEnvironment.getLocalGraphicsEnvironment().screenDevices
             .any { it.defaultConfiguration.bounds.intersects(saved) }
         if (onScreen) return Point(settings.widgetX, settings.widgetY)
         val area = GraphicsEnvironment.getLocalGraphicsEnvironment().maximumWindowBounds
-        return Point(area.x + area.width - WIDTH - 16, area.y + 16)
+        return Point(area.x + area.width - window.width - 16, area.y + 16)
     }
 
     fun dispose() {
@@ -92,6 +103,14 @@ class WidgetWindow(
 
 @Composable
 private fun WidgetContent(model: WidgetModel, window: Window, onOpen: () -> Unit, onMoved: (Int, Int) -> Unit) {
+    val density = LocalDensity.current
+    val scale = model.settings.widgetScale / 100f
+    val scaled = remember(density, scale) { Density(density.density * scale, density.fontScale) }
+    CompositionLocalProvider(LocalDensity provides scaled) { WidgetBody(model, window, onOpen, onMoved) }
+}
+
+@Composable
+private fun WidgetBody(model: WidgetModel, window: Window, onOpen: () -> Unit, onMoved: (Int, Int) -> Unit) {
     val s = model.settings
     val c = model.conditions
     LaunchedEffect(model.active, model.touched, s.idleSeconds) {
