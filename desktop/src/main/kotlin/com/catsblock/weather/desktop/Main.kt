@@ -24,7 +24,6 @@ import kotlinx.coroutines.withContext
 import java.awt.Dimension
 import kotlin.system.exitProcess
 
-private const val REFRESH_MS = 15 * 60_000L
 private const val UPDATE_CHECK_MS = 6 * 60 * 60_000L
 
 fun main(args: Array<String>) {
@@ -115,7 +114,7 @@ fun main(args: Array<String>) {
                     conditions = result
                     failed = false
                 } else if (conditions == null) failed = true
-                delay(if (result == null) 60_000L else REFRESH_MS)
+                delay(if (result == null) 60_000L else settings.refreshMinutes * 60_000L)
             }
         }
 
@@ -129,7 +128,7 @@ fun main(args: Array<String>) {
             WidgetWindow(widgetModel, onOpen = { openApp(false) }, onMoved = { x, y -> update(latest.value.copy(widgetX = x, widgetY = y)) })
         }
         DisposableEffect(Unit) { onDispose { widget.dispose() } }
-        LaunchedEffect(settings.widgetVisible, settings.alwaysOnTop) { widget.configure(settings) }
+        LaunchedEffect(settings.widgetVisible, settings.alwaysOnTop, settings.widgetScale) { widget.configure(settings) }
 
         TrayController(
             settings = settings,
@@ -172,9 +171,9 @@ fun main(args: Array<String>) {
             visible = mainVisible,
             title = "CatsBlock Weather",
             icon = icon,
-            state = rememberWindowState(size = DpSize(1040.dp, 800.dp), position = WindowPosition.Aligned(androidx.compose.ui.Alignment.Center))
+            state = rememberWindowState(size = DpSize(1200.dp, 840.dp), position = WindowPosition.Aligned(androidx.compose.ui.Alignment.Center))
         ) {
-            LaunchedEffect(Unit) { window.minimumSize = Dimension(480, 600) }
+            LaunchedEffect(Unit) { window.minimumSize = Dimension(720, 600) }
             LaunchedEffect(focusTick) {
                 if (focusTick > 0) {
                     window.isMinimized = false
