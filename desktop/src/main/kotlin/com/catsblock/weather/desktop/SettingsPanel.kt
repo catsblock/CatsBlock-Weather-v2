@@ -72,9 +72,27 @@ fun DesktopSettings.withCity(p: Place): DesktopSettings {
 }
 
 @Composable
-fun SettingsPanel(settings: DesktopSettings, update: UpdateUi, onChange: (DesktopSettings) -> Unit) {
-    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(32.dp)) {
-        Section(t("Saved cities")) {
+private fun NavRow(title: String, subtitle: String?, onClick: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.bodyLarge)
+            if (subtitle != null) Text(subtitle, style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
+        }
+        GlyphIcon(Glyph.Chevron, scheme.onSurfaceVariant, 18.dp)
+    }
+}
+
+@Composable
+private fun Label(text: String) = Text(text, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+@Composable
+private fun Hint(text: String) = Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+@Composable
+fun SettingsPanel(settings: DesktopSettings, update: UpdateUi, onChange: (DesktopSettings) -> Unit, onLegal: (String) -> Unit) {
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Card(Modifier.fillMaxWidth(), t("Saved cities")) {
             settings.cities.forEachIndexed { i, city ->
                 Row(Modifier.fillMaxWidth().clickable { onChange(settings.copy(selected = i)) }, verticalAlignment = Alignment.CenterVertically) {
                     Text(
@@ -93,54 +111,107 @@ fun SettingsPanel(settings: DesktopSettings, update: UpdateUi, onChange: (Deskto
             }
             CitySearch(settings.language) { onChange(settings.withCity(it)) }
         }
-        Section(t("Units")) {
-            Text(t("Temperature unit"), style = MaterialTheme.typography.labelLarge)
-            Segmented(listOf(false to t("Celsius"), true to t("Fahrenheit")), settings.fahrenheit) { onChange(settings.copy(fahrenheit = it)) }
-            Text(t("Wind unit"), style = MaterialTheme.typography.labelLarge)
-            Segmented(WindUnit.entries.map { it to it.label }, settings.windUnit) { onChange(settings.copy(windUnit = it)) }
-            Text(t("Pressure unit"), style = MaterialTheme.typography.labelLarge)
-            Segmented(PressureUnit.entries.map { it to it.label }, settings.pressureUnit) { onChange(settings.copy(pressureUnit = it)) }
-        }
-        Section(t("Appearance")) {
-            Text(t("Theme"), style = MaterialTheme.typography.labelLarge)
+        Card(Modifier.fillMaxWidth(), t("Appearance")) {
+            Label(t("Theme"))
             Segmented(
                 listOf(ThemeMode.System to t("System"), ThemeMode.Light to t("Light theme"), ThemeMode.Dark to t("Dark")),
                 settings.theme
             ) { onChange(settings.copy(theme = it)) }
-        }
-        Section(t("Widget")) {
-            Toggle(t("Show floating widget"), settings.widgetVisible) { onChange(settings.copy(widgetVisible = it)) }
-            Toggle(t("Always on top"), settings.alwaysOnTop) { onChange(settings.copy(alwaysOnTop = it)) }
-            Text(t("Widget color"), style = MaterialTheme.typography.labelLarge)
-            Segmented(listOf("weather" to t("Follow the weather"), "fixed" to t("Fixed color")), settings.colorMode) { onChange(settings.copy(colorMode = it)) }
-            if (settings.colorMode == "fixed") {
+            Toggle(t("AMOLED black"), settings.amoled) { onChange(settings.copy(amoled = it)) }
+            Hint(t("Use a pure black background when the dark theme is active."))
+            Label(t("Color"))
+            Segmented(listOf("weather" to t("Weather"), "custom" to t("Custom")), settings.colorStyle) { onChange(settings.copy(colorStyle = it)) }
+            if (settings.colorStyle == "weather") Hint(t("Colors follow the current weather. This is the default."))
+            else {
+                Hint(t("Pick your own accent color."))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FIXED_COLORS.forEachIndexed { index, color ->
-                        Box(Modifier.size(32.dp).background(color, CardShape).clickable { onChange(settings.copy(fixedColor = index)) }) {
-                            if (index == settings.fixedColor) Box(Modifier.align(Alignment.Center).size(8.dp).background(inkFor(color), CardShape))
+                        Box(Modifier.size(36.dp).background(color, SmallShape).clickable { onChange(settings.copy(customColor = index)) }) {
+                            if (index == settings.customColor) Box(Modifier.align(Alignment.Center).size(10.dp).background(inkFor(color), SmallShape))
                         }
                     }
                 }
             }
-            Text(t("Inactive opacity") + ": " + settings.inactivePercent + "%", style = MaterialTheme.typography.labelLarge)
+            Label(t("Text size") + ": " + settings.textScale + "%")
+            Slider(
+                value = settings.textScale.toFloat(),
+                onValueChange = { onChange(settings.copy(textScale = (it / 5f).roundToInt() * 5)) },
+                valueRange = 85f..130f
+            )
+            TextButton(onClick = { onChange(settings.copy(textScale = 100)) }) { Text(t("Reset")) }
+        }
+        Card(Modifier.fillMaxWidth(), t("Layout")) {
+            Toggle(t("Compact current conditions"), settings.compactHero) { onChange(settings.copy(compactHero = it)) }
+            Hint(t("Use a shorter header so more cards fit on the screen."))
+            Toggle(t("Precipitation card"), settings.showPrecipCard) { onChange(settings.copy(showPrecipCard = it)) }
+            Toggle(t("Weather background"), settings.showBackground) { onChange(settings.copy(showBackground = it)) }
+        }
+        Card(Modifier.fillMaxWidth(), t("Region and units")) {
+            Label(t("Temperature"))
+            Segmented(listOf(false to t("Celsius"), true to t("Fahrenheit")), settings.fahrenheit) { onChange(settings.copy(fahrenheit = it)) }
+            Label(t("Wind speed"))
+            Segmented(WindUnit.entries.map { it to it.label }, settings.windUnit) { onChange(settings.copy(windUnit = it)) }
+            Label(t("Atmospheric pressure"))
+            Segmented(PressureUnit.entries.map { it to it.label }, settings.pressureUnit) { onChange(settings.copy(pressureUnit = it)) }
+            Label(t("Precipitation"))
+            Segmented(PrecipUnit.entries.map { it to it.label }, settings.precipUnit) { onChange(settings.copy(precipUnit = it)) }
+        }
+        Card(Modifier.fillMaxWidth(), t("Weather data")) {
+            Label(t("Update interval"))
+            Segmented(listOf(5, 15, 30, 60).map { it to "$it min" }, settings.refreshMinutes) { onChange(settings.copy(refreshMinutes = it)) }
+        }
+        Card(Modifier.fillMaxWidth(), t("Widget")) {
+            Toggle(t("Show floating widget"), settings.widgetVisible) { onChange(settings.copy(widgetVisible = it)) }
+            Toggle(t("Always on top"), settings.alwaysOnTop) { onChange(settings.copy(alwaysOnTop = it)) }
+            Label(t("Widget size") + ": " + settings.widgetScale + "%")
+            Slider(
+                value = settings.widgetScale.toFloat(),
+                onValueChange = { onChange(settings.copy(widgetScale = (it / 10f).roundToInt() * 10)) },
+                valueRange = 50f..250f
+            )
+            TextButton(onClick = { onChange(settings.copy(widgetScale = 100)) }) { Text(t("Reset")) }
+            Label(t("Widget color"))
+            Segmented(listOf("weather" to t("Follow the weather"), "fixed" to t("Fixed color")), settings.colorMode) { onChange(settings.copy(colorMode = it)) }
+            if (settings.colorMode == "fixed") {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FIXED_COLORS.forEachIndexed { index, color ->
+                        Box(Modifier.size(36.dp).background(color, SmallShape).clickable { onChange(settings.copy(fixedColor = index)) }) {
+                            if (index == settings.fixedColor) Box(Modifier.align(Alignment.Center).size(10.dp).background(inkFor(color), SmallShape))
+                        }
+                    }
+                }
+            }
+            Label(t("Inactive opacity") + ": " + settings.inactivePercent + "%")
             Slider(
                 value = settings.inactivePercent.toFloat(),
                 onValueChange = { onChange(settings.copy(inactivePercent = it.roundToInt())) },
                 valueRange = 10f..60f
             )
-            Text(t("Return to inactive after"), style = MaterialTheme.typography.labelLarge)
+            Label(t("Return to inactive after"))
             Segmented(
                 listOf(0, 3, 5, 10, 30).map { it to if (it == 0) t("Never") else "$it s" },
                 settings.idleSeconds
             ) { onChange(settings.copy(idleSeconds = it)) }
         }
-        Section(t("Language")) {
-            LANGUAGES.forEach { (code, label) -> Choice(settings.language == code, label) { onChange(settings.copy(language = code)) } }
+        Card(Modifier.fillMaxWidth(), t("App language")) {
+            LANGUAGES.chunked(2).forEach { pair ->
+                Row(Modifier.fillMaxWidth()) {
+                    pair.forEach { (code, label) -> Box(Modifier.weight(1f)) { Choice(settings.language == code, label) { onChange(settings.copy(language = code)) } } }
+                    if (pair.size == 1) Box(Modifier.weight(1f)) {}
+                }
+            }
         }
-        Section(t("Running in the background")) {
+        Card(Modifier.fillMaxWidth(), t("Running in the background")) {
             Toggle(t("Start with Windows"), settings.startWithWindows) { onChange(settings.copy(startWithWindows = it)) }
         }
-        Section(updateText("Check for updates")) {
+        Card(Modifier.fillMaxWidth(), t("About & Legal")) {
+            NavRow(t("About this app"), null) { onLegal("about") }
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            NavRow(t("Privacy Policy"), t("How CatsBlock Weather handles your data.")) { onLegal("privacy") }
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            NavRow(t("Terms of Service"), t("The rules for using CatsBlock Weather and the Agent.")) { onLegal("terms") }
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            Text(t("App version") + " 2.0." + WindowsUpdater.installedBuild(), Modifier.padding(vertical = 8.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
             val release = update.pending
             if (release != null) {
                 TextButton(onClick = update.onInstall, enabled = update.status != UpdateStatus.Downloading) {
