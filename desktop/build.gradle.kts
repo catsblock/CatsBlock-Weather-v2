@@ -12,16 +12,21 @@ dependencies {
     implementation("org.json:json:20240303")
 }
 
+fun secret(name: String): String = (System.getenv(name) ?: "").trim()
+
 val buildNumber = (findProperty("buildNumber") as String?)?.toIntOrNull() ?: 0
 
 val generateBuildInfo by tasks.registering {
     val outputDir = layout.buildDirectory.dir("generated/buildinfo")
     inputs.property("buildNumber", buildNumber)
+    inputs.property("secretsHash", (secret("CLOUDFLARE_WEBSITE") + secret("APP_TOKEN")).hashCode())
     outputs.dir(outputDir)
     doLast {
         val dir = outputDir.get().asFile
         dir.mkdirs()
-        File(dir, "build.properties").writeText("build=$buildNumber\n")
+        File(dir, "build.properties").writeText(
+            "build=$buildNumber\ncloudflare=${secret("CLOUDFLARE_WEBSITE").trimEnd('/')}\ntoken=${secret("APP_TOKEN")}\n"
+        )
     }
 }
 
