@@ -630,10 +630,10 @@ const AGENT_MAX_REPLY_CHARS = 1500;
 const AGENT_WEATHER_TIMEOUT_MS = 8000;
 const AGENT_GEMINI_TIMEOUT_MS = 20000;
 const AGENT_MODELS = [
-  { name: "Gemini 3.8 Flash", model: "gemini-3.8-flash", maxChars: 800, maxOutputTokens: 2800, thinking: { thinkingLevel: "low" } },
-  { name: "Gemini 3.5 Flash Lite", model: "gemini-3.5-flash-lite", maxChars: 700, maxOutputTokens: 2400, thinking: null },
-  { name: "Gemini 3.1 Flash Lite", model: "gemini-3.1-flash-lite", maxChars: 600, maxOutputTokens: 2000, thinking: null },
   { name: "Gemini 2.5 Flash", model: "gemini-2.5-flash", maxChars: 500, maxOutputTokens: 1750, thinking: { thinkingBudget: 0 } },
+  { name: "Gemini 3.1 Flash Lite", model: "gemini-3.1-flash-lite", maxChars: 600, maxOutputTokens: 2000, thinking: null },
+  { name: "Gemini 3.5 Flash Lite", model: "gemini-3.5-flash-lite", maxChars: 700, maxOutputTokens: 2400, thinking: null },
+  { name: "Gemini 3.8 Flash", model: "gemini-3.8-flash", maxChars: 800, maxOutputTokens: 2800, thinking: { thinkingLevel: "low" } },
 ];
 const AGENT_KEY_NAMES = ["GEMINI_API_KEY", "GOOGLE_API_KEY"];
 const AGENT_LANG_PATTERN = /^[A-Za-z]{2,3}(-[A-Za-z]{2,4})?$/;
@@ -847,13 +847,9 @@ function agentThinkingFor(entry, tier) {
   return entry.thinking;
 }
 
-function agentOrderForTier(models, tier) {
-  const rank = (entry) => {
-    const index = AGENT_MODELS.findIndex((item) => item.model === entry.model);
-    if (tier === "basic") return AGENT_MODELS.length - index;
-    return index;
-  };
-  return models.slice().sort((a, b) => rank(a) - rank(b));
+function agentOrderForTier(models) {
+  const index = (entry) => AGENT_MODELS.findIndex((item) => item.model === entry.model);
+  return models.slice().sort((x, y) => index(x) - index(y));
 }
 
 async function configuredAgentModels(env) {
@@ -1636,7 +1632,7 @@ async function runAgent(request, env, read, emit, id) {
       }
       if (usable.length === 0) usable = models;
       const tier = agentComplexityTier(input.message);
-      usable = agentOrderForTier(usable, tier);
+      usable = agentOrderForTier(usable);
       let lastCode = "no_model_tried";
       let keysRejected = false;
       for (const entry of usable) {
