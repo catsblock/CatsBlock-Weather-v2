@@ -141,11 +141,22 @@ function clientIp(request) {
 
 const DEVICE_ID_PATTERN = /^[a-f0-9]{64}$/;
 
+let derivedSalt = { token: "", value: "" };
+
+async function rateSalt(env) {
+  const token = await readEnvSecret(env.APP_TOKEN);
+  if (token.length < 32) return "";
+  if (derivedSalt.token !== token) {
+    derivedSalt = { token, value: await hmacHex(token, "catsblock/rate-salt/v1") };
+  }
+  return derivedSalt.value;
+}
+
 async function identify(request, env) {
   const ip = clientIp(request);
   if (!ip) return { error: "client_unidentified" };
-  const salt = typeof env.RATE_SALT === "string" ? env.RATE_SALT : "";
-  if (salt.length < 32) return { error: "security_not_configured" };
+  const salt = await rateSalt(env);
+  if (!salt) return { error: "security_not_configured" };
   const ipHash = await hmacHex(salt, "ip|" + ip);
   const device = (request.headers.get("X-Device-Id") || "").trim().toLowerCase();
   if (!DEVICE_ID_PATTERN.test(device)) {
@@ -155,8 +166,8 @@ async function identify(request, env) {
   return { hash, ipHash, hasDevice: true, clientKey: "c:" + hash, ipKey: "ip:" + ipHash };
 }
 
-function authorized(request, env) {
-  const expected = typeof env.APP_TOKEN === "string" ? env.APP_TOKEN : "";
+async function authorized(request, env) {
+  const expected = await readEnvSecret(env.APP_TOKEN);
   const provided = request.headers.get("X-App-Token") || "";
   return expected.length >= 32 && constantTimeEqual(provided, expected);
 }
@@ -369,6 +380,110 @@ async function handleStatus(request, env) {
   );
 }
 
+const KEY_POOL_MAX = 8;
+const KEY_AUTH_DOWN_S = 3600;
+const SHARED_KEY_BASES = { weather: "WEATHER_API_KEY", visual: "VISUAL_API_KEY", openweather: "OPENWEATHER_API_KEY" };
+
+async function collectKeys(env, names, minLength) {
+  const seen = new Set();
+  const out = [];
+  for (const name of names) {
+    const raw = await readEnvSecret(env[name]);
+    if (!raw) continue;
+    for (const part of raw.split(/[\s,;]+/)) {
+      const value = part.trim();
+      if (value.length < minLength || value.length > 200 || !/^[\x21-\x7E]+$/.test(value) || seen.has(value)) continue;
+      seen.add(value);
+      out.push(value);
+    }
+  }
+  return out;
+}
+
+function numberedNames(base) {
+  const names = [base];
+  for (let i = 2; i <= KEY_POOL_MAX; i++) names.push(base + "_" + i);
+  return names;
+}
+
+async function sharedKeyPool(env, provider) {
+  const base = SHARED_KEY_BASES[provider];
+  return base ? collectKeys(env, numberedNames(base), 8) : [];
+}
+
+async function keyFingerprint(key) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode("fp|" + key));
+  return Array.from(new Uint8Array(digest).slice(0, 6), (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+async function poolKeyState(env, provider, fp) {
+  try {
+    return await env.APP_KV.get("keydown:" + provider + ":" + fp);
+  } catch (err) {
+    return null;
+  }
+}
+
+async function flagPoolKey(env, provider, fp, seconds, kind) {
+  try {
+    await env.APP_KV.put("keydown:" + provider + ":" + fp, kind, { expirationTtl: Math.max(60, Math.ceil(seconds)) });
+  } catch (err) {
+    return;
+  }
+}
+
+async function queryUpstream(env, provider, coords, pool, usingUserKey) {
+  let candidates = pool.map((key) => ({ key, fp: "" }));
+  let quotaHit = false;
+  if (!usingUserKey) {
+    candidates = [];
+    for (const key of pool) {
+      const fp = await keyFingerprint(key);
+      const state = await poolKeyState(env, provider, fp);
+      if (state === null) candidates.push({ key, fp });
+      else if (state === "q") quotaHit = true;
+    }
+    if (candidates.length === 0) return { kind: quotaHit ? "exhausted" : "keys_rejected" };
+  }
+  for (const candidate of candidates) {
+    let response;
+    try {
+      response = await fetch(upstreamUrl(provider, coords.lat, coords.lon, candidate.key), {
+        method: "GET",
+        redirect: "manual",
+        headers: { Accept: "application/json" },
+        signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
+      });
+    } catch (err) {
+      return { kind: "unreachable" };
+    }
+    let text;
+    try {
+      text = await readCapped(response);
+    } catch (err) {
+      return { kind: "unreadable" };
+    }
+    if (text === null) return { kind: "too_large" };
+    text = redact(text, [candidate.key]);
+    if (response.ok) return { kind: "ok", bodyText: text };
+    if (usingUserKey) {
+      const authFailure = response.status === 401 || response.status === 403;
+      return { kind: authFailure ? "user_key_rejected" : "error", status: response.status };
+    }
+    if (isQuotaExceeded(provider, response.status, text)) {
+      quotaHit = true;
+      await flagPoolKey(env, provider, candidate.fp, providerExhaust(provider) / 1000, "q");
+      continue;
+    }
+    if (response.status === 401 || response.status === 403) {
+      await flagPoolKey(env, provider, candidate.fp, KEY_AUTH_DOWN_S, "a");
+      continue;
+    }
+    return { kind: "error", status: response.status };
+  }
+  return { kind: quotaHit ? "exhausted" : "keys_rejected" };
+}
+
 async function handleProxy(request, env, provider) {
   const url = new URL(request.url);
   const coords = parseCoordinates(url);
@@ -381,9 +496,8 @@ async function handleProxy(request, env, provider) {
     return jsonResponse({ error: "invalid_api_key_format" }, 400);
   }
   const usingUserKey = rawUserKey.length > 0;
-  const sharedKey = provider === "weather" ? env.WEATHER_API_KEY : provider === "openweather" ? env.OPENWEATHER_API_KEY : env.VISUAL_API_KEY;
-  const apiKey = usingUserKey ? rawUserKey : sharedKey;
-  if (!apiKey) {
+  const pool = usingUserKey ? [rawUserKey] : await sharedKeyPool(env, provider);
+  if (pool.length === 0) {
     return jsonResponse({ error: "service_unavailable" }, 503);
   }
 
@@ -454,15 +568,8 @@ async function handleProxy(request, env, provider) {
     );
   }
 
-  let upstreamResponse;
-  try {
-    upstreamResponse = await fetch(upstreamUrl(provider, coords.lat, coords.lon, apiKey), {
-      method: "GET",
-      redirect: "manual",
-      headers: { Accept: "application/json" },
-      signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
-    });
-  } catch (err) {
+  const upstream = await queryUpstream(env, provider, coords, pool, usingUserKey);
+  if (upstream.kind === "unreachable") {
     const failedUsage = await peekAll(env.APP_KV, provider);
     return jsonResponse({ error: "upstream_unreachable" }, 502, Object.assign(rateHeaders(limitState), usageHeaders(failedUsage)));
   }
@@ -473,32 +580,27 @@ async function handleProxy(request, env, provider) {
   const usage = await peekAll(env.APP_KV, provider);
   const metaHeaders = Object.assign(rateHeaders(limitState), usageHeaders(usage));
 
-  let bodyText;
-  try {
-    bodyText = await readCapped(upstreamResponse);
-  } catch (err) {
-    return jsonResponse({ error: "upstream_unreadable" }, 502, metaHeaders);
+  if (upstream.kind === "unreadable") return jsonResponse({ error: "upstream_unreadable" }, 502, metaHeaders);
+  if (upstream.kind === "too_large") return jsonResponse({ error: "upstream_too_large" }, 502, metaHeaders);
+  if (upstream.kind === "user_key_rejected") {
+    return jsonResponse({ error: "user_api_key_rejected", status: upstream.status }, 401, metaHeaders);
   }
-  if (bodyText === null) {
-    return jsonResponse({ error: "upstream_too_large" }, 502, metaHeaders);
+  if (upstream.kind === "exhausted") {
+    await markExhausted(env.APP_KV, provider, exhaustDuration);
+    return jsonResponse(
+      { error: "provider_exhausted", provider, retryAfterSeconds: Math.ceil(exhaustDuration / 1000) },
+      503,
+      Object.assign({}, metaHeaders, { "X-Global-Exhausted-Seconds": String(Math.ceil(exhaustDuration / 1000)) })
+    );
   }
-  bodyText = redact(bodyText, [apiKey]);
-
-  if (!upstreamResponse.ok) {
-    if (usingUserKey) {
-      const authFailure = upstreamResponse.status === 401 || upstreamResponse.status === 403;
-      return jsonResponse({ error: authFailure ? "user_api_key_rejected" : "upstream_error", status: upstreamResponse.status }, authFailure ? 401 : 502, metaHeaders);
-    }
-    if (isQuotaExceeded(provider, upstreamResponse.status, bodyText)) {
-      await markExhausted(env.APP_KV, provider, exhaustDuration);
-      return jsonResponse(
-        { error: "provider_exhausted", provider, retryAfterSeconds: Math.ceil(exhaustDuration / 1000) },
-        503,
-        Object.assign({}, metaHeaders, { "X-Global-Exhausted-Seconds": String(Math.ceil(exhaustDuration / 1000)) })
-      );
-    }
-    return jsonResponse({ error: "upstream_error", status: upstreamResponse.status }, 502, metaHeaders);
+  if (upstream.kind === "keys_rejected") {
+    console.warn("provider_keys_rejected", JSON.stringify({ provider }));
+    return jsonResponse({ error: "service_unavailable" }, 503, metaHeaders);
   }
+  if (upstream.kind !== "ok") {
+    return jsonResponse({ error: "upstream_error", status: upstream.status || 0 }, 502, metaHeaders);
+  }
+  const bodyText = upstream.bodyText;
 
   try {
     JSON.parse(bodyText);
@@ -574,6 +676,7 @@ const AGENT_QUEUE_WAIT_MS = 15000;
 const AGENT_QUEUE_POLL_MS = 1500;
 const AGENT_KEY_DOWN_TTL_S = 600;
 const AGENT_RATE_DOWN_TTL_S = 60;
+const AGENT_DAILY_DOWN_TTL_S = 900;
 const AGENT_INVISIBLE_ALL = new RegExp(AGENT_INVISIBLE.source, "g");
 const AGENT_VOWELS = /[aeiouyáàâãéêíóôõúüç]/i;
 const AGENT_KEYBOARD = /(qwer|wert|erty|asdf|sdfg|dfgh|fghj|ghjk|hjkl|zxcv|xcvb|cvbn|vbnm|uiop)/;
@@ -699,20 +802,40 @@ async function readEnvSecret(value) {
   return "";
 }
 
-async function agentApiKey(env) {
-  const names = AGENT_KEY_NAMES.concat(Object.keys(env).filter((name) => AGENT_KEY_NAME_PATTERN.test(name) && AGENT_KEY_NAMES.indexOf(name) < 0));
-  let fallback = "";
-  for (const name of names) {
-    const value = await readEnvSecret(env[name]);
-    if (value.length < 20) continue;
-    if (value.startsWith("AIza")) return value;
-    if (!fallback) fallback = value;
+async function agentKeyPool(env) {
+  const explicit = [];
+  for (const base of AGENT_KEY_NAMES) explicit.push(...numberedNames(base));
+  const extra = Object.keys(env).filter((name) => AGENT_KEY_NAME_PATTERN.test(name) && explicit.indexOf(name) < 0);
+  const keys = await collectKeys(env, explicit, 20);
+  for (const key of await collectKeys(env, extra, 20)) {
+    if (key.startsWith("AIza") && keys.indexOf(key) < 0) keys.push(key);
   }
-  return fallback;
+  keys.sort((x, y) => Number(y.startsWith("AIza")) - Number(x.startsWith("AIza")));
+  const pool = [];
+  for (const key of keys) pool.push({ key, fp: await keyFingerprint(key) });
+  return pool;
 }
 
 async function configuredAgentModels(env) {
-  return (await agentApiKey(env)) ? AGENT_MODELS : [];
+  return (await agentKeyPool(env)).length > 0 ? AGENT_MODELS : [];
+}
+
+async function agentKeyDown(env, item, entry) {
+  try {
+    if ((await env.APP_KV.get("agent:key_down:" + item.fp)) !== null) return true;
+    return (await env.APP_KV.get("agent:rate_down:" + item.fp + ":" + entry.model)) !== null;
+  } catch (err) {
+    return false;
+  }
+}
+
+async function flagAgentKey(env, item, entry, failure) {
+  const name = failure.scope === "key" ? "agent:key_down:" + item.fp : "agent:rate_down:" + item.fp + ":" + entry.model;
+  try {
+    await env.APP_KV.put(name, "1", { expirationTtl: Math.max(60, Math.ceil(failure.seconds || AGENT_RATE_DOWN_TTL_S)) });
+  } catch (err) {
+    return;
+  }
 }
 
 function agentModelFlag(entry) {
@@ -732,7 +855,7 @@ async function agentAvailability(env) {
   if (!env.RATE_LIMITER) return { available: false, reason: "limiter_missing" };
   const models = await configuredAgentModels(env);
   if (models.length === 0) {
-    console.warn("agent_api_key_missing", JSON.stringify({ envNames: Object.keys(env) }));
+    console.warn("agent_api_key_missing");
     return { available: false, reason: "api_key_missing" };
   }
   for (const entry of models) {
@@ -1177,11 +1300,13 @@ function geminiErrorInfo(detail) {
   }
 }
 
-function geminiDownSeconds(httpStatus, info) {
-  if (httpStatus === 401 || httpStatus === 403 || httpStatus === 404) return AGENT_KEY_DOWN_TTL_S;
-  if (httpStatus === 400 && /API[ _]key/i.test(info.message + " " + info.status)) return AGENT_KEY_DOWN_TTL_S;
-  if (httpStatus === 429) return AGENT_RATE_DOWN_TTL_S;
-  return 0;
+function geminiFailure(httpStatus, info) {
+  const text = info.message + " " + info.status;
+  if (httpStatus === 401 || httpStatus === 403) return { scope: "key", seconds: AGENT_KEY_DOWN_TTL_S };
+  if (httpStatus === 400 && /API[ _]key/i.test(text)) return { scope: "key", seconds: AGENT_KEY_DOWN_TTL_S };
+  if (httpStatus === 404) return { scope: "model", seconds: AGENT_KEY_DOWN_TTL_S };
+  if (httpStatus === 429) return { scope: "rate", seconds: /per ?day|daily/i.test(text) ? AGENT_DAILY_DOWN_TTL_S : AGENT_RATE_DOWN_TTL_S };
+  return { scope: "", seconds: 0 };
 }
 
 function extractCards(reply, weather) {
@@ -1217,7 +1342,32 @@ async function readErrorDetail(response) {
 }
 
 async function callGemini(env, input, weather, entry, maxOutputTokens) {
-  const apiKey = await agentApiKey(env);
+  const pool = await agentKeyPool(env);
+  let candidates = [];
+  for (const item of pool) {
+    if (!(await agentKeyDown(env, item, entry))) candidates.push(item);
+  }
+  if (candidates.length === 0) candidates = pool;
+  if (candidates.length === 0) throw new Error("agent_keys_missing");
+  let lastError = null;
+  for (const item of candidates) {
+    try {
+      return await callGeminiWithKey(item.key, input, weather, entry, maxOutputTokens);
+    } catch (err) {
+      lastError = err;
+      const scope = err && err.failScope;
+      if (scope === "key" || scope === "rate") {
+        await flagAgentKey(env, item, entry, { scope, seconds: err.failSeconds });
+        continue;
+      }
+      throw err;
+    }
+  }
+  if (lastError && lastError.failScope === "key") lastError.authExhausted = true;
+  throw lastError || new Error("agent_keys_missing");
+}
+
+async function callGeminiWithKey(apiKey, input, weather, entry, maxOutputTokens) {
   const model = entry.model;
   const userText = buildAgentUserText(input, weather);
   const outputLimit = Math.min(entry.maxOutputTokens, maxOutputTokens);
@@ -1256,7 +1406,10 @@ async function callGemini(env, input, weather, entry, maxOutputTokens) {
     const error = new Error("gemini_http");
     error.httpStatus = response.status;
     error.geminiStatus = info.status;
-    error.downSeconds = geminiDownSeconds(response.status, info);
+    const failure = geminiFailure(response.status, info);
+    error.failScope = failure.scope;
+    error.failSeconds = failure.seconds;
+    error.downSeconds = failure.scope === "model" ? failure.seconds : 0;
     if (response.status >= 500 && error.downSeconds === 0) error.chargeTokens = estimatedCallTokens;
     throw error;
   }
@@ -1443,6 +1596,7 @@ async function runAgent(request, env, read, emit, id) {
       }
       if (usable.length === 0) usable = models;
       let lastCode = "no_model_tried";
+      let keysRejected = false;
       for (const entry of usable) {
         if (codePointLength(input.message) > entry.maxChars) continue;
         const outputLimit = Math.min(entry.maxOutputTokens, maxOutputTokens);
@@ -1462,6 +1616,10 @@ async function runAgent(request, env, read, emit, id) {
           lastCode = entry.model + ":" + (err && err.httpStatus ? err.httpStatus : err && err.message ? err.message : "error") + (err && err.geminiStatus ? ":" + err.geminiStatus : "");
           if (err && err.downSeconds > 0) await markAgentModelDown(env, entry, err.downSeconds);
           step("model", "fail", modelCommand);
+          if (err && err.authExhausted) {
+            keysRejected = true;
+            break;
+          }
           if (err && Number.isInteger(err.chargeTokens) && err.chargeTokens > 0) {
             failedTokens = Math.min(AGENT_IP_TOKEN_LIMIT, failedTokens + err.chargeTokens);
             chargedFailures += 1;
@@ -1491,7 +1649,10 @@ async function runAgent(request, env, read, emit, id) {
           return agentLimited(ipReset);
         }
       }
-      if (!result) return agentResult(502, { error: "agent_failed", message: MSG_FAILED, code: lastCode });
+      if (!result) {
+        if (keysRejected) return agentUnavailable();
+        return agentResult(502, { error: "agent_failed", message: MSG_FAILED, code: lastCode });
+      }
 
       step("format", "run", "format --cards " + result.cards.length);
       const remaining = Math.max(0, AGENT_TOKEN_LIMIT - (Number(charge.used) || 0) - (Number(charge.reserved) || 0));
@@ -1603,7 +1764,7 @@ export default {
         if (request.method !== "GET") {
           return jsonResponse({ error: "method_not_allowed" }, 405, { Allow: "GET, OPTIONS" });
         }
-        if (!authorized(request, env)) {
+        if (!(await authorized(request, env))) {
           return jsonResponse({ error: "unauthorized", message: MSG_UNAVAILABLE }, 401);
         }
         const availability = await agentAvailability(env);
@@ -1614,7 +1775,7 @@ export default {
         if (request.method !== "POST") {
           return jsonResponse({ error: "method_not_allowed" }, 405, { Allow: "POST, OPTIONS" });
         }
-        if (!authorized(request, env)) {
+        if (!(await authorized(request, env))) {
           return jsonResponse({ error: "unauthorized", message: MSG_FAILED }, 401);
         }
         return await handleAgent(request, env, ctx);
@@ -1638,7 +1799,7 @@ export default {
         return jsonResponse({ error: "not_found" }, 404);
       }
 
-      if (!authorized(request, env)) {
+      if (!(await authorized(request, env))) {
         return jsonResponse({ error: "unauthorized" }, 401);
       }
 
@@ -1647,6 +1808,7 @@ export default {
       }
       return await handleProxy(request, env, routes[path]);
     } catch (err) {
+      console.error("worker_unhandled", err && err.message ? String(err.message).slice(0, 200) : "unknown");
       return jsonResponse({ error: "internal_error" }, 500);
     }
   },
