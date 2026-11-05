@@ -35,6 +35,10 @@ enum class PressureUnit(val label: String, val factor: Double, val decimals: Int
     Hpa("hPa", 1.0, 0), Kpa("kPa", 0.1, 1), InHg("inHg", 0.02953, 2), MmHg("mmHg", 0.750062, 0)
 }
 
+enum class PrecipUnit(val label: String, val factor: Double, val decimals: Int) {
+    Mm("mm", 1.0, 1), In("in", 0.0393701, 2)
+}
+
 data class SavedCity(val name: String, val country: String, val lat: Double, val lon: Double) {
     val id: String get() = String.format(Locale.US, "%.2f,%.2f", lat, lon)
     val title: String get() = if (country.isBlank()) name else "$name, $country"
@@ -46,7 +50,17 @@ data class DesktopSettings(
     val windUnit: WindUnit = WindUnit.Kmh,
     val pressureUnit: PressureUnit = PressureUnit.Hpa,
     val theme: ThemeMode = ThemeMode.System,
+    val precipUnit: PrecipUnit = PrecipUnit.Mm,
+    val amoled: Boolean = false,
+    val colorStyle: String = "weather",
+    val customColor: Int = 0,
+    val textScale: Int = 100,
+    val compactHero: Boolean = false,
+    val showBackground: Boolean = true,
+    val showPrecipCard: Boolean = true,
+    val refreshMinutes: Int = 15,
     val widgetVisible: Boolean = true,
+    val widgetScale: Int = 100,
     val colorMode: String = "weather",
     val fixedColor: Int = 0,
     val inactivePercent: Int = 25,
@@ -105,7 +119,17 @@ object SettingsStore {
             windUnit = WindUnit.entries.firstOrNull { it.name == s("windUnit", "") } ?: d.windUnit,
             pressureUnit = PressureUnit.entries.firstOrNull { it.name == s("pressureUnit", "") } ?: d.pressureUnit,
             theme = ThemeMode.entries.firstOrNull { it.name == s("theme", "") } ?: d.theme,
+            precipUnit = PrecipUnit.entries.firstOrNull { it.name == s("precipUnit", "") } ?: d.precipUnit,
+            amoled = s("amoled", "false").toBoolean(),
+            colorStyle = s("colorStyle", "weather").takeIf { it == "weather" || it == "custom" } ?: "weather",
+            customColor = s("customColor", "0").toIntOrNull()?.coerceIn(0, FIXED_COLORS.lastIndex) ?: 0,
+            textScale = s("textScale", "100").toIntOrNull()?.coerceIn(85, 130) ?: 100,
+            compactHero = s("compactHero", "false").toBoolean(),
+            showBackground = s("showBackground", "true").toBoolean(),
+            showPrecipCard = s("showPrecipCard", "true").toBoolean(),
+            refreshMinutes = s("refreshMinutes", "15").toIntOrNull()?.coerceIn(5, 120) ?: 15,
             widgetVisible = s("widgetVisible", "true").toBoolean(),
+            widgetScale = s("widgetScale", "100").toIntOrNull()?.coerceIn(50, 250) ?: 100,
             colorMode = s("colorMode", "weather").takeIf { it == "weather" || it == "fixed" } ?: "weather",
             fixedColor = s("fixedColor", "0").toIntOrNull()?.coerceIn(0, FIXED_COLORS.lastIndex) ?: 0,
             inactivePercent = s("inactivePercent", "25").toIntOrNull()?.coerceIn(10, 60) ?: 25,
@@ -127,7 +151,17 @@ object SettingsStore {
         p["windUnit"] = v.windUnit.name
         p["pressureUnit"] = v.pressureUnit.name
         p["theme"] = v.theme.name
+        p["precipUnit"] = v.precipUnit.name
+        p["amoled"] = v.amoled.toString()
+        p["colorStyle"] = v.colorStyle
+        p["customColor"] = v.customColor.toString()
+        p["textScale"] = v.textScale.toString()
+        p["compactHero"] = v.compactHero.toString()
+        p["showBackground"] = v.showBackground.toString()
+        p["showPrecipCard"] = v.showPrecipCard.toString()
+        p["refreshMinutes"] = v.refreshMinutes.toString()
         p["widgetVisible"] = v.widgetVisible.toString()
+        p["widgetScale"] = v.widgetScale.toString()
         p["colorMode"] = v.colorMode
         p["fixedColor"] = v.fixedColor.toString()
         p["inactivePercent"] = v.inactivePercent.toString()
@@ -187,7 +221,9 @@ fun kindOf(code: Int, windKmh: Double = 0.0): Kind {
 data class Hour(
     val time: LocalDateTime, val temp: Double, val code: Int, val isDay: Boolean,
     val precip: Double, val prob: Int, val windKmh: Double, val uv: Double,
-    val pressure: Double, val visibilityM: Double
+    val pressure: Double, val visibilityM: Double,
+    val humidity: Int = 50, val cloud: Int = 0, val windDir: Double = 0.0, val gust: Double = 0.0,
+    val aqi: Double? = null, val dew: Double = 0.0, val feels: Double = 0.0
 ) {
     val kind: Kind get() = kindOf(code, windKmh)
 }
@@ -203,7 +239,8 @@ data class Conditions(
     val now: LocalDateTime, val temp: Double, val feels: Double, val humidity: Int,
     val windKmh: Double, val windDir: Double, val code: Int, val isDay: Boolean, val uv: Double,
     val aqi: Double?, val pressure: Double, val visibilityM: Double,
-    val hours: List<Hour>, val days: List<Day>
+    val hours: List<Hour>, val days: List<Day>,
+    val cloud: Int = 0, val gust: Double = 0.0, val dew: Double = 0.0
 ) {
     val kind: Kind get() = kindOf(code, windKmh)
     val nextHours: List<Hour>
@@ -246,6 +283,20 @@ object WeatherClient {
         }
     }
 
+    private fun hourlyAqi(lat: Double, lon: Double): Map<String, Double> {
+        val root = get(
+            String.format(Locale.US, "https://air-quality-api.open-meteo.com/v1/air-quality?latitude=%.4f&longitude=%.4f&hourly=us_aqi&forecast_days=7&timezone=auto", lat, lon)
+        ) ?: return emptyMap()
+        val h = root.optJSONObject("hourly") ?: return emptyMap()
+        val times = h.optJSONArray("time") ?: return emptyMap()
+        val values = h.optJSONArray("us_aqi") ?: return emptyMap()
+        val out = HashMap<String, Double>()
+        for (i in 0 until times.length()) {
+            if (i < values.length() && !values.isNull(i)) out[times.getString(i)] = values.optDouble(i)
+        }
+        return out
+    }
+
     private fun airQuality(lat: Double, lon: Double): Double? {
         val root = get(
             String.format(Locale.US, "https://air-quality-api.open-meteo.com/v1/air-quality?latitude=%.4f&longitude=%.4f&current=us_aqi&timezone=auto", lat, lon)
@@ -257,8 +308,8 @@ object WeatherClient {
     fun forecast(lat: Double, lon: Double): Conditions? {
         val root = get(
             String.format(Locale.US, "https://api.open-meteo.com/v1/forecast?latitude=%.4f&longitude=%.4f", lat, lon) +
-                "&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m,wind_direction_10m,is_day,uv_index,pressure_msl,visibility" +
-                "&hourly=temperature_2m,weather_code,is_day,precipitation,precipitation_probability,wind_speed_10m,uv_index,pressure_msl,visibility" +
+                "&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m,wind_direction_10m,wind_gusts_10m,cloud_cover,dew_point_2m,is_day,uv_index,pressure_msl,visibility" +
+                "&hourly=temperature_2m,weather_code,is_day,precipitation,precipitation_probability,wind_speed_10m,wind_direction_10m,wind_gusts_10m,relative_humidity_2m,cloud_cover,dew_point_2m,apparent_temperature,uv_index,pressure_msl,visibility" +
                 "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,sunrise,sunset,uv_index_max" +
                 "&forecast_days=7&timezone=auto"
         ) ?: return null
@@ -276,11 +327,20 @@ object WeatherClient {
             val uv = h.optJSONArray("uv_index")
             val pressure = h.optJSONArray("pressure_msl")
             val vis = h.optJSONArray("visibility")
+            val hum = h.optJSONArray("relative_humidity_2m")
+            val cloud = h.optJSONArray("cloud_cover")
+            val wdir = h.optJSONArray("wind_direction_10m")
+            val gust = h.optJSONArray("wind_gusts_10m")
+            val dew = h.optJSONArray("dew_point_2m")
+            val feels = h.optJSONArray("apparent_temperature")
+            val aqiMap = hourlyAqi(lat, lon)
             val hours = (0 until times.length()).map { i ->
                 Hour(
                     LocalDateTime.parse(times.getString(i)), temps.num(i, 0.0), codes.num(i, 3.0).toInt(),
                     isDay.num(i, 1.0) > 0.5, precip.num(i, 0.0), prob.num(i, 0.0).toInt(),
-                    wind.num(i, 0.0), uv.num(i, 0.0), pressure.num(i, 1013.0), vis.num(i, 10000.0)
+                    wind.num(i, 0.0), uv.num(i, 0.0), pressure.num(i, 1013.0), vis.num(i, 10000.0),
+                    hum.num(i, 50.0).toInt(), cloud.num(i, 0.0).toInt(), wdir.num(i, 0.0), gust.num(i, 0.0),
+                    aqiMap[times.getString(i)], dew.num(i, 0.0), feels.num(i, temps.num(i, 0.0))
                 )
             }
             val dates = d.getJSONArray("time")
@@ -303,7 +363,8 @@ object WeatherClient {
                 LocalDateTime.parse(cur.getString("time")), cur.optDouble("temperature_2m"), cur.optDouble("apparent_temperature"),
                 cur.optInt("relative_humidity_2m"), cur.optDouble("wind_speed_10m"), cur.optDouble("wind_direction_10m", 0.0),
                 cur.optInt("weather_code"), cur.optInt("is_day", 1) == 1, cur.optDouble("uv_index", 0.0),
-                airQuality(lat, lon), cur.optDouble("pressure_msl", 1013.0), cur.optDouble("visibility", 10000.0), hours, days
+                airQuality(lat, lon), cur.optDouble("pressure_msl", 1013.0), cur.optDouble("visibility", 10000.0), hours, days,
+                cur.optInt("cloud_cover", 0), cur.optDouble("wind_gusts_10m", 0.0), cur.optDouble("dew_point_2m", 0.0)
             )
         }.getOrNull()
     }
@@ -363,4 +424,52 @@ fun widgetColor(settings: DesktopSettings, c: Conditions?): Color =
 fun inkFor(background: Color): Color {
     val luminance = 0.299f * background.red + 0.587f * background.green + 0.114f * background.blue
     return if (luminance > 0.6f) Color(0xFF111111) else Color.White
+}
+
+fun formatPrecip(mm: Double, unit: PrecipUnit): String =
+    String.format(Locale.US, "%.${unit.decimals}f %s", mm * unit.factor, unit.label)
+
+fun compass(deg: Double): String {
+    val names = listOf("N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW")
+    return names[(((deg % 360.0) + 360.0) % 360.0 / 22.5 + 0.5).toInt() % 16]
+}
+
+fun beaufort(kmh: Double): Int {
+    val limits = listOf(1.0, 5.0, 11.0, 19.0, 28.0, 38.0, 49.0, 61.0, 74.0, 88.0, 102.0, 117.0)
+    return limits.count { kmh >= it }
+}
+
+fun dewPoint(tempC: Double, humidity: Int): Double {
+    val a = 17.27
+    val b = 237.7
+    val g = (a * tempC) / (b + tempC) + Math.log(humidity.coerceIn(1, 100) / 100.0)
+    return (b * g) / (a - g)
+}
+
+data class RadarFrame(val time: Long, val path: String)
+
+data class RadarSet(val host: String, val radar: List<RadarFrame>, val satellite: List<RadarFrame>)
+
+object RadarClient {
+    private val http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build()
+
+    fun load(): RadarSet? = runCatching {
+        val request = HttpRequest.newBuilder(URI.create("https://api.rainviewer.com/public/weather-maps.json"))
+            .timeout(Duration.ofSeconds(15)).header("User-Agent", "CatsBlockWeather-Desktop/2.0").GET().build()
+        val response = http.send(request, HttpResponse.BodyHandlers.ofString())
+        if (response.statusCode() !in 200..299 || response.body().length > 1_000_000) return@runCatching null
+        val root = JSONObject(response.body())
+        fun frames(arr: JSONArray?): List<RadarFrame> =
+            if (arr == null) emptyList() else (0 until arr.length()).mapNotNull { i ->
+                val o = arr.optJSONObject(i) ?: return@mapNotNull null
+                RadarFrame(o.optLong("time"), o.optString("path"))
+            }
+        val radar = root.optJSONObject("radar")
+        val sat = root.optJSONObject("satellite")
+        RadarSet(
+            root.getString("host"),
+            frames(radar?.optJSONArray("past")) + frames(radar?.optJSONArray("nowcast")),
+            frames(sat?.optJSONArray("infrared"))
+        )
+    }.getOrNull()
 }
