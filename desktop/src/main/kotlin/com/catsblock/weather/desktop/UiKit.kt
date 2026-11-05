@@ -1,6 +1,18 @@
 package com.catsblock.weather.desktop
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.Shapes
+import androidx.compose.material3.Typography
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.remember
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.toComposeImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.unit.Density
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -51,7 +63,8 @@ import java.net.http.HttpResponse
 import java.security.MessageDigest
 import java.time.Duration
 
-val CardShape = RoundedCornerShape(4.dp)
+val CardShape = RoundedCornerShape(20.dp)
+val SmallShape = RoundedCornerShape(12.dp)
 
 private val LightScheme = lightColorScheme(
     primary = Color(0xFF1565C0), onPrimary = Color.White, secondary = Color(0xFF00838F), tertiary = Color(0xFFB45309),
@@ -74,21 +87,210 @@ fun AppTheme(mode: ThemeMode, content: @Composable () -> Unit) {
         ThemeMode.Light -> false
         ThemeMode.Dark -> true
     }
-    MaterialTheme(colorScheme = if (dark) DarkScheme else LightScheme, content = content)
+    MaterialTheme(colorScheme = if (dark) DarkScheme else LightScheme, shapes = AppShapes, content = content)
+}
+
+private val AppShapes = Shapes(
+    extraSmall = RoundedCornerShape(8.dp), small = RoundedCornerShape(12.dp), medium = RoundedCornerShape(20.dp),
+    large = RoundedCornerShape(28.dp), extraLarge = RoundedCornerShape(40.dp)
+)
+
+fun weatherSeed(kind: Kind?, isDay: Boolean): Color = when (kind) {
+    null -> Color(0xFF1565C0)
+    Kind.Clear -> if (isDay) Color(0xFF1E88E5) else Color(0xFF3949AB)
+    Kind.FewClouds -> if (isDay) Color(0xFF2F8FD8) else Color(0xFF3F51B5)
+    Kind.MoreClouds -> Color(0xFF4F7DA3)
+    Kind.Cloudy -> Color(0xFF5B7083)
+    Kind.Fog -> Color(0xFF7A8C99)
+    Kind.Drizzle -> Color(0xFF0288D1)
+    Kind.Rain -> Color(0xFF1565C0)
+    Kind.Storm -> Color(0xFF5E35B1)
+    Kind.Sleet -> Color(0xFF4A90B8)
+    Kind.Hail -> Color(0xFF3F6FB5)
+    Kind.Snow -> Color(0xFF42A5D8)
+    Kind.HeavySnow -> Color(0xFF5C9BC4)
+    Kind.Blizzard -> Color(0xFF7F9FB5)
+}
+
+private fun hueOf(c: Color): Float {
+    val r = c.red
+    val g = c.green
+    val b = c.blue
+    val max = maxOf(r, g, b)
+    val min = minOf(r, g, b)
+    val d = max - min
+    if (d == 0f) return 0f
+    val h = when (max) {
+        r -> ((g - b) / d) % 6f
+        g -> (b - r) / d + 2f
+        else -> (r - g) / d + 4f
+    } * 60f
+    return (h + 360f) % 360f
+}
+
+private fun saturationOf(c: Color): Float {
+    val max = maxOf(c.red, c.green, c.blue)
+    val min = minOf(c.red, c.green, c.blue)
+    return if (max == 0f) 0f else (max - min) / max
+}
+
+private fun hsl(h: Float, s: Float, l: Float): Color =
+    Color.hsl(((h % 360f) + 360f) % 360f, s.coerceIn(0f, 1f), l.coerceIn(0f, 1f))
+
+fun seedScheme(seed: Color, dark: Boolean): ColorScheme {
+    val h = hueOf(seed)
+    val s = saturationOf(seed).coerceIn(0.35f, 0.9f)
+    val n = 0.14f
+    return if (dark) darkColorScheme(
+        primary = hsl(h, s, 0.78f), onPrimary = hsl(h, s, 0.14f),
+        primaryContainer = hsl(h, s * 0.85f, 0.26f), onPrimaryContainer = hsl(h, s, 0.90f),
+        secondary = hsl(h + 18f, s * 0.45f, 0.76f), onSecondary = hsl(h + 18f, s * 0.45f, 0.14f),
+        secondaryContainer = hsl(h + 18f, s * 0.4f, 0.26f), onSecondaryContainer = hsl(h + 18f, s * 0.45f, 0.90f),
+        tertiary = hsl(h + 60f, s * 0.6f, 0.78f), onTertiary = hsl(h + 60f, s * 0.6f, 0.14f),
+        background = hsl(h, n, 0.07f), onBackground = hsl(h, 0.1f, 0.90f),
+        surface = hsl(h, n, 0.08f), onSurface = hsl(h, 0.1f, 0.90f),
+        surfaceVariant = hsl(h, n, 0.20f), onSurfaceVariant = hsl(h, 0.12f, 0.76f),
+        outline = hsl(h, 0.08f, 0.52f), outlineVariant = hsl(h, 0.1f, 0.28f),
+        surfaceContainerLowest = hsl(h, n, 0.05f), surfaceContainerLow = hsl(h, n, 0.10f),
+        surfaceContainer = hsl(h, n, 0.13f), surfaceContainerHigh = hsl(h, n, 0.17f), surfaceContainerHighest = hsl(h, n, 0.21f)
+    ) else lightColorScheme(
+        primary = hsl(h, s, 0.38f), onPrimary = Color.White,
+        primaryContainer = hsl(h, s, 0.90f), onPrimaryContainer = hsl(h, s, 0.12f),
+        secondary = hsl(h + 18f, s * 0.5f, 0.40f), onSecondary = Color.White,
+        secondaryContainer = hsl(h + 18f, s * 0.5f, 0.90f), onSecondaryContainer = hsl(h + 18f, s * 0.5f, 0.12f),
+        tertiary = hsl(h + 60f, s * 0.6f, 0.40f), onTertiary = Color.White,
+        background = hsl(h, 0.3f, 0.97f), onBackground = hsl(h, 0.2f, 0.10f),
+        surface = hsl(h, 0.3f, 0.98f), onSurface = hsl(h, 0.2f, 0.10f),
+        surfaceVariant = hsl(h, 0.25f, 0.90f), onSurfaceVariant = hsl(h, 0.15f, 0.30f),
+        outline = hsl(h, 0.1f, 0.50f), outlineVariant = hsl(h, 0.15f, 0.80f),
+        surfaceContainerLowest = Color.White, surfaceContainerLow = hsl(h, 0.3f, 0.96f),
+        surfaceContainer = hsl(h, 0.28f, 0.94f), surfaceContainerHigh = hsl(h, 0.26f, 0.92f), surfaceContainerHighest = hsl(h, 0.24f, 0.90f)
+    )
+}
+
+private fun ColorScheme.amoled(): ColorScheme = copy(
+    background = Color.Black, surface = Color.Black, surfaceContainerLowest = Color.Black,
+    surfaceContainerLow = Color(0xFF080808), surfaceContainer = Color(0xFF0E0E0E),
+    surfaceContainerHigh = Color(0xFF151515), surfaceContainerHighest = Color(0xFF1C1C1C), surfaceVariant = Color(0xFF151515)
+)
+
+@Composable
+fun AppTheme(settings: DesktopSettings, kind: Kind?, isDay: Boolean, content: @Composable () -> Unit) {
+    val dark = when (settings.theme) {
+        ThemeMode.System -> isSystemInDarkTheme()
+        ThemeMode.Light -> false
+        ThemeMode.Dark -> true
+    }
+    val seed = if (settings.colorStyle == "custom") FIXED_COLORS[settings.customColor] else weatherSeed(kind, isDay)
+    val base = remember(seed, dark) { seedScheme(seed, dark) }
+    val scheme = if (dark && settings.amoled) base.amoled() else base
+    val density = LocalDensity.current
+    val scaled = remember(density, settings.textScale) { Density(density.density, density.fontScale * settings.textScale / 100f) }
+    MaterialTheme(colorScheme = scheme, shapes = AppShapes, typography = AppTypography) {
+        CompositionLocalProvider(LocalDensity provides scaled, content = content)
+    }
+}
+
+private val AppTypography = Typography().let { base ->
+    base.copy(
+        headlineMedium = base.headlineMedium.copy(fontWeight = FontWeight.Bold),
+        titleLarge = base.titleLarge.copy(fontWeight = FontWeight.SemiBold),
+        titleMedium = base.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+        labelLarge = base.labelLarge.copy(fontWeight = FontWeight.SemiBold)
+    )
 }
 
 @Composable
-fun Card(modifier: Modifier = Modifier, title: String? = null, content: @Composable () -> Unit) {
+fun Card(modifier: Modifier = Modifier, title: String? = null, onClick: (() -> Unit)? = null, content: @Composable () -> Unit) {
     val scheme: ColorScheme = MaterialTheme.colorScheme
+    val base = if (onClick != null) modifier.clip(CardShape).clickable(onClick = onClick) else modifier
     Column(
-        modifier
-            .background(scheme.surfaceContainer, CardShape)
-            .border(1.dp, scheme.outlineVariant, CardShape)
-            .padding(16.dp),
+        base.background(scheme.surfaceContainer.copy(alpha = 0.94f), CardShape).padding(18.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        if (title != null) Text(title, style = MaterialTheme.typography.labelLarge, color = scheme.onSurfaceVariant)
+        if (title != null) Text(title, style = MaterialTheme.typography.titleSmall, color = scheme.onSurfaceVariant)
         content()
+    }
+}
+
+fun backgroundGradient(kind: Kind, isDay: Boolean): List<Color> {
+    if (!isDay) return when (kind) {
+        Kind.Storm -> listOf(Color(0xFF05070D), Color(0xFF0E131C), Color(0xFF1B2430))
+        Kind.Rain, Kind.Drizzle, Kind.Hail, Kind.Sleet -> listOf(Color(0xFF0A0F18), Color(0xFF151D2A), Color(0xFF263344))
+        Kind.Snow, Kind.HeavySnow, Kind.Blizzard -> listOf(Color(0xFF111A27), Color(0xFF223046), Color(0xFF3A4B63))
+        else -> listOf(Color(0xFF050B1F), Color(0xFF0B1B3F), Color(0xFF1B2D5C))
+    }
+    return when (kind) {
+        Kind.Clear -> listOf(Color(0xFF2F80ED), Color(0xFF56CCF2), Color(0xFF9CD8F5))
+        Kind.FewClouds -> listOf(Color(0xFF3A7BD5), Color(0xFF6DB3F2), Color(0xFFA6D1F0))
+        Kind.MoreClouds -> listOf(Color(0xFF4A78A8), Color(0xFF7FA3C7), Color(0xFFB4C7D8))
+        Kind.Cloudy -> listOf(Color(0xFF4B5563), Color(0xFF6B7684), Color(0xFF8A95A1))
+        Kind.Fog -> listOf(Color(0xFF5A6B78), Color(0xFF7F909C), Color(0xFFA7B4BD))
+        Kind.Drizzle -> listOf(Color(0xFF3B4A5C), Color(0xFF55677B), Color(0xFF75879A))
+        Kind.Rain -> listOf(Color(0xFF232E3B), Color(0xFF364555), Color(0xFF4F6174))
+        Kind.Storm -> listOf(Color(0xFF0F131C), Color(0xFF1E2531), Color(0xFF34404F))
+        Kind.Sleet, Kind.Hail -> listOf(Color(0xFF3F4F60), Color(0xFF5E7184), Color(0xFF8799AA))
+        Kind.Snow -> listOf(Color(0xFF6C8299), Color(0xFF93A9BE), Color(0xFFBFD0DF))
+        Kind.HeavySnow, Kind.Blizzard -> listOf(Color(0xFF55697D), Color(0xFF7D93A9), Color(0xFFA9BCCD))
+    }
+}
+
+private const val IMAGE_BASE = "https://raw.githubusercontent.com/catsblock/CatsBlock-Weather-v2/main/assets/backgrounds/"
+
+private fun backgroundImage(kind: Kind, isDay: Boolean, time: java.time.LocalTime): String {
+    val minutes = time.hour * 60 + time.minute
+    val sunrise = minutes in (5 * 60 + 30)..(8 * 60)
+    val sunset = minutes in (17 * 60)..(18 * 60 + 40)
+    val file = when (kind) {
+        Kind.Clear, Kind.FewClouds -> when {
+            sunrise -> "Clean_sunrise.jpg"; sunset -> "Clean_sunset.jpg"; !isDay -> "Clean_night.jpg"; else -> "Sunny.jpg"
+        }
+        Kind.MoreClouds -> when {
+            sunrise -> "Partly_cloudy_sunrise.jpg"; sunset -> "Partly_cloudy_sunset.jpg"; !isDay -> "Partly_cloudy_night.jpg"; else -> "Partlycloud.jpg"
+        }
+        Kind.Cloudy, Kind.Fog -> "cloudy.jpg"
+        Kind.Drizzle, Kind.Rain, Kind.Sleet -> "Rain.jpg"
+        Kind.Storm, Kind.Hail -> "Storm.jpg"
+        Kind.Snow, Kind.HeavySnow, Kind.Blizzard -> "Ssnow.jpg"
+    }
+    return IMAGE_BASE + file
+}
+
+object MediaCache {
+    private val dir = File(AppPaths.dir, "media")
+    private val http = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NORMAL).connectTimeout(Duration.ofSeconds(10)).build()
+
+    fun bytes(url: String): ByteArray? {
+        val uri = URI.create(url)
+        if (uri.scheme != "https" || uri.host != "raw.githubusercontent.com") return null
+        val name = MessageDigest.getInstance("SHA-256").digest(url.toByteArray()).joinToString("") { "%02x".format(it) }.take(24)
+        val cached = File(dir, name)
+        if (cached.exists()) return runCatching { cached.readBytes() }.getOrNull()
+        return runCatching {
+            val request = HttpRequest.newBuilder(uri).timeout(Duration.ofSeconds(25)).header("User-Agent", "CatsBlockWeather-Desktop").GET().build()
+            val response = http.send(request, HttpResponse.BodyHandlers.ofByteArray())
+            val body = response.body()
+            if (response.statusCode() != 200 || body.size > 8_000_000) null else {
+                dir.mkdirs()
+                cached.writeBytes(body)
+                body
+            }
+        }.getOrNull()
+    }
+}
+
+@Composable
+fun WeatherBackdrop(kind: Kind, isDay: Boolean, time: java.time.LocalTime, showImage: Boolean, modifier: Modifier = Modifier) {
+    val url = backgroundImage(kind, isDay, time)
+    val image by produceState<ImageBitmap?>(null, url, showImage) {
+        value = if (!showImage) null else withContext(Dispatchers.IO) {
+            MediaCache.bytes(url)?.let { data -> runCatching { org.jetbrains.skia.Image.makeFromEncoded(data).toComposeImageBitmap() }.getOrNull() }
+        }
+    }
+    Box(modifier) {
+        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(backgroundGradient(kind, isDay))))
+        image?.let { Image(it, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
+        if (!isDay) Box(Modifier.fillMaxSize().background(Color(0xFF050B1F).copy(alpha = 0.35f)))
     }
 }
 
@@ -133,7 +335,7 @@ fun <T> Segmented(options: List<Pair<T, String>>, selected: T, onSelect: (T) -> 
     }
 }
 
-enum class Glyph { Settings, Refresh, Plus, Close, Check, Back, Pin }
+enum class Glyph { Settings, Refresh, Plus, Close, Check, Back, Pin, Sun, Map, Chevron }
 
 @Composable
 fun GlyphIcon(glyph: Glyph, tint: Color, size: Dp = 20.dp) {
@@ -164,6 +366,28 @@ fun GlyphIcon(glyph: Glyph, tint: Color, size: Dp = 20.dp) {
             Glyph.Pin -> {
                 drawCircle(tint, 4f * u, p(12f, 9f), style = stroke)
                 drawLine(tint, p(12f, 13f), p(12f, 21f), 2f * u, StrokeCap.Round)
+            }
+            Glyph.Sun -> {
+                drawCircle(tint, 4.5f * u, p(12f, 12f), style = stroke)
+                for (i in 0 until 8) {
+                    val a = Math.toRadians(i * 45.0)
+                    val c = kotlin.math.cos(a).toFloat()
+                    val s = kotlin.math.sin(a).toFloat()
+                    drawLine(tint, p(12f + 7.5f * c, 12f + 7.5f * s), p(12f + 10f * c, 12f + 10f * s), 2f * u, StrokeCap.Round)
+                }
+            }
+            Glyph.Map -> {
+                val outline = Path().apply {
+                    moveTo(3f * u, 6f * u); lineTo(9f * u, 4f * u); lineTo(15f * u, 6f * u); lineTo(21f * u, 4f * u)
+                    lineTo(21f * u, 18f * u); lineTo(15f * u, 20f * u); lineTo(9f * u, 18f * u); lineTo(3f * u, 20f * u); close()
+                }
+                drawPath(outline, tint, style = Stroke(width = 2f * u, cap = StrokeCap.Round))
+                drawLine(tint, p(9f, 4f), p(9f, 18f), 2f * u, StrokeCap.Round)
+                drawLine(tint, p(15f, 6f), p(15f, 20f), 2f * u, StrokeCap.Round)
+            }
+            Glyph.Chevron -> {
+                drawLine(tint, p(9f, 5f), p(16f, 12f), 2f * u, StrokeCap.Round)
+                drawLine(tint, p(16f, 12f), p(9f, 19f), 2f * u, StrokeCap.Round)
             }
         }
     }
