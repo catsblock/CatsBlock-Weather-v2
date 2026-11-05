@@ -15,7 +15,22 @@ enum class AppLanguage(val code: String, val label: String, val locale: Locale) 
     Indonesian("id", "Bahasa Indonesia", Locale("id", "ID"));
 
     companion object {
-        fun from(code: String?) = entries.firstOrNull { it.code == code } ?: English
+        fun from(code: String?) = entries.firstOrNull { it.code == code } ?: system()
+
+        fun system(): AppLanguage {
+            val locale = Locale.getDefault()
+            return when (locale.language) {
+                "pt" -> if (locale.country.equals("PT", ignoreCase = true)) PtPT else PtBR
+                "es" -> Spanish
+                "fr" -> French
+                "ru" -> Russian
+                "de" -> German
+                "it" -> Italian
+                "ko" -> Korean
+                "in", "id" -> Indonesian
+                else -> English
+            }
+        }
     }
 }
 
