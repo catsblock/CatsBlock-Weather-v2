@@ -218,8 +218,26 @@ jobs:
           }
           Join-Path $wix.FullName "bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
+      - name: Check backend secrets
+        shell: pwsh
+        env:
+          CLOUDFLARE_WEBSITE: ${{ secrets.CLOUDFLARE_WEBSITE }}
+          APP_TOKEN: ${{ secrets.APP_TOKEN }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:CLOUDFLARE_WEBSITE)) {
+            Write-Output "::error::Create the repository secret CLOUDFLARE_WEBSITE with the deployed Cloudflare Worker URL."
+            exit 1
+          }
+          if ($env:APP_TOKEN.Length -lt 32) {
+            Write-Output "::error::Create the repository secret APP_TOKEN with the same value (at least 32 characters) as the Worker secret APP_TOKEN."
+            exit 1
+          }
+
       - name: Build Windows installer
         shell: pwsh
+        env:
+          CLOUDFLARE_WEBSITE: ${{ secrets.CLOUDFLARE_WEBSITE }}
+          APP_TOKEN: ${{ secrets.APP_TOKEN }}
         run: gradle :desktop:packageExe --no-daemon --stacktrace "-PbuildNumber=${{ github.run_number }}"
 
       - name: Locate EXE
