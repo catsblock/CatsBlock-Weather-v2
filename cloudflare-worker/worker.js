@@ -1,7 +1,11 @@
 import { limiterCall, AGENT_TOKEN_LIMIT, AGENT_IP_TOKEN_LIMIT, AGENT_WINDOW_MS, AGENT_CONCURRENCY } from "./limiter.js";
 import { isRegionBlocked, REGION_MESSAGE } from "./region.js";
+import { ADMIN_COMMAND, ADMIN_PATHS, handleAdmin, isBannedAtEdge } from "./admin.js";
+import { recordHit } from "./analytics.js";
 
 export { RateLimiter } from "./limiter.js";
+export { AdminGuard } from "./admin.js";
+export { MetricsHub } from "./analytics.js";
 
 const CACHE_TTL_S = 900;
 const UPSTREAM_TIMEOUT_MS = 10000;
@@ -160,10 +164,11 @@ async function identify(request, env) {
   const ipHash = await hmacHex(salt, "ip|" + ip);
   const device = (request.headers.get("X-Device-Id") || "").trim().toLowerCase();
   if (!DEVICE_ID_PATTERN.test(device)) {
-    return { hash: ipHash, ipHash, hasDevice: false, clientKey: "c:" + ipHash, ipKey: "ip:" + ipHash };
+    return { hash: ipHash, ipHash, deviceHash: "", hasDevice: false, clientKey: "c:" + ipHash, ipKey: "ip:" + ipHash };
   }
   const hash = await hmacHex(salt, "ip|" + ip + "|device|" + device);
-  return { hash, ipHash, hasDevice: true, clientKey: "c:" + hash, ipKey: "ip:" + ipHash };
+  const deviceHash = await hmacHex(salt, "device|" + device);
+  return { hash, ipHash, deviceHash, hasDevice: true, clientKey: "c:" + hash, ipKey: "ip:" + ipHash };
 }
 
 async function authorized(request, env) {
@@ -1735,12 +1740,21 @@ async function prepareAgentRequest(request, env) {
   return { id };
 }
 
+function adminCommandResponse(request) {
+  const android = (request.headers.get("X-Client-Platform") || "").trim().toLowerCase() === "android";
+  if (!android) return jsonResponse({ error: "not_found", message: MSG_FAILED }, 404);
+  return jsonResponse({ adminGate: true }, 200);
+}
+
 async function handleAgent(request, env, ctx) {
   const prepared = await prepareAgentRequest(request, env);
   if (prepared.result) {
     return jsonResponse(prepared.result.body, prepared.result.status, prepared.result.headers);
   }
   const read = await readAgentBody(request);
+  if (read.body && read.body.message === ADMIN_COMMAND) {
+    return adminCommandResponse(request);
+  }
   if (request.headers.get("X-Agent-Stream") !== "1") {
     const result = await runAgent(request, env, read, () => {}, prepared.id);
     return jsonResponse(result.body, result.status, result.headers);
@@ -1773,81 +1787,125 @@ async function handleAgent(request, env, ctx) {
   });
 }
 
-export default {
-  async fetch(request, env, ctx) {
-    try {
-      if (request.method === "OPTIONS") {
-        return new Response(null, { status: 204, headers: SAFE_HEADERS });
-      }
-      if (request.url.length > MAX_URL_LENGTH) {
-        return jsonResponse({ error: "uri_too_long" }, 414);
-      }
+async function handleRequest(request, env, ctx) {
+  try {
+    if (request.method === "OPTIONS") {
+      return new Response(null, { status: 204, headers: SAFE_HEADERS });
+    }
+    if (request.url.length > MAX_URL_LENGTH) {
+      return jsonResponse({ error: "uri_too_long" }, 414);
+    }
 
-      const url = new URL(request.url);
-      const path = url.pathname.length > 1 ? url.pathname.replace(/\/+$/, "") : url.pathname;
-      const regionBlocked = isRegionBlocked(request, env);
+    const url = new URL(request.url);
+    const path = url.pathname.length > 1 ? url.pathname.replace(/\/+$/, "") : url.pathname;
+    const regionBlocked = isRegionBlocked(request, env);
 
-      if (path === "/v1/region") {
-        if (request.method !== "GET") {
-          return jsonResponse({ error: "method_not_allowed" }, 405, { Allow: "GET, OPTIONS" });
-        }
-        return jsonResponse({ allowed: !regionBlocked }, 200);
-      }
-
-      if (regionBlocked) {
-        return jsonResponse({ error: "region_blocked", message: REGION_MESSAGE }, 451);
-      }
-
-      if (path === "/v1/agent/status") {
-        if (request.method !== "GET") {
-          return jsonResponse({ error: "method_not_allowed" }, 405, { Allow: "GET, OPTIONS" });
-        }
-        if (!(await authorized(request, env))) {
-          return jsonResponse({ error: "unauthorized", message: MSG_UNAVAILABLE }, 401);
-        }
-        const availability = await agentAvailability(env);
-        return jsonResponse({ available: availability.available, reason: availability.reason }, 200);
-      }
-
-      if (path === "/v1/agent") {
-        if (request.method !== "POST") {
-          return jsonResponse({ error: "method_not_allowed" }, 405, { Allow: "POST, OPTIONS" });
-        }
-        if (!(await authorized(request, env))) {
-          return jsonResponse({ error: "unauthorized", message: MSG_FAILED }, 401);
-        }
-        return await handleAgent(request, env, ctx);
-      }
-
+    if (path === "/v1/region") {
       if (request.method !== "GET") {
         return jsonResponse({ error: "method_not_allowed" }, 405, { Allow: "GET, OPTIONS" });
       }
-
-      if (path === "/" || path === "/v1/health") {
-        return textResponse("ok", 200, "text/plain; charset=utf-8");
-      }
-
-      const routes = {
-        "/v1/status": null,
-        "/v1/weather": "weather",
-        "/v1/visual": "visual",
-        "/v1/openweather": "openweather",
-      };
-      if (!Object.prototype.hasOwnProperty.call(routes, path)) {
-        return jsonResponse({ error: "not_found" }, 404);
-      }
-
-      if (!(await authorized(request, env))) {
-        return jsonResponse({ error: "unauthorized" }, 401);
-      }
-
-      if (path === "/v1/status") {
-        return await handleStatus(request, env);
-      }
-      return await handleProxy(request, env, routes[path]);
-    } catch (err) {
-      console.error("worker_unhandled", err && err.message ? String(err.message).slice(0, 200) : "unknown");
-      return jsonResponse({ error: "internal_error" }, 500);
+      return jsonResponse({ allowed: !regionBlocked }, 200);
     }
+
+    if (regionBlocked) {
+      return jsonResponse({ error: "region_blocked", message: REGION_MESSAGE }, 451);
+    }
+
+    if (ADMIN_PATHS.has(path)) {
+      return await handleAdmin(request, env, path, { jsonResponse, identify, authorized, hmacHex, constantTimeEqual, readEnvSecret });
+    }
+
+    if (path === "/v1/agent/status") {
+      if (request.method !== "GET") {
+        return jsonResponse({ error: "method_not_allowed" }, 405, { Allow: "GET, OPTIONS" });
+      }
+      if (!(await authorized(request, env))) {
+        return jsonResponse({ error: "unauthorized", message: MSG_UNAVAILABLE }, 401);
+      }
+      const availability = await agentAvailability(env);
+      return jsonResponse({ available: availability.available, reason: availability.reason }, 200);
+    }
+
+    if (path === "/v1/agent") {
+      if (request.method !== "POST") {
+        return jsonResponse({ error: "method_not_allowed" }, 405, { Allow: "POST, OPTIONS" });
+      }
+      if (!(await authorized(request, env))) {
+        return jsonResponse({ error: "unauthorized", message: MSG_FAILED }, 401);
+      }
+      return await handleAgent(request, env, ctx);
+    }
+
+    if (request.method !== "GET") {
+      return jsonResponse({ error: "method_not_allowed" }, 405, { Allow: "GET, OPTIONS" });
+    }
+
+    if (path === "/" || path === "/v1/health") {
+      return textResponse("ok", 200, "text/plain; charset=utf-8");
+    }
+
+    const routes = {
+      "/v1/status": null,
+      "/v1/weather": "weather",
+      "/v1/visual": "visual",
+      "/v1/openweather": "openweather",
+    };
+    if (!Object.prototype.hasOwnProperty.call(routes, path)) {
+      return jsonResponse({ error: "not_found" }, 404);
+    }
+
+    if (!(await authorized(request, env))) {
+      return jsonResponse({ error: "unauthorized" }, 401);
+    }
+
+    if (path === "/v1/status") {
+      return await handleStatus(request, env);
+    }
+    return await handleProxy(request, env, routes[path]);
+  } catch (err) {
+    console.error("worker_unhandled", err && err.message ? String(err.message).slice(0, 200) : "unknown");
+    return jsonResponse({ error: "internal_error" }, 500);
+  }
+}
+
+const TRACKED_PATHS = {
+  "/v1/weather": "weather",
+  "/v1/visual": "visual",
+  "/v1/openweather": "openweather",
+  "/v1/agent": "agent",
+  "/v1/agent/status": "status",
+  "/v1/status": "status",
+};
+const UNTRACKED_STATUSES = new Set([401, 403, 404, 405, 414, 451]);
+
+async function trackRequest(request, env, ctx, id, response) {
+  if (!id || id.error || UNTRACKED_STATUSES.has(response.status)) return;
+  const raw = new URL(request.url).pathname;
+  const path = raw.length > 1 ? raw.replace(/\/+$/, "") : raw;
+  const category = Object.prototype.hasOwnProperty.call(TRACKED_PATHS, path) ? TRACKED_PATHS[path] : "";
+  if (!category) return;
+  recordHit(env, ctx, id.hasDevice ? id.deviceHash : id.ipHash, category, response.status >= 400);
+}
+
+export default {
+  async fetch(request, env, ctx) {
+    let id = null;
+    if (request.method !== "OPTIONS" && request.url.length <= MAX_URL_LENGTH) {
+      try {
+        id = await identify(request, env);
+        if (!id.error && (await isBannedAtEdge(env, id))) {
+          return jsonResponse({ error: "forbidden" }, 403);
+        }
+      } catch (err) {
+        id = null;
+      }
+    }
+    const response = await handleRequest(request, env, ctx);
+    try {
+      await trackRequest(request, env, ctx, id, response);
+    } catch (err) {
+      return response;
+    }
+    return response;
   },
 };
