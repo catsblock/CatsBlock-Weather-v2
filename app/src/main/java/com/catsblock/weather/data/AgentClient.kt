@@ -112,6 +112,7 @@ sealed interface AgentOutcome {
     data class Reply(val text: String, val cards: List<AgentCard>, val remaining: Int = -1, val resetSeconds: Long = 0L) : AgentOutcome
     data class Violation(val remaining: Int = -1, val resetSeconds: Long = 0L) : AgentOutcome
     data class Failure(val message: String, val retryAfterSeconds: Long = 0L) : AgentOutcome
+    data object AdminGate : AgentOutcome
 }
 
 class AgentClient {
@@ -155,6 +156,7 @@ class AgentClient {
                 .url("$base/v1/agent")
                 .header("X-Agent-Stream", "1")
                 .header("X-Device-Id", DeviceFingerprint.id)
+                .header("X-Client-Platform", "android")
                 .post(payload.toRequestBody("application/json; charset=utf-8".toMediaType()))
             SecretKeys.appToken().takeIf { it.isNotEmpty() }?.let { builder.header("X-App-Token", it) }
             client.newCall(builder.build()).execute().use { response ->
@@ -213,6 +215,9 @@ class AgentClient {
         if (root != null && root.optString("error") == "region_blocked") {
             RegionGuard.report()
             return AgentOutcome.Failure(AgentMessages.REGION)
+        }
+        if (success && root != null && root.optBoolean("adminGate")) {
+            return AgentOutcome.AdminGate
         }
         if (success && root != null && root.optBoolean("violation")) {
             return AgentOutcome.Violation(root.optInt("remaining", -1), root.optLong("resetSeconds"))
