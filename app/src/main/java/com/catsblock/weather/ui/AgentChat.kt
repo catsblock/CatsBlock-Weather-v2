@@ -73,6 +73,7 @@ class AgentChat(
     val messages = MutableStateFlow<List<AgentMessage>>(emptyList())
     val sending = MutableStateFlow(false)
     val blockedUntil = MutableStateFlow(0L)
+    val adminRequested = MutableStateFlow(false)
     private val _gate = MutableStateFlow(AgentGate.Checking)
     val gate: StateFlow<AgentGate> = _gate.asStateFlow()
 
@@ -200,6 +201,10 @@ class AgentChat(
                     )
                 )
                 if (outcome.remaining == 0) block(outcome.resetSeconds)
+            }
+            is AgentOutcome.AdminGate -> {
+                messages.update { list -> list.filterNot { it.id == request.pendingId || it.id == request.userId } }
+                adminRequested.value = true
             }
             is AgentOutcome.Violation -> {
                 messages.update { list ->
