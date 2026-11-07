@@ -19,6 +19,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -33,6 +34,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.time.Duration
+import java.time.Instant
 import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
 import kotlin.math.PI
@@ -231,7 +233,17 @@ fun VisibilityCard(c: Conditions, onClick: (() -> Unit)? = null, modifier: Modif
 }
 
 @Composable
-fun SunCard(c: Conditions, modifier: Modifier = Modifier) {
+private fun Fact(label: String, value: String) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
+        Text(value, style = MaterialTheme.typography.bodyMedium)
+    }
+}
+
+private fun clockOrDash(time: java.time.LocalTime?): String = time?.format(clock) ?: "\u2014"
+
+@Composable
+fun SunCard(c: Conditions, lat: Double, lon: Double, modifier: Modifier = Modifier) {
     val day = c.today
     val track = MaterialTheme.colorScheme.outlineVariant
     val accent = MaterialTheme.colorScheme.primary
@@ -254,24 +266,44 @@ fun SunCard(c: Conditions, modifier: Modifier = Modifier) {
             Text(day.sunrise.format(clock), style = MaterialTheme.typography.titleMedium)
             Text(day.sunset.format(clock), style = MaterialTheme.typography.titleMedium)
         }
+        val times = remember(day.date, lat, lon) { Ephemeris.sunTimes(day.date, lat, lon, cityOffsetSeconds(c.now)) }
+        val length = Duration.between(day.sunrise, day.sunset)
+        Fact(t("Solar noon"), times.noon.format(clock))
+        Fact(t("Daylight"), t("%d h %02d min").format(length.toHours(), length.toMinutesPart()))
+        Fact(t("First light"), clockOrDash(times.firstLight))
+        Fact(t("Last light"), clockOrDash(times.lastLight))
     }
 }
 
 @Composable
-fun MoonCard(modifier: Modifier = Modifier) {
-    val phase = moonPhase()
+fun MoonCard(c: Conditions, lat: Double, lon: Double, modifier: Modifier = Modifier) {
+    val offset = cityOffsetSeconds(c.now)
+    val date = c.now.toLocalDate()
+    val nowMs = remember(c.now) { Instant.now().toEpochMilli() }
+    val fraction = remember(nowMs) { Ephemeris.phaseFraction(nowMs) }
+    val moonDay = remember(date, lat, lon) { Ephemeris.moonDay(date, lat, lon, offset) }
+    val nextFull = remember(nowMs) { Ephemeris.nextPhaseMs(nowMs, 0.5) }
+    val nextNew = remember(nowMs) { Ephemeris.nextPhaseMs(nowMs, 0.0) }
+    val phaseKey = when ((fraction * 8).roundToInt() % 8) {
+        0 -> "New moon"; 1 -> "Waxing crescent"; 2 -> "First quarter"; 3 -> "Waxing gibbous"
+        4 -> "Full moon"; 5 -> "Waning gibbous"; 6 -> "Last quarter"; else -> "Waning crescent"
+    }
+    val phase = MoonPhase(fraction, Ephemeris.illumination(fraction), phaseKey)
     val lit = Color(0xFFE8E4D6)
     val dark = MaterialTheme.colorScheme.surfaceVariant
+    val dateFormat = DateTimeFormatter.ofPattern("d MMM, HH:mm", uiLocale())
+    fun stamp(ms: Long?): String =
+        ms?.let { Instant.ofEpochMilli(it).atOffset(java.time.ZoneOffset.ofTotalSeconds(offset)).format(dateFormat) } ?: "\u2014"
     Card(modifier, t("Moon")) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(24.dp)) {
             Canvas(Modifier.size(72.dp)) {
                 val r = size.minDimension / 2 - 2f
-                val c = Offset(size.width / 2, size.height / 2)
-                drawCircle(dark, r, c)
+                val center = Offset(size.width / 2, size.height / 2)
+                drawCircle(dark, r, center)
                 val k = cos(2 * PI * phase.fraction).toFloat()
                 val waxing = phase.fraction < 0.5
-                val circle = Rect(c.x - r, c.y - r, c.x + r, c.y + r)
-                val ellipse = Rect(c.x - r * abs(k), c.y - r, c.x + r * abs(k), c.y + r)
+                val circle = Rect(center.x - r, center.y - r, center.x + r, center.y + r)
+                val ellipse = Rect(center.x - r * abs(k), center.y - r, center.x + r * abs(k), center.y + r)
                 val path = Path()
                 if (waxing) {
                     path.arcTo(circle, -90f, 180f, true)
@@ -288,6 +320,12 @@ fun MoonCard(modifier: Modifier = Modifier) {
                 Text(t("Illumination") + " " + (phase.illumination * 100).roundToInt() + "%", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
+        Fact(t("Moon age"), t("%s days").format(String.format(uiLocale(), "%.1f", Ephemeris.ageDays(fraction))))
+        Fact(t("Moonrise"), clockOrDash(moonDay.rise))
+        Fact(t("Moon transit"), clockOrDash(moonDay.transit))
+        Fact(t("Moonset"), clockOrDash(moonDay.set))
+        Fact(t("Next full moon"), stamp(nextFull))
+        Fact(t("Next new moon"), stamp(nextNew))
     }
 }
 
