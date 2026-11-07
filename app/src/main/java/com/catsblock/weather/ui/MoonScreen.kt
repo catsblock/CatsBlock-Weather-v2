@@ -170,6 +170,7 @@ private fun MoonContent(
         if (selected == today) Moon.eclipse(ms) else Moon.dayEclipse(selected, offset)?.second
     }
     val times = remember(selected, city.lat, city.lon, offset) { Moon.riseSet(selected, city.lat, city.lon, offset) }
+    val transit = remember(selected, city.lat, city.lon, offset) { Moon.transit(selected, city.lat, city.lon, offset) }
     val cells = remember(month, offset) {
         (1..month.lengthOfMonth()).map { d ->
             val date = month.atDay(d)
@@ -226,6 +227,7 @@ private fun MoonContent(
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     TimeTile(tr("Moonrise"), times.first?.let { clockLabel(selected.atTime(it)) } ?: "—", Modifier.weight(1f))
                     TimeTile(tr("Moonset"), times.second?.let { clockLabel(selected.atTime(it)) } ?: "—", Modifier.weight(1f))
+                    TimeTile(tr("Moon transit"), transit?.let { clockLabel(selected.atTime(it)) } ?: "—", Modifier.weight(1f))
                 }
                 StargazingCard(isToday, score, activeCloud)
                 CalendarCard(
