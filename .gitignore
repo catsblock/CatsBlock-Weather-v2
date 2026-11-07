@@ -23,4 +23,4 @@ wrangler.toml
 *.pfx
 google-services.json
 secrets.properties
-cloudflare-worker
+cloudflare-worker/
