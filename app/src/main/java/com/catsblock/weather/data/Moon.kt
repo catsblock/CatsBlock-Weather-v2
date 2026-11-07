@@ -182,6 +182,26 @@ object Moon {
         return rise to set
     }
 
+    fun transit(date: LocalDate, lat: Double, lon: Double, offset: ZoneOffset): LocalTime? {
+        val start = date.atStartOfDay().toInstant(offset).toEpochMilli()
+        val step = 300_000L
+        var bestIndex = 0
+        var best = Double.NEGATIVE_INFINITY
+        for (i in 0..288) {
+            val altitude = position(start + i * step, lat, lon).altitude
+            if (altitude > best) {
+                best = altitude
+                bestIndex = i
+            }
+        }
+        if (bestIndex == 0 || bestIndex == 288) return null
+        val before = position(start + (bestIndex - 1) * step, lat, lon).altitude
+        val after = position(start + (bestIndex + 1) * step, lat, lon).altitude
+        val denominator = before - 2 * best + after
+        val shift = if (denominator == 0.0) 0.0 else 0.5 * (before - after) / denominator
+        return at(start + ((bestIndex + shift.coerceIn(-1.0, 1.0)) * step).toLong(), offset)
+    }
+
     fun phaseName(cycle: Double): String = when {
         cycle < 0.03 || cycle >= 0.97 -> "New moon"
         cycle < 0.22 -> "Waxing crescent"
