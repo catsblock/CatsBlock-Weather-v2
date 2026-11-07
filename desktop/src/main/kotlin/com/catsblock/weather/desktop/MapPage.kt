@@ -322,8 +322,8 @@ fun MapPage(s: DesktopSettings, dark: Boolean, modifier: Modifier = Modifier) {
                     }
                 }
                 if (layer.isGrid) {
-                    val cellW = size.width / GRID_COLS
-                    val cellH = size.height / GRID_ROWS
+                    val cellW = size.width.toFloat() / GRID_COLS
+                    val cellH = size.height.toFloat() / GRID_ROWS
                     for (point in grid) {
                         val px = (lonToX(point.lon, zoom) - left).toFloat()
                         val py = (latToY(point.lat, zoom) - top).toFloat()
