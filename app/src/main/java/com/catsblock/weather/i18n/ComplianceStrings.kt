@@ -139,15 +139,15 @@ internal val complianceStrings: Map<String, Array<out String>> = mapOf(
         "Sejauh diizinkan hukum, Anda setuju untuk mengganti rugi dan membebaskan CatsBlock Corporation dari klaim, kerugian, dan biaya yang timbul dari penyalahgunaan Aplikasi, pelanggaran kebijakan ini atau hukum yang berlaku, atau penggunaan layanan dari wilayah yang dibatasi. Kebijakan ini diatur oleh hukum yurisdiksi tempat CatsBlock Corporation didirikan, tanpa mengurangi aturan wajib perlindungan konsumen dan data di negara tempat tinggal Anda. Jika suatu ketentuan tidak dapat diberlakukan, ketentuan lainnya tetap berlaku."
     ),
     row(
-        "We may update this policy at any time. Continuing to use the App after an update means you accept it. Last updated: 2026-11-01.",
-        "Podemos atualizar esta política a qualquer momento. Continuar usando o App após uma atualização significa que você a aceita. Última atualização: 2026-11-01.",
-        "Podemos atualizar esta política a qualquer momento. Continuar a utilizar a App após uma atualização significa que a aceita. Última atualização: 2026-11-01.",
-        "Podemos actualizar esta política en cualquier momento. Seguir usando la App tras una actualización significa que la aceptas. Última actualización: 2026-11-01.",
-        "Nous pouvons mettre à jour cette politique à tout moment. Continuer à utiliser l'App après une mise à jour signifie que vous l'acceptez. Dernière mise à jour : 2026-11-01.",
-        "Мы можем обновлять эту политику в любое время. Продолжая использовать Приложение после обновления, вы принимаете её. Последнее обновление: 2026-11-01.",
-        "Wir können diese Richtlinie jederzeit aktualisieren. Wenn du die App nach einer Aktualisierung weiter nutzt, stimmst du ihr zu. Zuletzt aktualisiert: 2026-11-01.",
-        "Possiamo aggiornare questa informativa in qualsiasi momento. Continuare a usare l'App dopo un aggiornamento significa accettarla. Ultimo aggiornamento: 2026-11-01.",
-        "당사는 본 방침을 언제든지 업데이트할 수 있습니다. 업데이트 후 앱을 계속 사용하면 이에 동의한 것으로 간주됩니다. 최종 업데이트: 2026-11-01.",
-        "Kami dapat memperbarui kebijakan ini kapan saja. Terus menggunakan Aplikasi setelah pembaruan berarti Anda menerimanya. Terakhir diperbarui: 2026-11-01."
+        "We may update this policy at any time. Continuing to use the App after an update means you accept it. Last updated: 2026-11-07.",
+        "Podemos atualizar esta política a qualquer momento. Continuar usando o App após uma atualização significa que você a aceita. Última atualização: 07/11/2026.",
+        "Podemos atualizar esta política a qualquer momento. Continuar a utilizar a App após uma atualização significa que a aceita. Última atualização: 07/11/2026.",
+        "Podemos actualizar esta política en cualquier momento. Seguir usando la App después de una actualización significa que la aceptas. Última actualización: 07/11/2026.",
+        "Nous pouvons mettre à jour cette politique à tout moment. Continuer à utiliser l'App après une mise à jour vaut acceptation. Dernière mise à jour : 07/11/2026.",
+        "Мы можем обновлять эту политику в любое время. Продолжая пользоваться приложением после обновления, вы принимаете её. Последнее обновление: 07.11.2026.",
+        "Wir können diese Richtlinie jederzeit aktualisieren. Die weitere Nutzung der App nach einer Aktualisierung bedeutet, dass du sie akzeptierst. Zuletzt aktualisiert: 07.11.2026.",
+        "Possiamo aggiornare questa informativa in qualsiasi momento. Continuare a usare l'App dopo un aggiornamento significa accettarla. Ultimo aggiornamento: 07/11/2026.",
+        "당사는 이 정책을 언제든지 업데이트할 수 있습니다. 업데이트 후 앱을 계속 사용하면 이를 수락한 것으로 간주됩니다. 최종 업데이트: 2026-11-07.",
+        "Kami dapat memperbarui kebijakan ini kapan saja. Terus menggunakan Aplikasi setelah pembaruan berarti Anda menerimanya. Terakhir diperbarui: 07/11/2026."
     )
 )
