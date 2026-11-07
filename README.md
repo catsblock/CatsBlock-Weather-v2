@@ -256,13 +256,3 @@ License
 No license file is currently specified in this repository.
 
 Unless a license is added, all rights remain with the copyright holder. Please contact the repository owner before redistributing or reusing the project's code.
-
----
-
-<p align="center">
-  **CatsBlock Weather**
-  <br>
-  Modern weather information, visualization, and customization.
-  <br><br>
-  <a href="https://github.com/catsblock/CatsBlock-Weather-v2">GitHub Repository</a>
-</p>
