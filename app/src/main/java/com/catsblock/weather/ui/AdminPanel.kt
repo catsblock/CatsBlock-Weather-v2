@@ -1,31 +1,52 @@
+@file:OptIn(ExperimentalMaterial3ExpressiveApi::class)
+
 package com.catsblock.weather.ui
 
+import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CornerSize
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.Logout
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.CloudOff
+import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material3.Button
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LoadingIndicator
+import androidx.compose.material3.MaterialExpressiveTheme
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MotionScheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import androidx.compose.material3.ToggleButton
+import androidx.compose.material3.ToggleButtonDefaults
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -37,13 +58,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
@@ -58,6 +81,7 @@ import com.catsblock.weather.data.AdminPoint
 import com.catsblock.weather.data.AdminResult
 import com.catsblock.weather.i18n.I18n
 import com.catsblock.weather.i18n.tr
+import com.catsblock.weather.ui.components.ExpressiveProgressBar
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.text.NumberFormat
@@ -72,7 +96,6 @@ private const val CODE_LENGTH = 10
 private const val ANSWER_MAX = 64
 private const val REFRESH_MS = 15_000L
 private val RANGES = listOf(7, 14, 30, 60)
-private val FieldShape = RoundedCornerShape(4.dp)
 
 @Composable
 internal fun AdminPanel(onDismiss: () -> Unit) {
@@ -85,12 +108,20 @@ internal fun AdminPanel(onDismiss: () -> Unit) {
             securePolicy = SecureFlagPolicy.SecureOn
         )
     ) {
-        Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-            AdminContent(onDismiss)
+        MaterialExpressiveTheme(
+            colorScheme = MaterialTheme.colorScheme,
+            motionScheme = MotionScheme.expressive(),
+            shapes = MaterialTheme.shapes,
+            typography = MaterialTheme.typography
+        ) {
+            Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
+                AdminContent(onDismiss)
+            }
         }
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AdminContent(onDismiss: () -> Unit) {
     val client = remember { AdminClient() }
@@ -124,100 +155,122 @@ private fun AdminContent(onDismiss: () -> Unit) {
         }
     }
 
-    Column(
-        Modifier
-            .fillMaxSize()
-            .systemBarsPadding()
-            .imePadding()
-            .padding(horizontal = 24.dp)
-    ) {
-        Row(
-            Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                tr("Administrator access"),
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.weight(1f)
-            )
-            TextButton(onClick = onDismiss) { Text(if (stage == AdminStage.Dashboard) tr("Sign out") else tr("Close")) }
-        }
-        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-        Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopStart) {
-            when (stage) {
-                AdminStage.Code -> GateForm(
-                    prompt = tr("Enter the 10-digit access code"),
-                    label = tr("Access code"),
-                    value = code,
-                    onValueChange = { code = it.filter(Char::isDigit).take(CODE_LENGTH) },
-                    keyboard = KeyboardType.NumberPassword,
-                    ready = code.length == CODE_LENGTH,
-                    busy = busy,
-                    message = message
-                ) {
-                    scope.launch {
-                        busy = true
-                        message = null
-                        when (val result = client.stageOne(code)) {
-                            is AdminResult.Success -> {
-                                stageToken = result.value
-                                code = ""
-                                stage = AdminStage.Question
-                            }
-                            else -> fail(result)
-                        }
-                        busy = false
+    val signedIn = stage == AdminStage.Dashboard
+    Scaffold(
+        modifier = Modifier.fillMaxSize().systemBarsPadding().imePadding(),
+        containerColor = Color.Transparent,
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
+        topBar = {
+            TopAppBar(
+                title = { Text(tr("Administrator access"), style = MaterialTheme.typography.titleLarge) },
+                navigationIcon = {
+                    IconButton(onClick = onDismiss) {
+                        Icon(
+                            if (signedIn) Icons.AutoMirrored.Rounded.Logout else Icons.Rounded.Close,
+                            contentDescription = if (signedIn) tr("Sign out") else tr("Close")
+                        )
                     }
-                }
-                AdminStage.Question -> GateForm(
-                    prompt = tr("What is the dog's name?"),
-                    label = tr("Answer"),
-                    heading = tr("Security question"),
-                    value = answer,
-                    onValueChange = { answer = it.take(ANSWER_MAX) },
-                    keyboard = KeyboardType.Password,
-                    ready = answer.isNotBlank(),
-                    busy = busy,
-                    message = message
-                ) {
-                    val token = stageToken
-                    if (token == null) {
-                        reset(AdminStage.Code, tr("Session expired. Sign in again."))
-                    } else {
+                },
+                windowInsets = WindowInsets(0, 0, 0, 0),
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
+            )
+        }
+    ) { padding ->
+        Crossfade(
+            targetState = stage,
+            animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec(),
+            modifier = Modifier.padding(padding).fillMaxSize(),
+            label = "admin-stage"
+        ) { current ->
+            Box(Modifier.fillMaxSize().padding(horizontal = 24.dp), contentAlignment = Alignment.TopStart) {
+                when (current) {
+                    AdminStage.Code -> GateForm(
+                        prompt = tr("Enter the 10-digit access code"),
+                        label = tr("Access code"),
+                        value = code,
+                        maxLength = CODE_LENGTH,
+                        onValueChange = { code = it.filter(Char::isDigit).take(CODE_LENGTH) },
+                        keyboard = KeyboardType.NumberPassword,
+                        ready = code.length == CODE_LENGTH,
+                        busy = busy,
+                        message = message
+                    ) {
                         scope.launch {
                             busy = true
                             message = null
-                            when (val result = client.stageTwo(token, answer)) {
+                            when (val result = client.stageOne(code)) {
                                 is AdminResult.Success -> {
-                                    session = result.value
-                                    stageToken = null
-                                    answer = ""
-                                    stage = AdminStage.Dashboard
+                                    stageToken = result.value
+                                    code = ""
+                                    stage = AdminStage.Question
                                 }
                                 else -> fail(result)
                             }
                             busy = false
                         }
                     }
+                    AdminStage.Question -> GateForm(
+                        prompt = tr("What is the dog's name?"),
+                        label = tr("Answer"),
+                        heading = tr("Security question"),
+                        value = answer,
+                        maxLength = ANSWER_MAX,
+                        onValueChange = { answer = it.take(ANSWER_MAX) },
+                        keyboard = KeyboardType.Password,
+                        ready = answer.isNotBlank(),
+                        busy = busy,
+                        message = message
+                    ) {
+                        val token = stageToken
+                        if (token == null) {
+                            reset(AdminStage.Code, tr("Session expired. Sign in again."))
+                        } else {
+                            scope.launch {
+                                busy = true
+                                message = null
+                                when (val result = client.stageTwo(token, answer)) {
+                                    is AdminResult.Success -> {
+                                        session = result.value
+                                        stageToken = null
+                                        answer = ""
+                                        stage = AdminStage.Dashboard
+                                    }
+                                    else -> fail(result)
+                                }
+                                busy = false
+                            }
+                        }
+                    }
+                    AdminStage.Dashboard -> {
+                        val token = session
+                        if (token != null) Dashboard(client, token, onFailure = { fail(it) })
+                    }
+                    AdminStage.Blocked -> Notice(Icons.Rounded.Lock, tr("Access blocked. Try again in 14 hours."))
+                    AdminStage.Unavailable -> Notice(Icons.Rounded.CloudOff, tr("Admin access is unavailable right now."))
                 }
-                AdminStage.Dashboard -> {
-                    val token = session
-                    if (token != null) Dashboard(client, token, onFailure = { fail(it) })
-                }
-                AdminStage.Blocked -> Notice(tr("Access blocked. Try again in 14 hours."))
-                AdminStage.Unavailable -> Notice(tr("Admin access is unavailable right now."))
             }
         }
     }
 }
 
 @Composable
-private fun Notice(text: String) {
-    Text(
-        text,
-        style = MaterialTheme.typography.bodyLarge,
-        modifier = Modifier.padding(top = 32.dp).widthIn(max = 480.dp)
-    )
+private fun Notice(icon: androidx.compose.ui.graphics.vector.ImageVector, text: String) {
+    val scheme = MaterialTheme.colorScheme
+    Surface(
+        modifier = Modifier.padding(top = 24.dp).widthIn(max = 480.dp).fillMaxWidth(),
+        shape = MaterialTheme.shapes.extraLarge,
+        color = scheme.errorContainer,
+        contentColor = scheme.onErrorContainer
+    ) {
+        Row(
+            Modifier.padding(24.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(icon, contentDescription = null, modifier = Modifier.size(32.dp))
+            Text(text, style = MaterialTheme.typography.titleMedium)
+        }
+    }
 }
 
 @Composable
@@ -225,6 +278,7 @@ private fun GateForm(
     prompt: String,
     label: String,
     value: String,
+    maxLength: Int,
     onValueChange: (String) -> Unit,
     keyboard: KeyboardType,
     ready: Boolean,
@@ -234,22 +288,33 @@ private fun GateForm(
     onSubmit: () -> Unit
 ) {
     val scheme = MaterialTheme.colorScheme
+    val number = remember(I18n.lang) { NumberFormat.getIntegerInstance(I18n.lang.locale) }
     Column(
-        Modifier.padding(top = 32.dp).widthIn(max = 480.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        Modifier.padding(top = 24.dp).widthIn(max = 480.dp),
+        verticalArrangement = Arrangement.spacedBy(24.dp)
     ) {
-        if (heading != null) {
-            Text(heading, style = MaterialTheme.typography.labelLarge, color = scheme.onSurfaceVariant)
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (heading != null) {
+                Text(heading, style = MaterialTheme.typography.labelLarge, color = scheme.primary)
+            }
+            Text(prompt, style = MaterialTheme.typography.headlineMedium)
         }
-        Text(prompt, style = MaterialTheme.typography.titleLarge)
         OutlinedTextField(
             value = value,
             onValueChange = onValueChange,
             label = { Text(label) },
             singleLine = true,
             enabled = !busy,
-            shape = FieldShape,
+            isError = message != null,
+            shape = MaterialTheme.shapes.large,
             visualTransformation = PasswordVisualTransformation(),
+            supportingText = {
+                if (message != null) {
+                    Text(message)
+                } else {
+                    Text(number.format(value.length) + " / " + number.format(maxLength))
+                }
+            },
             keyboardOptions = KeyboardOptions(
                 keyboardType = keyboard,
                 capitalization = KeyboardCapitalization.None,
@@ -259,15 +324,19 @@ private fun GateForm(
             keyboardActions = KeyboardActions(onDone = { if (ready && !busy) onSubmit() }),
             modifier = Modifier.fillMaxWidth()
         )
-        if (message != null) {
-            Text(message, style = MaterialTheme.typography.bodyMedium, color = scheme.error)
-        }
         Button(
             onClick = onSubmit,
             enabled = ready && !busy,
-            shape = FieldShape,
-            modifier = Modifier.fillMaxWidth()
-        ) { Text(if (busy) tr("Checking…") else tr("Verify")) }
+            shapes = ButtonDefaults.shapes(),
+            modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)
+        ) {
+            if (busy) {
+                LoadingIndicator(Modifier.size(28.dp), color = scheme.onPrimary)
+                Text(tr("Checking…"), modifier = Modifier.padding(start = 12.dp))
+            } else {
+                Text(tr("Verify"), style = MaterialTheme.typography.titleMedium)
+            }
+        }
     }
 }
 
@@ -298,18 +367,25 @@ private fun Dashboard(client: AdminClient, session: String, onFailure: (AdminRes
 
     val current = metrics
     if (current == null) {
-        Text(
-            problem ?: tr("Loading metrics…"),
-            style = MaterialTheme.typography.bodyLarge,
-            modifier = Modifier.padding(top = 32.dp)
-        )
+        Column(
+            Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            if (problem == null) LoadingIndicator(Modifier.size(64.dp))
+            Text(
+                problem ?: tr("Loading metrics…"),
+                style = MaterialTheme.typography.bodyLarge,
+                color = if (problem == null) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error
+            )
+        }
         return
     }
     val number = remember(I18n.lang) { NumberFormat.getIntegerInstance(I18n.lang.locale) }
     LazyColumn(
         Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(32.dp),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(top = 24.dp, bottom = 64.dp)
+        contentPadding = PaddingValues(top = 8.dp, bottom = 64.dp)
     ) {
         items(Section.entries, key = { it.name }) { section ->
             when (section) {
@@ -326,19 +402,34 @@ private fun Dashboard(client: AdminClient, session: String, onFailure: (AdminRes
 @Composable
 private fun Headline(metrics: AdminMetrics, problem: String?, number: NumberFormat) {
     val scheme = MaterialTheme.colorScheme
+    val shapes = MaterialTheme.shapes
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        Text(tr("Android client metrics"), style = MaterialTheme.typography.headlineSmall)
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-            Stat(tr("Active users now"), number.format(metrics.activeNow), Modifier.weight(1f))
-            Stat(tr("Unique users in 24 hours"), number.format(metrics.unique24h), Modifier.weight(1f))
+        Text(tr("Android client metrics"), style = MaterialTheme.typography.headlineLarge)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Stat(
+                tr("Active users now"),
+                number.format(metrics.activeNow),
+                scheme.primaryContainer,
+                scheme.onPrimaryContainer,
+                shapes.extraLarge.copy(bottomEnd = CornerSize(8.dp)),
+                Modifier.weight(1f)
+            )
+            Stat(
+                tr("Unique users in 24 hours"),
+                number.format(metrics.unique24h),
+                scheme.tertiaryContainer,
+                scheme.onTertiaryContainer,
+                shapes.extraLarge.copy(bottomStart = CornerSize(8.dp)),
+                Modifier.weight(1f)
+            )
         }
         val updated = updatedAt(metrics.generatedAt)
         if (problem != null) {
-            Text(problem, style = MaterialTheme.typography.labelMedium, color = scheme.error)
+            Text(problem, style = MaterialTheme.typography.labelLarge, color = scheme.error)
         } else if (updated != null) {
             Text(
                 tr("Updated %s").format(updated),
-                style = MaterialTheme.typography.labelMedium,
+                style = MaterialTheme.typography.labelLarge,
                 color = scheme.onSurfaceVariant
             )
         }
@@ -346,29 +437,34 @@ private fun Headline(metrics: AdminMetrics, problem: String?, number: NumberForm
 }
 
 @Composable
-private fun Stat(label: String, value: String, modifier: Modifier) {
-    Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(value, style = MaterialTheme.typography.headlineMedium)
+private fun Stat(
+    label: String,
+    value: String,
+    container: Color,
+    content: Color,
+    shape: androidx.compose.ui.graphics.Shape,
+    modifier: Modifier
+) {
+    Surface(modifier, shape = shape, color = container, contentColor = content) {
+        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(label, style = MaterialTheme.typography.labelLarge)
+            Text(value, style = MaterialTheme.typography.displaySmall)
+        }
     }
 }
 
 @Composable
 private fun UsersSection(metrics: AdminMetrics, days: Int, number: NumberFormat, onRange: (Int) -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(tr("Unique users per day"), style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Text(tr("Unique users per day"), style = MaterialTheme.typography.titleLarge)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             RANGES.forEach { range ->
-                val selected = range == days
-                Text(
-                    tr("%d days").format(range),
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
-                    color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.clickable { onRange(range) }.padding(vertical = 8.dp)
-                )
+                ToggleButton(
+                    checked = range == days,
+                    onCheckedChange = { if (it) onRange(range) },
+                    shapes = ToggleButtonDefaults.shapes(),
+                    modifier = Modifier.weight(1f).semantics { role = Role.RadioButton }
+                ) { Text(tr("%d days").format(range), maxLines = 1) }
             }
         }
         LineChart(tr("Unique users per day"), metrics.users, number)
@@ -377,26 +473,41 @@ private fun UsersSection(metrics: AdminMetrics, days: Int, number: NumberFormat,
 
 @Composable
 private fun TodaySection(metrics: AdminMetrics, number: NumberFormat) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(tr("API requests today"), style = MaterialTheme.typography.titleSmall)
-        Text(
-            number.format(metrics.usageToday) + " / " + number.format(metrics.usageLimit),
-            style = MaterialTheme.typography.headlineMedium
-        )
-        Text(
-            tr("Daily limit resets at 00:00 UTC"),
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+    val scheme = MaterialTheme.colorScheme
+    val limit = metrics.usageLimit.toFloat()
+    val used = metrics.usageToday.toFloat()
+    val fraction = if (limit > 0f) (used / limit).coerceIn(0f, 1f) else 0f
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Text(tr("API requests today"), style = MaterialTheme.typography.titleLarge)
+        Surface(
+            shape = MaterialTheme.shapes.large,
+            color = scheme.secondaryContainer,
+            contentColor = scheme.onSecondaryContainer,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Text(
+                    number.format(metrics.usageToday) + " / " + number.format(metrics.usageLimit),
+                    style = MaterialTheme.typography.headlineMedium
+                )
+                ExpressiveProgressBar(
+                    progress = { fraction },
+                    modifier = Modifier.fillMaxWidth(),
+                    color = scheme.secondary,
+                    trackColor = scheme.surface
+                )
+                Text(tr("Daily limit resets at 00:00 UTC"), style = MaterialTheme.typography.labelLarge)
+            }
+        }
     }
 }
 
 @Composable
 private fun HistorySection(metrics: AdminMetrics, number: NumberFormat) {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        Text(tr("Request history, 30 days"), style = MaterialTheme.typography.titleSmall)
+        Text(tr("Request history, 30 days"), style = MaterialTheme.typography.titleLarge)
         LineChart(tr("Total requests"), metrics.requestsDaily, number)
-        LineChart(tr("Errors"), metrics.errorsDaily, number)
+        LineChart(tr("Errors"), metrics.errorsDaily, number, MaterialTheme.colorScheme.error)
     }
 }
 
@@ -410,59 +521,84 @@ private fun HourlySection(metrics: AdminMetrics, number: NumberFormat) {
         tr("Agent requests") to "agent"
     )
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        Text(tr("Requests per hour, last 48 hours"), style = MaterialTheme.typography.titleSmall)
+        Text(tr("Requests per hour, last 48 hours"), style = MaterialTheme.typography.titleLarge)
         charts.forEach { (title, key) -> LineChart(title, metrics.hourly[key].orEmpty(), number) }
     }
 }
 
 @Composable
-private fun LineChart(title: String, points: List<AdminPoint>, number: NumberFormat) {
+private fun LineChart(
+    title: String,
+    points: List<AdminPoint>,
+    number: NumberFormat,
+    accent: Color = MaterialTheme.colorScheme.primary
+) {
     val scheme = MaterialTheme.colorScheme
     val peak = points.maxOfOrNull { it.value } ?: 0.0
     val latest = points.lastOrNull()?.value ?: 0.0
-    val line = scheme.primary
     val grid = scheme.outlineVariant
-    Column(
-        Modifier.fillMaxWidth().semantics {
+    val fill = accent.copy(alpha = 0.14f)
+    Surface(
+        modifier = Modifier.fillMaxWidth().semantics {
             contentDescription = tr("Chart: %s, latest value %s").format(title, number.format(latest.toLong()))
         },
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+        shape = MaterialTheme.shapes.large,
+        color = scheme.surfaceContainerLow
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(title, style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
-            Text(
-                tr("Peak %s").format(number.format(peak.toLong())),
-                style = MaterialTheme.typography.labelMedium,
-                color = scheme.onSurfaceVariant
-            )
-        }
-        if (points.isEmpty()) {
-            Text(tr("No data yet"), style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
-            return@Column
-        }
-        Canvas(Modifier.fillMaxWidth().height(96.dp).background(scheme.surface)) {
-            val top = 8.dp.toPx()
-            val bottom = size.height - 8.dp.toPx()
-            val span = bottom - top
-            for (i in 0..2) {
-                val y = top + span * i / 2f
-                drawLine(grid, Offset(0f, y), Offset(size.width, y), strokeWidth = 1.dp.toPx())
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(title, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                Text(
+                    tr("Peak %s").format(number.format(peak.toLong())),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = scheme.onSurfaceVariant
+                )
             }
-            val max = if (peak <= 0.0) 1.0 else peak
-            val stepX = if (points.size > 1) size.width / (points.size - 1) else 0f
-            fun yOf(value: Double): Float = (bottom - span * (value / max)).toFloat()
-            val path = Path()
-            points.forEachIndexed { index, point ->
-                val x = if (points.size > 1) stepX * index else size.width / 2f
-                if (index == 0) path.moveTo(x, yOf(point.value)) else path.lineTo(x, yOf(point.value))
+            if (points.isEmpty()) {
+                Text(tr("No data yet"), style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant)
+                return@Column
             }
-            drawPath(path, line, style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
-            val lastX = if (points.size > 1) stepX * (points.size - 1) else size.width / 2f
-            drawCircle(line, 4.dp.toPx(), Offset(lastX, yOf(points.last().value)))
-        }
-        Row(Modifier.fillMaxWidth()) {
-            Text(axisLabel(points.first().label), style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant, modifier = Modifier.weight(1f))
-            Text(axisLabel(points.last().label), style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant)
+            Canvas(Modifier.fillMaxWidth().height(112.dp)) {
+                val top = 8.dp.toPx()
+                val bottom = size.height - 8.dp.toPx()
+                val span = bottom - top
+                for (i in 0..2) {
+                    val y = top + span * i / 2f
+                    drawLine(grid, Offset(0f, y), Offset(size.width, y), strokeWidth = 1.dp.toPx())
+                }
+                val max = if (peak <= 0.0) 1.0 else peak
+                val stepX = if (points.size > 1) size.width / (points.size - 1) else 0f
+                fun xOf(index: Int): Float = if (points.size > 1) stepX * index else size.width / 2f
+                fun yOf(value: Double): Float = (bottom - span * (value / max)).toFloat()
+                val line = Path()
+                points.forEachIndexed { index, point ->
+                    if (index == 0) line.moveTo(xOf(index), yOf(point.value)) else line.lineTo(xOf(index), yOf(point.value))
+                }
+                if (points.size > 1) {
+                    val area = Path()
+                    area.addPath(line)
+                    area.lineTo(xOf(points.lastIndex), bottom)
+                    area.lineTo(xOf(0), bottom)
+                    area.close()
+                    drawPath(area, fill)
+                }
+                drawPath(line, accent, style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
+                drawCircle(scheme.surfaceContainerLow, 7.dp.toPx(), Offset(xOf(points.lastIndex), yOf(points.last().value)))
+                drawCircle(accent, 5.dp.toPx(), Offset(xOf(points.lastIndex), yOf(points.last().value)))
+            }
+            Row(Modifier.fillMaxWidth()) {
+                Text(
+                    axisLabel(points.first().label),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = scheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f)
+                )
+                Text(
+                    axisLabel(points.last().label),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = scheme.onSurfaceVariant
+                )
+            }
         }
     }
 }
