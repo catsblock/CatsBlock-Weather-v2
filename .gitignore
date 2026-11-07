@@ -24,3 +24,6 @@ wrangler.toml
 google-services.json
 secrets.properties
 cloudflare-worker/
+desktop/
+app/
+workflow/
