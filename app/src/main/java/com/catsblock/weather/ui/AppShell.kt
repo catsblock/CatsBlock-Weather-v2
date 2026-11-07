@@ -121,6 +121,7 @@ fun AppShell(vm: WeatherViewModel, screen: Screen?) {
     SideEffect { last = tab }
 
     val settings by vm.settings.collectAsStateWithLifecycle()
+    PolicyUpdateDialog(onOpenTerms = { vm.openTerms() }, onOpenPrivacy = { vm.openPrivacy(Screen.Settings) })
     val agentAllowed = true
     val tabs = remember(agentAllowed) { AppTab.entries.filter { it != AppTab.Agent || agentAllowed } }
     LaunchedEffect(screen, agentAllowed) {
