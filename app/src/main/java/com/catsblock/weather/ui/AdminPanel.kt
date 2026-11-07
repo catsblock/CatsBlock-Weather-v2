@@ -1,8 +1,9 @@
-@file:OptIn(ExperimentalMaterial3ExpressiveApi::class)
-
 package com.catsblock.weather.ui
 
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -22,6 +23,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CornerSize
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -32,19 +34,13 @@ import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LoadingIndicator
-import androidx.compose.material3.MaterialExpressiveTheme
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.MotionScheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.ToggleButton
-import androidx.compose.material3.ToggleButtonDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -66,6 +62,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -81,6 +78,7 @@ import com.catsblock.weather.data.AdminPoint
 import com.catsblock.weather.data.AdminResult
 import com.catsblock.weather.i18n.I18n
 import com.catsblock.weather.i18n.tr
+import com.catsblock.weather.ui.components.ExpressiveLoader
 import com.catsblock.weather.ui.components.ExpressiveProgressBar
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -108,15 +106,8 @@ internal fun AdminPanel(onDismiss: () -> Unit) {
             securePolicy = SecureFlagPolicy.SecureOn
         )
     ) {
-        MaterialExpressiveTheme(
-            colorScheme = MaterialTheme.colorScheme,
-            motionScheme = MotionScheme.expressive(),
-            shapes = MaterialTheme.shapes,
-            typography = MaterialTheme.typography
-        ) {
-            Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
-                AdminContent(onDismiss)
-            }
+        Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
+            AdminContent(onDismiss)
         }
     }
 }
@@ -178,7 +169,7 @@ private fun AdminContent(onDismiss: () -> Unit) {
     ) { padding ->
         Crossfade(
             targetState = stage,
-            animationSpec = MaterialTheme.motionScheme.defaultEffectsSpec(),
+            animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
             modifier = Modifier.padding(padding).fillMaxSize(),
             label = "admin-stage"
         ) { current ->
@@ -327,11 +318,10 @@ private fun GateForm(
         Button(
             onClick = onSubmit,
             enabled = ready && !busy,
-            shapes = ButtonDefaults.shapes(),
             modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)
         ) {
             if (busy) {
-                LoadingIndicator(Modifier.size(28.dp), color = scheme.onPrimary)
+                ExpressiveLoader(size = 28.dp, color = scheme.onPrimary)
                 Text(tr("Checking…"), modifier = Modifier.padding(start = 12.dp))
             } else {
                 Text(tr("Verify"), style = MaterialTheme.typography.titleMedium)
@@ -372,7 +362,7 @@ private fun Dashboard(client: AdminClient, session: String, onFailure: (AdminRes
             verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            if (problem == null) LoadingIndicator(Modifier.size(64.dp))
+            if (problem == null) ExpressiveLoader(size = 64.dp)
             Text(
                 problem ?: tr("Loading metrics…"),
                 style = MaterialTheme.typography.bodyLarge,
@@ -459,16 +449,34 @@ private fun UsersSection(metrics: AdminMetrics, days: Int, number: NumberFormat,
         Text(tr("Unique users per day"), style = MaterialTheme.typography.titleLarge)
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             RANGES.forEach { range ->
-                ToggleButton(
-                    checked = range == days,
-                    onCheckedChange = { if (it) onRange(range) },
-                    shapes = ToggleButtonDefaults.shapes(),
-                    modifier = Modifier.weight(1f).semantics { role = Role.RadioButton }
-                ) { Text(tr("%d days").format(range), maxLines = 1) }
+                RangeButton(range == days, tr("%d days").format(range), { onRange(range) }, Modifier.weight(1f))
             }
         }
         LineChart(tr("Unique users per day"), metrics.users, number)
     }
+}
+
+@Composable
+private fun RangeButton(selected: Boolean, text: String, onClick: () -> Unit, modifier: Modifier) {
+    val scheme = MaterialTheme.colorScheme
+    val radius by animateDpAsState(
+        targetValue = if (selected) 28.dp else 12.dp,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium),
+        label = "range-radius"
+    )
+    Button(
+        onClick = onClick,
+        modifier = modifier.heightIn(min = 48.dp).semantics {
+            role = Role.RadioButton
+            this.selected = selected
+        },
+        shape = RoundedCornerShape(radius),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = if (selected) scheme.primary else scheme.secondaryContainer,
+            contentColor = if (selected) scheme.onPrimary else scheme.onSecondaryContainer
+        ),
+        contentPadding = PaddingValues(horizontal = 8.dp)
+    ) { Text(text, maxLines = 1) }
 }
 
 @Composable
