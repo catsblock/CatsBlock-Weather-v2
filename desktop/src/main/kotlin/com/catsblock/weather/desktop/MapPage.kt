@@ -30,6 +30,7 @@ import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -56,6 +57,11 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.sin
+import org.json.JSONArray
+import org.json.JSONObject
+import java.util.Locale
 import kotlin.math.atan
 import kotlin.math.floor
 import kotlin.math.ln
@@ -95,7 +101,76 @@ private object TileLoader {
     }
 }
 
-private enum class MapLayer(val key: String) { Radar("Radar"), Satellite("Satellite") }
+private enum class MapLayer(val key: String) {
+    Radar("Radar"),
+    Satellite("Satellite"),
+    Precipitation("Precipitation"),
+    Wind("Wind speed");
+
+    val isGrid: Boolean get() = this == Precipitation || this == Wind
+}
+
+private class GridPoint(val lat: Double, val lon: Double, val precipMm: Double, val windKmh: Double, val windFromDeg: Double)
+
+private const val GRID_COLS = 8
+private const val GRID_ROWS = 6
+private const val MIN_PRECIP_MM = 0.05
+
+private fun xToLon(x: Double, zoom: Int): Double = x / (TILE * 2.0.pow(zoom)) * 360.0 - 180.0
+
+private fun yToLat(y: Double, zoom: Int): Double {
+    val n = PI - 2.0 * PI * y / (TILE * 2.0.pow(zoom))
+    return Math.toDegrees(atan(sinh(n)))
+}
+
+private fun precipColor(mm: Double): Color = when {
+    mm < 0.5 -> Color(0xFF8FD3F4)
+    mm < 2.0 -> Color(0xFF2F80ED)
+    mm < 6.0 -> Color(0xFF27AE60)
+    mm < 15.0 -> Color(0xFFF2C94C)
+    mm < 30.0 -> Color(0xFFEB5757)
+    else -> Color(0xFF9B51E0)
+}
+
+private fun windColor(kmh: Double): Color = when {
+    kmh < 20.0 -> Color(0xFF2F80ED)
+    kmh < 40.0 -> Color(0xFF27AE60)
+    kmh < 60.0 -> Color(0xFFF2C94C)
+    kmh < 90.0 -> Color(0xFFEB5757)
+    else -> Color(0xFF9B51E0)
+}
+
+private object GridClient {
+    private val http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build()
+
+    fun load(coordinates: List<Pair<Double, Double>>): List<GridPoint>? = runCatching {
+        val lats = coordinates.joinToString(",") { String.format(Locale.US, "%.3f", it.first.coerceIn(-89.0, 89.0)) }
+        val lons = coordinates.joinToString(",") { String.format(Locale.US, "%.3f", ((it.second + 540.0) % 360.0) - 180.0) }
+        val url = "https://api.open-meteo.com/v1/forecast?latitude=$lats&longitude=$lons" +
+            "&current=precipitation,wind_speed_10m,wind_direction_10m&wind_speed_unit=kmh&timezone=UTC"
+        val request = HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofSeconds(15))
+            .header("User-Agent", "CatsBlockWeather-Desktop/2.0 (+https://github.com/catsblock/CatsBlock-Weather-v2)")
+            .GET().build()
+        val response = http.send(request, HttpResponse.BodyHandlers.ofString())
+        if (response.statusCode() != 200 || response.body().length > 1_000_000) return@runCatching null
+        val trimmed = response.body().trim()
+        val items: List<JSONObject> = if (trimmed.startsWith("[")) {
+            val array = JSONArray(trimmed)
+            (0 until array.length()).map { array.getJSONObject(it) }
+        } else {
+            listOf(JSONObject(trimmed))
+        }
+        if (items.size != coordinates.size) return@runCatching null
+        items.mapIndexed { index, item ->
+            val current = item.getJSONObject("current")
+            GridPoint(
+                coordinates[index].first, coordinates[index].second,
+                current.optDouble("precipitation", 0.0), current.optDouble("wind_speed_10m", 0.0),
+                current.optDouble("wind_direction_10m", 0.0)
+            )
+        }
+    }.getOrNull()
+}
 
 private val timeFormat: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
 
@@ -121,6 +196,8 @@ fun MapPage(s: DesktopSettings, dark: Boolean, modifier: Modifier = Modifier) {
     var layer by remember { mutableStateOf(MapLayer.Radar) }
     var set by remember { mutableStateOf<RadarSet?>(null) }
     var failed by remember { mutableStateOf(false) }
+    var grid by remember { mutableStateOf<List<GridPoint>>(emptyList()) }
+    var gridFailed by remember { mutableStateOf(false) }
     var frame by remember(layer) { mutableIntStateOf(-1) }
     var playing by remember { mutableStateOf(false) }
     val tiles = remember { mutableStateMapOf<String, ImageBitmap>() }
@@ -143,6 +220,7 @@ fun MapPage(s: DesktopSettings, dark: Boolean, modifier: Modifier = Modifier) {
     val frames = when (layer) {
         MapLayer.Radar -> set?.radar.orEmpty()
         MapLayer.Satellite -> set?.satellite.orEmpty()
+        MapLayer.Precipitation, MapLayer.Wind -> emptyList()
     }
     val activeIndex = if (frame in frames.indices) frame else frames.indexOfLast { it.time <= Instant.now().epochSecond }.coerceAtLeast(frames.lastIndex)
 
@@ -178,9 +256,27 @@ fun MapPage(s: DesktopSettings, dark: Boolean, modifier: Modifier = Modifier) {
     val current = frames.getOrNull(activeIndex)
     val host = set?.host
 
+    val gridKey = if (layer.isGrid) "${layer.key}:$zoom:${(cx / 128.0).toInt()}:${(cy / 128.0).toInt()}:${size.width / 64}:${size.height / 64}" else ""
+    LaunchedEffect(gridKey) {
+        if (!layer.isGrid) return@LaunchedEffect
+        delay(450)
+        val coordinates = buildList {
+            for (j in 0 until GRID_ROWS) for (i in 0 until GRID_COLS) {
+                val px = left + (i + 0.5) / GRID_COLS * size.width
+                val py = top + (j + 0.5) / GRID_ROWS * size.height
+                add(yToLat(py, zoom) to xToLon(px, zoom))
+            }
+        }
+        val loaded = withContext(Dispatchers.IO) { GridClient.load(coordinates) }
+        if (loaded == null) gridFailed = true else {
+            grid = loaded
+            gridFailed = false
+        }
+    }
+
     fun baseUrl(x: Int, y: Int): String = "https://tile.openstreetmap.org/$zoom/${Math.floorMod(x, n)}/$y.png"
     fun overlayUrl(x: Int, y: Int): String? {
-        if (current == null || host == null) return null
+        if (layer.isGrid || current == null || host == null) return null
         val ox = Math.floorMod(x, n) shr dz
         val oy = y shr dz
         val mode = if (layer == MapLayer.Radar) "2/1_1" else "0/0_0"
@@ -225,6 +321,39 @@ fun MapPage(s: DesktopSettings, dark: Boolean, modifier: Modifier = Modifier) {
                         )
                     }
                 }
+                if (layer.isGrid) {
+                    val cellW = size.width / GRID_COLS
+                    val cellH = size.height / GRID_ROWS
+                    for (point in grid) {
+                        val px = (lonToX(point.lon, zoom) - left).toFloat()
+                        val py = (latToY(point.lat, zoom) - top).toFloat()
+                        if (layer == MapLayer.Precipitation) {
+                            if (point.precipMm >= MIN_PRECIP_MM) {
+                                drawRect(
+                                    precipColor(point.precipMm).copy(alpha = 0.55f),
+                                    Offset(px - cellW / 2, py - cellH / 2), Size(cellW, cellH)
+                                )
+                            }
+                        } else {
+                            val length = (12f + (point.windKmh.coerceAtMost(100.0) / 100.0 * 24.0).toFloat())
+                            val heading = Math.toRadians(point.windFromDeg + 180.0)
+                            val dx = (sin(heading) * length).toFloat()
+                            val dy = (-cos(heading) * length).toFloat()
+                            val tail = Offset(px - dx / 2, py - dy / 2)
+                            val tip = Offset(px + dx / 2, py + dy / 2)
+                            val ink = windColor(point.windKmh)
+                            drawLine(ink, tail, tip, strokeWidth = 3f)
+                            for (side in listOf(-0.5, 0.5)) {
+                                val wing = heading + PI + side
+                                drawLine(
+                                    ink, tip,
+                                    Offset(tip.x + (sin(wing) * 8).toFloat(), tip.y - (cos(wing) * 8).toFloat()),
+                                    strokeWidth = 3f
+                                )
+                            }
+                        }
+                    }
+                }
                 if (dark) drawRect(Color.Black.copy(alpha = 0.35f))
                 if (city != null) {
                     val px = (lonToX(city.lon, zoom) - left).toFloat()
@@ -245,10 +374,10 @@ fun MapPage(s: DesktopSettings, dark: Boolean, modifier: Modifier = Modifier) {
                 }
             }
             Text(
-                "© OpenStreetMap · RainViewer", Modifier.align(Alignment.BottomStart).padding(8.dp),
+                if (layer.isGrid) "© OpenStreetMap · Open-Meteo" else "© OpenStreetMap · RainViewer", Modifier.align(Alignment.BottomStart).padding(8.dp),
                 style = MaterialTheme.typography.labelSmall, color = if (dark) Color.White.copy(alpha = 0.8f) else Color.Black.copy(alpha = 0.7f)
             )
-            if (failed) Text(t("Map data unavailable"), Modifier.align(Alignment.Center), style = MaterialTheme.typography.titleMedium, color = Color.White)
+            if (failed || (layer.isGrid && gridFailed)) Text(t("Map data unavailable"), Modifier.align(Alignment.Center), style = MaterialTheme.typography.titleMedium, color = Color.White)
         }
         Card(Modifier.fillMaxWidth(), t("Map layers")) {
             Segmented(MapLayer.entries.map { it to t(it.key) }, layer) { layer = it; playing = false }
@@ -266,6 +395,11 @@ fun MapPage(s: DesktopSettings, dark: Boolean, modifier: Modifier = Modifier) {
                         style = MaterialTheme.typography.titleMedium
                     )
                 }
+            } else if (layer.isGrid) {
+                Text(
+                    t(if (layer == MapLayer.Precipitation) "Precipitation (mm/h)" else "Wind (km/h)"),
+                    color = scheme.onSurfaceVariant
+                )
             } else if (!failed) Text(t("Loading map…"), color = scheme.onSurfaceVariant)
         }
     }
