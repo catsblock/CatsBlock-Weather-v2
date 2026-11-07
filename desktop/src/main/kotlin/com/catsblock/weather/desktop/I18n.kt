@@ -117,6 +117,7 @@ fun t(key: String): String {
     val index = LANGUAGES.indexOfFirst { it.first == uiLanguage.value }
     if (index <= 0) return androidEnglish[key] ?: key
     return STRINGS[key]?.getOrNull(index - 1)?.takeIf { it.isNotEmpty() }
+        ?: astronomyStrings[key]?.getOrNull(index - 1)?.takeIf { it.isNotEmpty() }
         ?: androidTable[key]?.getOrNull(index - 1)?.takeIf { it.isNotEmpty() }
         ?: androidEnglish[key] ?: key
 }
