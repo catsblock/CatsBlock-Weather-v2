@@ -130,6 +130,7 @@ fun AgentScreen(vm: WeatherViewModel) {
     var text by rememberSaveable { mutableStateOf("") }
     val blockedUntil by chat.blockedUntil.collectAsStateWithLifecycle()
     val gate by chat.gate.collectAsStateWithLifecycle()
+    val adminRequested by chat.adminRequested.collectAsStateWithLifecycle()
     val limited = blockedUntil > 0L
     val canSend = text.isNotBlank() && gate == AgentGate.Open && !limited
     val submit = {
@@ -139,6 +140,8 @@ fun AgentScreen(vm: WeatherViewModel) {
     val bottomInset = LocalBottomInset.current
     val imeBottom = WindowInsets.ime.asPaddingValues().calculateBottomPadding()
     val bottom = if (imeBottom > bottomInset) imeBottom else bottomInset
+
+    if (adminRequested) AdminPanel(onDismiss = { chat.adminRequested.value = false })
 
     LaunchedEffect(Unit) {
         chat.refreshAvailability()
