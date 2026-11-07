@@ -178,8 +178,8 @@ private fun WeatherTab(
                     add { PressureCard(settings, c, { onMetric(Metric.Pressure) }, it) }
                     add { VisibilityCard(c, { onMetric(Metric.Visibility) }, it) }
                     add { CloudCard(c, { onMetric(Metric.Cloud) }, it) }
-                    add { SunCard(c, it) }
-                    add { MoonCard(it) }
+                    add { SunCard(c, settings.city?.lat ?: 0.0, settings.city?.lon ?: 0.0, it) }
+                    add { MoonCard(c, settings.city?.lat ?: 0.0, settings.city?.lon ?: 0.0, it) }
                 }
                 Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     CityBar(settings, onTab, onSettings, onRetry)
