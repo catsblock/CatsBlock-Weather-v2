@@ -1893,7 +1893,9 @@ export default {
     if (request.method !== "OPTIONS" && request.url.length <= MAX_URL_LENGTH) {
       try {
         id = await identify(request, env);
-        if (!id.error && (await isBannedAtEdge(env, id))) {
+        const rawPath = new URL(request.url).pathname;
+        const requestPath = rawPath.length > 1 ? rawPath.replace(/\/+$/, "") : rawPath;
+        if (ADMIN_PATHS.has(requestPath) && !id.error && (await isBannedAtEdge(env, id))) {
           return jsonResponse({ error: "forbidden" }, 403);
         }
       } catch (err) {
