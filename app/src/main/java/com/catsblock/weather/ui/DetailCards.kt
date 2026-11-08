@@ -54,6 +54,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
@@ -72,9 +73,7 @@ import com.catsblock.weather.data.Hour
 import com.catsblock.weather.data.LifeItem
 import com.catsblock.weather.data.LifeKind
 import com.catsblock.weather.i18n.tr
-import com.catsblock.weather.ui.glass.LocalHazeState
-import com.catsblock.weather.ui.glass.frostedGlassCard
-import com.catsblock.weather.ui.particles.collideWithParticles
+import com.catsblock.weather.ui.glass.cardEntrance
 import kotlinx.coroutines.launch
 import java.time.Duration
 import java.time.LocalDate
@@ -95,28 +94,27 @@ fun GlassCard(
     contentModifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    val glass = LocalGlass.current
+    val expressive = LocalGlass.current
     val dark = isSystemInDarkTheme()
     val scheme = MaterialTheme.colorScheme
-    val shape = MaterialTheme.shapes.extraLarge
-    val hazeState = LocalHazeState.current
+    val shape = RoundedCornerShape(32.dp)
     val colors = CardDefaults.cardColors(
-        containerColor = if (glass) Color.Transparent else scheme.surfaceContainer.copy(alpha = if (dark) 0.58f else 0.74f),
-        contentColor = if (glass) Color.White else scheme.onSurface
+        containerColor = if (expressive) {
+            Color(0xFF0E1A28).copy(alpha = 0.80f).compositeOver(scheme.primary.copy(alpha = 0.16f))
+        } else {
+            scheme.surfaceContainer.copy(alpha = if (dark) 0.58f else 0.74f)
+        },
+        contentColor = if (expressive) Color.White else scheme.onSurface
     )
-    val surface = if (glass) {
-        modifier.scrollEdgeFade().frostedGlassCard(hazeState, shape).collideWithParticles()
-    } else {
-        modifier
-    }
+    val surface = if (expressive) modifier.scrollEdgeFade().cardEntrance() else modifier
     val elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     if (onClick != null) {
         Card(onClick = onClick, modifier = surface, shape = shape, colors = colors, elevation = elevation, border = null) {
-            Column(contentModifier.padding(18.dp), content = content)
+            Column(contentModifier.padding(20.dp), content = content)
         }
     } else {
         Card(modifier = surface, shape = shape, colors = colors, elevation = elevation, border = null) {
-            Column(contentModifier.padding(18.dp), content = content)
+            Column(contentModifier.padding(20.dp), content = content)
         }
     }
 }
