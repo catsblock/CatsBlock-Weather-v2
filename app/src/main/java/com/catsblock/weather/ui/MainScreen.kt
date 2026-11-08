@@ -175,7 +175,8 @@ private val textShadow = TextStyle(
 
 private val snowKinds = setOf(
     Condition.Snow, Condition.HeavySnow, Condition.Blizzard, Condition.Sleet,
-    Condition.Flurries, Condition.BlowingSnow
+    Condition.Flurries, Condition.BlowingSnow, Condition.ScatteredSnow, Condition.SnowShowers,
+    Condition.RainSnow, Condition.WintryMix
 )
 
 fun beaufort(kmh: Double): Int = when {
@@ -343,9 +344,11 @@ fun MainScreen(vm: WeatherViewModel) {
             ParticleOverlay(
                 when {
                     bundle == null || effectsOff -> ParticleWeather.None
-                    kind == Condition.Storm -> ParticleWeather.Storm
+                    kind == Condition.Storm || kind == Condition.ScatteredStorms || kind == Condition.StrongStorms ->
+                        ParticleWeather.Storm
                     kind == Condition.Rain || kind == Condition.HeavyRain || kind == Condition.Hail -> ParticleWeather.HeavyRain
-                    kind == Condition.Drizzle -> ParticleWeather.Rain
+                    kind == Condition.Drizzle || kind == Condition.ScatteredShowers || kind == Condition.IsolatedStorms ->
+                        ParticleWeather.Rain
                     kind in snowKinds -> ParticleWeather.Snow
                     else -> ParticleWeather.None
                 },
