@@ -39,6 +39,38 @@ object AgentMessages {
     val known: Set<String> = setOf(TOO_LONG, FAILED, REFUSED, LIMIT, REGION, SPAM, UNAVAILABLE, BLOCKED, BUSY, WORKERS_LIMIT)
 }
 
+enum class FeedbackRating(val wire: String) { Good("good"), Bad("bad") }
+
+enum class FeedbackReason(val wire: String, val label: String, val rating: FeedbackRating?) {
+    Accurate("accurate", "Accurate and correct", FeedbackRating.Good),
+    Helpful("helpful", "Helpful and useful", FeedbackRating.Good),
+    Clear("clear", "Clear and easy to read", FeedbackRating.Good),
+    Complete("complete", "Complete answer", FeedbackRating.Good),
+    RightPlace("right_place", "Right location", FeedbackRating.Good),
+    Cards("cards", "Useful weather cards", FeedbackRating.Good),
+    Inaccurate("inaccurate", "Inaccurate or wrong", FeedbackRating.Bad),
+    NotRelevant("not_relevant", "Not what I asked", FeedbackRating.Bad),
+    Incomplete("incomplete", "Missing information", FeedbackRating.Bad),
+    Confusing("confusing", "Confusing or unclear", FeedbackRating.Bad),
+    WrongPlace("wrong_place", "Wrong location", FeedbackRating.Bad),
+    Outdated("outdated", "Outdated information", FeedbackRating.Bad),
+    Other("other", "Other", null);
+
+    companion object {
+        fun forRating(rating: FeedbackRating): List<FeedbackReason> = entries.filter { it.rating == null || it.rating == rating }
+        fun fromWire(wire: String): FeedbackReason? = entries.firstOrNull { it.wire == wire }
+    }
+}
+
+private const val FEEDBACK_PROMPT_MAX = 200
+private const val FEEDBACK_REPLY_MAX = 1200
+
+private fun String.safeTake(limit: Int): String {
+    if (length <= limit) return this
+    val end = if (Character.isHighSurrogate(this[limit - 1])) limit - 1 else limit
+    return substring(0, end)
+}
+
 enum class StepStatus { Run, Done, Fail }
 
 data class AgentStep(
@@ -182,6 +214,44 @@ class AgentClient {
         } catch (e: Exception) {
             AppLog.warn("Agent", "Unexpected failure", e)
             AgentOutcome.Failure(AgentMessages.FAILED)
+        }
+    }
+
+    suspend fun sendFeedback(
+        messageKey: String,
+        rating: FeedbackRating,
+        reasons: List<FeedbackReason>,
+        prompt: String,
+        reply: String,
+        language: String
+    ): Boolean = withContext(Dispatchers.IO) {
+        val base = SecretKeys.baseUrl()
+        if (base.isEmpty() || reasons.isEmpty() || prompt.isBlank() || reply.isBlank()) return@withContext false
+        try {
+            val payload = JSONObject()
+                .put("messageKey", messageKey)
+                .put("rating", rating.wire)
+                .put("reasons", JSONArray(reasons.map { it.wire }))
+                .put("prompt", prompt.safeTake(FEEDBACK_PROMPT_MAX))
+                .put("reply", reply.safeTake(FEEDBACK_REPLY_MAX))
+                .put("lang", language)
+                .toString()
+            val builder = Request.Builder()
+                .url("$base/v1/agent/feedback")
+                .header("X-Device-Id", DeviceFingerprint.id)
+                .header("X-Client-Platform", "android")
+                .post(payload.toRequestBody("application/json; charset=utf-8".toMediaType()))
+            SecretKeys.appToken().takeIf { it.isNotEmpty() }?.let { builder.header("X-App-Token", it) }
+            client.newCall(builder.build()).execute().use { response ->
+                response.isSuccessful ||
+                    (response.code == 409 &&
+                        runCatching { JSONObject(response.body?.string().orEmpty()).optString("error") }.getOrNull() == "already_submitted")
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            AppLog.warn("Agent", "Feedback failed", e)
+            false
         }
     }
 
