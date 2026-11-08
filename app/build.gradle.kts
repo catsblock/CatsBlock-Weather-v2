@@ -65,7 +65,7 @@ android {
 
     sourceSets {
         getByName("main") {
-            assets.srcDirs("../weather", "../sounds")
+            assets.srcDirs("../weather", "../sounds", "../assets")
         }
     }
 
