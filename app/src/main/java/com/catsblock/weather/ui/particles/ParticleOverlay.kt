@@ -3,12 +3,10 @@ package com.catsblock.weather.ui.particles
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
-import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -16,14 +14,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.layout.boundsInRoot
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntSize
@@ -37,17 +30,6 @@ import kotlin.math.sin
 import kotlin.math.sqrt
 import kotlin.random.Random
 
-object CardCollision {
-    private val bounds = mutableStateMapOf<Any, Rect>()
-    val rects: List<Rect> get() = bounds.values.toList()
-    fun update(key: Any, rect: Rect) {
-        bounds[key] = rect
-    }
-    fun remove(key: Any) {
-        bounds.remove(key)
-    }
-}
-
 enum class ParticleWeather { None, Rain, HeavyRain, Snow, Storm }
 
 private val RainColor = Color(0xFFD6E8FF)
@@ -58,34 +40,20 @@ private class RainLayer(
     val length: Float,
     val width: Float,
     val alpha: Float,
-    val windFactor: Float,
-    val collides: Boolean
+    val windFactor: Float
 ) {
     val x = FloatArray(count)
     val y = FloatArray(count)
     val v = FloatArray(count)
-    val hits = BooleanArray(count)
     var ready = false
 }
 
 private class RainSim(private val d: Float, multiplier: Float) {
     val layers = listOf(
-        RainLayer(max(10, (70 * multiplier).toInt()), 520f * d, 11f * d, 0.9f * d, 0.20f, 0.55f, false),
-        RainLayer(max(8, (52 * multiplier).toInt()), 900f * d, 20f * d, 1.4f * d, 0.32f, 0.8f, true),
-        RainLayer(max(5, (26 * multiplier).toInt()), 1350f * d, 34f * d, 2.1f * d, 0.48f, 1f, true)
+        RainLayer(max(10, (70 * multiplier).toInt()), 520f * d, 11f * d, 0.9f * d, 0.20f, 0.55f),
+        RainLayer(max(8, (52 * multiplier).toInt()), 900f * d, 20f * d, 1.4f * d, 0.32f, 0.8f),
+        RainLayer(max(5, (26 * multiplier).toInt()), 1350f * d, 34f * d, 2.1f * d, 0.48f, 1f)
     )
-    private val dropletCount = 140
-    val dx = FloatArray(dropletCount)
-    val dy = FloatArray(dropletCount)
-    val dvx = FloatArray(dropletCount)
-    val dvy = FloatArray(dropletCount)
-    val dl = FloatArray(dropletCount)
-    private var dp = 0
-    private val rippleCount = 48
-    val rx = FloatArray(rippleCount)
-    val ry = FloatArray(rippleCount)
-    val rl = FloatArray(rippleCount)
-    private var rp = 0
     var wind = 0f
 
     private fun respawn(l: RainLayer, i: Int, w: Float, h: Float, wr: Float, initial: Boolean) {
@@ -93,25 +61,9 @@ private class RainSim(private val d: Float, multiplier: Float) {
         l.x[i] = Random.nextFloat() * (w + drift) - if (wr > 0f) drift else 0f
         l.y[i] = if (initial) Random.nextFloat() * h else -Random.nextFloat() * h * 0.25f - l.length
         l.v[i] = 0.85f + Random.nextFloat() * 0.3f
-        l.hits[i] = Random.nextFloat() < 0.3f
     }
 
-    private fun splash(x: Float, y: Float, vx: Float) {
-        rx[rp] = x
-        ry[rp] = y
-        rl[rp] = 0.4f
-        rp = (rp + 1) % rippleCount
-        repeat(3) {
-            dx[dp] = x
-            dy[dp] = y
-            dvx[dp] = vx * 0.15f + (Random.nextFloat() - 0.5f) * 140f * d
-            dvy[dp] = -(70f + Random.nextFloat() * 150f) * d
-            dl[dp] = 0.38f
-            dp = (dp + 1) % dropletCount
-        }
-    }
-
-    fun step(dt: Float, w: Float, h: Float, targetWind: Float, rects: List<Rect>) {
+    fun step(dt: Float, w: Float, h: Float, targetWind: Float) {
         wind += (targetWind - wind) * (dt * 1.5f).coerceAtMost(1f)
         for (l in layers) {
             val wr = wind * l.windFactor
@@ -121,30 +73,11 @@ private class RainSim(private val d: Float, multiplier: Float) {
             }
             for (i in 0 until l.count) {
                 val vy = l.speed * l.v[i]
-                val prevY = l.y[i]
                 l.y[i] += vy * dt
                 l.x[i] += vy * wr * dt
-                if (l.collides && l.hits[i]) {
-                    for (r in rects) {
-                        if (r.top > 24f && r.top < h && l.x[i] >= r.left && l.x[i] <= r.right && prevY < r.top && l.y[i] >= r.top) {
-                            splash(l.x[i], r.top, vy * wr)
-                            respawn(l, i, w, h, wr, false)
-                            break
-                        }
-                    }
-                }
                 if (l.y[i] > h + l.length) respawn(l, i, w, h, wr, false)
             }
         }
-        for (i in 0 until dropletCount) {
-            if (dl[i] > 0f) {
-                dl[i] -= dt
-                dvy[i] += 1500f * d * dt
-                dx[i] += dvx[i] * dt
-                dy[i] += dvy[i] * dt
-            }
-        }
-        for (i in 0 until rippleCount) if (rl[i] > 0f) rl[i] -= dt
     }
 
     fun draw(scope: DrawScope) {
@@ -171,24 +104,6 @@ private class RainSim(private val d: Float, multiplier: Float) {
                         Offset(px, py),
                         l.width,
                         StrokeCap.Round
-                    )
-                }
-            }
-            for (i in 0 until dl.size) {
-                if (dl[i] > 0f) {
-                    drawCircle(RainColor.copy(alpha = (dl[i] / 0.38f).coerceIn(0f, 1f) * 0.7f), 1.2f * d, Offset(dx[i], dy[i]))
-                }
-            }
-            for (i in 0 until rl.size) {
-                if (rl[i] > 0f) {
-                    val t = 1f - rl[i] / 0.4f
-                    val rw = (4f + t * 14f) * d
-                    val rh = rw * 0.35f
-                    drawOval(
-                        RainColor.copy(alpha = (1f - t) * 0.55f),
-                        Offset(rx[i] - rw / 2f, ry[i] - rh / 2f),
-                        Size(rw, rh),
-                        style = Stroke(1.1f * d)
                     )
                 }
             }
@@ -326,7 +241,7 @@ fun ParticleOverlay(
             val w = canvasSize.width.toFloat()
             val h = canvasSize.height.toFloat()
             if (w > 0f && h > 0f) {
-                rainSim?.step(dt, w, h, currentWind, CardCollision.rects)
+                rainSim?.step(dt, w, h, currentWind)
                 snowSim?.step(dt, w, h, currentWind)
             }
             tick = now
@@ -341,16 +256,5 @@ fun ParticleOverlay(
         if (isStorm && lightning > 0f) {
             drawRect(Color.White.copy(alpha = lightning * 0.55f))
         }
-    }
-}
-
-@Composable
-fun Modifier.collideWithParticles(): Modifier {
-    val key = remember { Any() }
-    DisposableEffect(Unit) {
-        onDispose { CardCollision.remove(key) }
-    }
-    return this.onGloballyPositioned { coords ->
-        CardCollision.update(key, coords.boundsInRoot())
     }
 }
