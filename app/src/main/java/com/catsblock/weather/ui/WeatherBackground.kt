@@ -5,10 +5,12 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import coil.compose.AsyncImage
@@ -55,6 +57,43 @@ private fun backgroundAsset(kind: Condition, phase: SkyPhase): String = ASSET_BA
     Condition.Drizzle, Condition.Rain, Condition.Sleet -> "Rain.jpg"
     Condition.Storm, Condition.Hail -> "Storm.jpg"
     Condition.Snow, Condition.HeavySnow, Condition.Blizzard -> "Ssnow.jpg"
+}
+
+class SkyColors(val base: Color, val card: Color, val accent: Color)
+
+val LocalSkyColors = compositionLocalOf { SkyColors(Color(0xFF0E1A28), Color(0xFF16273A), Color(0xFFCDE6FF)) }
+
+private fun palette(base: Long, card: Long, accent: Long) = SkyColors(Color(base), Color(card), Color(accent))
+
+fun skyColors(kind: Condition, isDay: Boolean, time: LocalTime?): SkyColors {
+    val phase = skyPhase(time, isDay)
+    val phased = hasPhaseImage(kind)
+    val colors = when (kind) {
+        Condition.Clear, Condition.FewClouds -> when (phase) {
+            SkyPhase.Sunrise -> palette(0xFF2E2145, 0xFF47305F, 0xFFFFD1A8)
+            SkyPhase.Sunset -> palette(0xFF3A1F2E, 0xFF55303F, 0xFFFFC38A)
+            SkyPhase.Night -> palette(0xFF060D1F, 0xFF0F1B38, 0xFFB8CCFF)
+            SkyPhase.Day -> palette(0xFF0B2A4A, 0xFF123B66, 0xFFBFE3FF)
+        }
+        Condition.MoreClouds -> when (phase) {
+            SkyPhase.Sunrise -> palette(0xFF2B2640, 0xFF3F3758, 0xFFFFD6B8)
+            SkyPhase.Sunset -> palette(0xFF35242F, 0xFF4B3542, 0xFFFFCBA0)
+            SkyPhase.Night -> palette(0xFF0A1226, 0xFF15213D, 0xFFC0D0F2)
+            SkyPhase.Day -> palette(0xFF16314F, 0xFF21456B, 0xFFCFE5F8)
+        }
+        Condition.Cloudy, Condition.Fog -> palette(0xFF1F262E, 0xFF2D3740, 0xFFD3DCE4)
+        Condition.Drizzle, Condition.Rain, Condition.Sleet -> palette(0xFF121C27, 0xFF1D2C3B, 0xFFB9D6EE)
+        Condition.Storm, Condition.Hail -> palette(0xFF0B0F18, 0xFF161D2B, 0xFFC6CCFF)
+        Condition.Snow, Condition.HeavySnow, Condition.Blizzard -> palette(0xFF2A3A4C, 0xFF3A4E64, 0xFFE6F1FB)
+    }
+    if (!isDay && !phased) {
+        return SkyColors(
+            lerp(colors.base, Color.Black, 0.4f),
+            lerp(colors.card, Color.Black, 0.4f),
+            colors.accent
+        )
+    }
+    return colors
 }
 
 @Composable
