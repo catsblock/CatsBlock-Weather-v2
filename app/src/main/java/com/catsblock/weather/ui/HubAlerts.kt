@@ -42,7 +42,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.catsblock.weather.data.HubAlert
 import com.catsblock.weather.i18n.tr
-import com.catsblock.weather.ui.particles.collideWithParticles
 import java.time.Instant
 import java.time.ZoneId
 
@@ -73,7 +72,6 @@ fun HubAlertCard(alerts: List<HubAlert>, onClick: () -> Unit, modifier: Modifier
         modifier
             .fillMaxWidth()
             .scrollEdgeFade()
-            .collideWithParticles()
             .clip(shape)
             .background(Brush.linearGradient(listOf(AlertRed, AlertRedDark)))
             .clickable(onClick = onClick)
