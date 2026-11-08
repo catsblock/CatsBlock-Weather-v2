@@ -5,15 +5,17 @@ private const val WINDY_KMH = 55.0
 fun wmoCondition(code: Int, windKmh: Double = 0.0): Condition {
     val snow = when (code) {
         71 -> Condition.Flurries
-        73, 85 -> Condition.Snow
-        75, 86 -> Condition.HeavySnow
+        73 -> Condition.Snow
+        85 -> Condition.ScatteredSnow
+        86 -> Condition.SnowShowers
+        75 -> Condition.HeavySnow
         77 -> Condition.Hail
         else -> null
     }
     if (snow != null) {
         return when {
             snow == Condition.Hail -> snow
-            windKmh >= 45.0 -> Condition.Blizzard
+            windKmh >= 45.0 && snow != Condition.ScatteredSnow -> Condition.Blizzard
             windKmh >= 25.0 && snow == Condition.Flurries -> Condition.BlowingSnow
             else -> snow
         }
@@ -26,12 +28,17 @@ fun wmoCondition(code: Int, windKmh: Double = 0.0): Condition {
             else -> Condition.Cloudy
         }
         45, 48 -> Condition.Fog
-        51, 53, 55, 61, 80 -> Condition.Drizzle
-        56, 57, 67 -> Condition.Icy
-        66 -> Condition.Sleet
+        51, 53, 55, 61 -> Condition.Drizzle
+        80 -> Condition.ScatteredShowers
+        56, 67 -> Condition.Icy
+        57 -> Condition.WintryMix
+        66 -> Condition.RainSnow
         63, 81 -> Condition.Rain
         65, 82 -> Condition.HeavyRain
-        in 95..99 -> Condition.Storm
+        95 -> Condition.IsolatedStorms
+        96 -> Condition.ScatteredStorms
+        99 -> Condition.StrongStorms
+        in 97..98 -> Condition.Storm
         else -> Condition.Cloudy
     }
 }
