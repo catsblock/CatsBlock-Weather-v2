@@ -12,6 +12,8 @@ fun rainIntensity(kind: Condition): Float = when (kind) {
     Condition.Storm -> 1f
     Condition.Sleet -> 0.5f
     Condition.Hail -> 0.6f
+    Condition.HeavyRain -> 0.9f
+    Condition.Icy -> 0.3f
     else -> 0f
 }
 
@@ -19,5 +21,7 @@ fun snowIntensity(kind: Condition): Float = when (kind) {
     Condition.Snow -> 0.5f
     Condition.HeavySnow -> 0.85f
     Condition.Blizzard -> 1f
+    Condition.Flurries -> 0.25f
+    Condition.BlowingSnow -> 0.6f
     else -> 0f
 }
