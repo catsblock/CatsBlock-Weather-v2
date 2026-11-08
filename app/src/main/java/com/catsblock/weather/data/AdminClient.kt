@@ -24,6 +24,17 @@ internal sealed interface AdminResult<out T> {
 
 internal data class AdminPoint(val label: String, val value: Double)
 
+internal data class AdminFeedback(
+    val id: String,
+    val timestamp: Long,
+    val good: Boolean,
+    val reasons: List<String>,
+    val prompt: String,
+    val reply: String
+)
+
+internal data class AdminFeedbackPage(val items: List<AdminFeedback>, val cursor: String)
+
 internal data class AdminMetrics(
     val generatedAt: String,
     val activeNow: Int,
@@ -54,6 +65,9 @@ internal class AdminClient {
 
     suspend fun metrics(session: String, days: Int): AdminResult<AdminMetrics> =
         post("/v1/admin/metrics", JSONObject().put("days", days), session, ::parseMetrics)
+
+    suspend fun feedback(session: String, cursor: String): AdminResult<AdminFeedbackPage> =
+        post("/v1/admin/feedback", JSONObject().put("cursor", cursor), session, ::parseFeedback)
 
     private suspend fun <T> post(
         path: String,
@@ -114,6 +128,25 @@ internal class AdminClient {
             errorsDaily = points(daily, "day", "errors"),
             hourly = HOURLY_KEYS.associateWith { points(hourly, "hour", it) }
         )
+    }
+
+    private fun parseFeedback(root: JSONObject): AdminFeedbackPage? {
+        val array = root.optJSONArray("items") ?: return null
+        val items = (0 until array.length()).mapNotNull { index ->
+            val item = array.optJSONObject(index) ?: return@mapNotNull null
+            val id = item.optString("id")
+            if (id.isEmpty()) return@mapNotNull null
+            val reasons = item.optJSONArray("reasons")
+            AdminFeedback(
+                id = id,
+                timestamp = item.optLong("ts"),
+                good = item.optString("rating") == "good",
+                reasons = if (reasons == null) emptyList() else (0 until reasons.length()).map { reasons.optString(it) },
+                prompt = item.optString("prompt"),
+                reply = item.optString("reply")
+            )
+        }
+        return AdminFeedbackPage(items, root.optString("cursor"))
     }
 
     private fun points(array: JSONArray?, labelKey: String, valueKey: String): List<AdminPoint> {
