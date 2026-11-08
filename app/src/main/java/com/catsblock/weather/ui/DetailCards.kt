@@ -56,7 +56,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
@@ -102,10 +101,11 @@ fun GlassCard(
     val expressive = LocalGlass.current
     val dark = isSystemInDarkTheme()
     val scheme = MaterialTheme.colorScheme
+    val sky = LocalSkyColors.current
     val shape = RoundedCornerShape(32.dp)
     val colors = CardDefaults.cardColors(
         containerColor = if (expressive) {
-            Color(0xFF0E1A28).copy(alpha = 0.80f).compositeOver(scheme.primary.copy(alpha = 0.16f))
+            sky.card.copy(alpha = 0.88f)
         } else {
             scheme.surfaceContainer.copy(alpha = if (dark) 0.58f else 0.74f)
         },
