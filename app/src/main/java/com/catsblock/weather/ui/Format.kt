@@ -36,6 +36,72 @@ private val Condition.isPrecip: Boolean
         else -> false
     }
 
+class WeatherLook(val file: String, val title: String)
+
+fun weatherLook(
+    kind: Condition,
+    isDay: Boolean,
+    precipMm: Double = -1.0,
+    cloud: Int = -1,
+    windKmh: Double = 0.0,
+    chance: Int = -1
+): WeatherLook {
+    val sfx = if (isDay) "day" else "night"
+    val known = precipMm >= 0.0
+    if (kind.isPrecip && chance in 0..PRECIP_CHANCE_MIN) {
+        return when {
+            windKmh >= 55.0 -> WeatherLook("windy", "Windy")
+            cloud in 0..39 -> WeatherLook("mostly_clear_$sfx", "Mostly clear")
+            cloud in 40..69 -> WeatherLook("partly_cloudy_$sfx", "Partly cloudy")
+            cloud in 70..84 -> WeatherLook("mostly_cloudy_$sfx", "Mostly cloudy")
+            else -> WeatherLook("cloudy", "Cloudy")
+        }
+    }
+    val scattered = chance in (PRECIP_CHANCE_MIN + 1)..39
+    return when (kind) {
+        Condition.Clear -> when {
+            windKmh >= 55.0 -> WeatherLook("windy", "Windy")
+            isDay -> WeatherLook("clear_day", "Sunny")
+            else -> WeatherLook("clear_night", "Clear")
+        }
+        Condition.FewClouds -> WeatherLook("mostly_clear_$sfx", "Mostly clear")
+        Condition.MoreClouds -> if (cloud in 0..69) {
+            WeatherLook("partly_cloudy_$sfx", "Partly cloudy")
+        } else {
+            WeatherLook("mostly_cloudy_$sfx", "Mostly cloudy")
+        }
+        Condition.Cloudy -> if (windKmh >= 55.0) WeatherLook("windy", "Windy") else WeatherLook("cloudy", "Cloudy")
+        Condition.Fog -> if (windKmh >= 40.0) WeatherLook("windy", "Windy") else WeatherLook("haze_fog_dust_smoke", "Fog")
+        Condition.Drizzle -> WeatherLook("drizzle", "Drizzle")
+        Condition.Rain -> when {
+            scattered || (known && precipMm < 1.0) -> WeatherLook("scattered_showers_$sfx", "Scattered showers")
+            known && precipMm >= 4.0 -> WeatherLook("heavy_rain", "Heavy rain")
+            else -> WeatherLook("showers_rain", "Rain")
+        }
+        Condition.Storm -> when {
+            scattered || (known && precipMm < 0.5) ->
+                WeatherLook("isolated_scattered_thunderstorms_$sfx", "Scattered thunderstorms")
+            known && precipMm < 2.0 -> WeatherLook("isolated_thunderstorms", "Isolated thunderstorms")
+            else -> WeatherLook("strong_thunderstorms", "Thunderstorm")
+        }
+        Condition.Sleet -> when {
+            known && precipMm >= 2.0 -> WeatherLook("mixed_rain_hail_sleet", "Wintry mix")
+            known && precipMm >= 0.5 -> WeatherLook("mixed_rain_snow", "Rain and snow")
+            else -> WeatherLook("icy", "Icy")
+        }
+        Condition.Hail -> WeatherLook("sleet_hail", "Hail")
+        Condition.Snow -> when {
+            known && precipMm < 0.2 -> WeatherLook("flurries", "Flurries")
+            windKmh >= 25.0 && (scattered || precipMm < 0.8) -> WeatherLook("blowing_snow", "Blowing snow")
+            scattered || (known && precipMm < 0.8) ->
+                WeatherLook("scattered_snow_showers_$sfx", "Scattered snow showers")
+            else -> WeatherLook("showers_snow", "Snow")
+        }
+        Condition.HeavySnow -> WeatherLook("heavy_snow", "Heavy snow")
+        Condition.Blizzard -> WeatherLook("blizzard", "Blizzard")
+    }
+}
+
 fun iconUrl(
     kind: Condition,
     isDay: Boolean,
@@ -43,54 +109,7 @@ fun iconUrl(
     cloud: Int = -1,
     windKmh: Double = 0.0,
     chance: Int = -1
-): String {
-    val sfx = if (isDay) "day" else "night"
-    val known = precipMm >= 0.0
-    if (kind.isPrecip && chance in 0..PRECIP_CHANCE_MIN) {
-        val dry = when {
-            windKmh >= 55.0 -> "windy"
-            cloud in 0..39 -> "mostly_clear_$sfx"
-            cloud in 40..69 -> "partly_cloudy_$sfx"
-            cloud in 70..84 -> "mostly_cloudy_$sfx"
-            else -> "cloudy"
-        }
-        return ICON_BASE + dry + ".svg"
-    }
-    val scattered = chance in (PRECIP_CHANCE_MIN + 1)..39
-    val file = when (kind) {
-        Condition.Clear -> if (windKmh >= 55.0) "windy" else "clear_$sfx"
-        Condition.FewClouds -> "mostly_clear_$sfx"
-        Condition.MoreClouds -> if (cloud in 0..69) "partly_cloudy_$sfx" else "mostly_cloudy_$sfx"
-        Condition.Cloudy -> if (windKmh >= 55.0) "windy" else "cloudy"
-        Condition.Fog -> if (windKmh >= 40.0) "windy" else "haze_fog_dust_smoke"
-        Condition.Drizzle -> "drizzle"
-        Condition.Rain -> when {
-            scattered || (known && precipMm < 1.0) -> "scattered_showers_$sfx"
-            known && precipMm >= 4.0 -> "heavy_rain"
-            else -> "showers_rain"
-        }
-        Condition.Storm -> when {
-            scattered || (known && precipMm < 0.5) -> "isolated_scattered_thunderstorms_$sfx"
-            known && precipMm < 2.0 -> "isolated_thunderstorms"
-            else -> "strong_thunderstorms"
-        }
-        Condition.Sleet -> when {
-            known && precipMm >= 2.0 -> "mixed_rain_hail_sleet"
-            known && precipMm >= 0.5 -> "mixed_rain_snow"
-            else -> "icy"
-        }
-        Condition.Hail -> "sleet_hail"
-        Condition.Snow -> when {
-            known && precipMm < 0.2 -> "flurries"
-            windKmh >= 25.0 && (scattered || precipMm < 0.8) -> "blowing_snow"
-            scattered || (known && precipMm < 0.8) -> "scattered_snow_showers_$sfx"
-            else -> "showers_snow"
-        }
-        Condition.HeavySnow -> "heavy_snow"
-        Condition.Blizzard -> "blizzard"
-    }
-    return ICON_BASE + file + ".svg"
-}
+): String = ICON_BASE + weatherLook(kind, isDay, precipMm, cloud, windKmh, chance).file + ".svg"
 
 fun Condition.label(isDay: Boolean): String = tr(
     when (this) {
@@ -223,7 +242,7 @@ fun WeatherIcon(
     val custom = remember(kind, isDay, version) { IconKit.custom(context, kind, isDay) }
     AsyncImage(
         model = custom ?: iconUrl(kind, isDay, precipMm, cloud, windKmh, chance),
-        contentDescription = kind.label(isDay),
+        contentDescription = tr(weatherLook(kind, isDay, precipMm, cloud, windKmh, chance).title),
         modifier = modifier,
         contentScale = ContentScale.Fit
     )
