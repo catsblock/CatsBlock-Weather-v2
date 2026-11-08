@@ -33,7 +33,9 @@ private val Condition.isPrecip: Boolean
     get() = when (this) {
         Condition.Drizzle, Condition.Rain, Condition.Storm, Condition.Sleet, Condition.Hail,
         Condition.Snow, Condition.HeavySnow, Condition.Blizzard, Condition.Icy, Condition.Flurries,
-        Condition.BlowingSnow, Condition.HeavyRain -> true
+        Condition.BlowingSnow, Condition.HeavyRain, Condition.ScatteredShowers, Condition.ScatteredStorms,
+        Condition.IsolatedStorms, Condition.StrongStorms, Condition.ScatteredSnow, Condition.SnowShowers,
+        Condition.RainSnow, Condition.WintryMix -> true
         else -> false
     }
 
@@ -105,6 +107,14 @@ fun weatherLook(
         Condition.Flurries -> WeatherLook("flurries", "Flurries")
         Condition.BlowingSnow -> WeatherLook("blowing_snow", "Blowing snow")
         Condition.HeavyRain -> WeatherLook("heavy_rain", "Heavy rain")
+        Condition.ScatteredShowers -> WeatherLook("scattered_showers_$sfx", "Scattered showers")
+        Condition.ScatteredStorms -> WeatherLook("isolated_scattered_thunderstorms_$sfx", "Scattered thunderstorms")
+        Condition.IsolatedStorms -> WeatherLook("isolated_thunderstorms", "Isolated thunderstorms")
+        Condition.StrongStorms -> WeatherLook("strong_thunderstorms", "Thunderstorm")
+        Condition.ScatteredSnow -> WeatherLook("scattered_snow_showers_$sfx", "Scattered snow showers")
+        Condition.SnowShowers -> WeatherLook("showers_snow", "Snow")
+        Condition.RainSnow -> WeatherLook("mixed_rain_snow", "Rain and snow")
+        Condition.WintryMix -> WeatherLook("mixed_rain_hail_sleet", "Wintry mix")
     }
 }
 
@@ -137,6 +147,14 @@ fun Condition.label(isDay: Boolean): String = tr(
         Condition.Flurries -> "Flurries"
         Condition.BlowingSnow -> "Blowing snow"
         Condition.HeavyRain -> "Heavy rain"
+        Condition.ScatteredShowers -> "Scattered showers"
+        Condition.ScatteredStorms -> "Scattered thunderstorms"
+        Condition.IsolatedStorms -> "Isolated thunderstorms"
+        Condition.StrongStorms -> "Thunderstorm"
+        Condition.ScatteredSnow -> "Scattered snow showers"
+        Condition.SnowShowers -> "Snow"
+        Condition.RainSnow -> "Rain and snow"
+        Condition.WintryMix -> "Wintry mix"
     }
 )
 
