@@ -38,9 +38,12 @@ class ActivityStore(private val context: Context) {
         fun days(condition: Condition) = stringSetPreferencesKey("condition_days_" + condition.name)
     }
 
-    private val rainKinds = setOf(Condition.Drizzle, Condition.Rain, Condition.HeavyRain, Condition.Storm)
+    private val rainKinds = setOf(Condition.Drizzle, Condition.Rain, Condition.HeavyRain, Condition.Storm,
+        Condition.ScatteredShowers, Condition.ScatteredStorms, Condition.IsolatedStorms, Condition.StrongStorms
+    )
     private val snowKinds = setOf(
-        Condition.Snow, Condition.HeavySnow, Condition.Blizzard, Condition.Flurries, Condition.BlowingSnow
+        Condition.Snow, Condition.HeavySnow, Condition.Blizzard, Condition.Flurries, Condition.BlowingSnow,
+        Condition.ScatteredSnow, Condition.SnowShowers
     )
 
     val stats: Flow<ActivityStats> = context.activityData.data.map { prefs ->
