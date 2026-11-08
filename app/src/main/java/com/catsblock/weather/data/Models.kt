@@ -11,14 +11,29 @@ enum class Condition {
     Clear, FewClouds, MoreClouds, Cloudy, Fog,
     Drizzle, Rain, Storm,
     Sleet, Hail, Snow, HeavySnow, Blizzard,
-    Windy, Icy, Flurries, BlowingSnow, HeavyRain
+    Windy, Icy, Flurries, BlowingSnow, HeavyRain,
+    ScatteredShowers, ScatteredStorms, IsolatedStorms, StrongStorms,
+    ScatteredSnow, SnowShowers, RainSnow, WintryMix
 }
 
 val Condition.isWet: Boolean
     get() = this == Condition.Drizzle || this == Condition.Rain || this == Condition.Storm ||
         this == Condition.Sleet || this == Condition.Hail || this == Condition.Snow ||
         this == Condition.HeavySnow || this == Condition.Blizzard || this == Condition.Icy ||
-        this == Condition.Flurries || this == Condition.BlowingSnow || this == Condition.HeavyRain
+        this == Condition.Flurries || this == Condition.BlowingSnow || this == Condition.HeavyRain ||
+        this == Condition.ScatteredShowers || this == Condition.ScatteredStorms ||
+        this == Condition.IsolatedStorms || this == Condition.StrongStorms ||
+        this == Condition.ScatteredSnow || this == Condition.SnowShowers ||
+        this == Condition.RainSnow || this == Condition.WintryMix
+
+val Condition.isFixed: Boolean
+    get() = when (this) {
+        Condition.Windy, Condition.Icy, Condition.Flurries, Condition.BlowingSnow, Condition.HeavyRain,
+        Condition.ScatteredShowers, Condition.ScatteredStorms, Condition.IsolatedStorms,
+        Condition.StrongStorms, Condition.ScatteredSnow, Condition.SnowShowers,
+        Condition.RainSnow, Condition.WintryMix -> true
+        else -> false
+    }
 
 val RainLeadOptions: List<Int> = listOf(120, 60, 30, 15)
 val BackgroundIntervalOptions: List<Int> = listOf(30, 60, 120, 240, 480, 840)
