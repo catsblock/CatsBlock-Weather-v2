@@ -27,20 +27,69 @@ import kotlin.math.roundToInt
 private const val ICON_BASE =
     "https://raw.githubusercontent.com/mrdarrengriffin/google-weather-icons/refs/heads/main/sets/set-4/light/"
 
-fun iconUrl(kind: Condition, isDay: Boolean): String = ICON_BASE + when (kind) {
-    Condition.Clear -> if (isDay) "clear_day.svg" else "clear_night.svg"
-    Condition.FewClouds -> if (isDay) "mostly_clear_day.svg" else "mostly_clear_night.svg"
-    Condition.MoreClouds -> if (isDay) "partly_cloudy_day.svg" else "partly_cloudy_night.svg"
-    Condition.Cloudy -> "cloudy.svg"
-    Condition.Fog -> "haze_fog_dust_smoke.svg"
-    Condition.Drizzle -> "drizzle.svg"
-    Condition.Rain -> "showers_rain.svg"
-    Condition.Storm -> "strong_thunderstorms.svg"
-    Condition.Sleet -> "mixed_rain_hail_sleet.svg"
-    Condition.Hail -> "sleet_hail.svg"
-    Condition.Snow -> "showers_snow.svg"
-    Condition.HeavySnow -> "heavy_snow.svg"
-    Condition.Blizzard -> "blizzard.svg"
+const val PRECIP_CHANCE_MIN = 15
+
+private val Condition.isPrecip: Boolean
+    get() = when (this) {
+        Condition.Drizzle, Condition.Rain, Condition.Storm, Condition.Sleet, Condition.Hail,
+        Condition.Snow, Condition.HeavySnow, Condition.Blizzard -> true
+        else -> false
+    }
+
+fun iconUrl(
+    kind: Condition,
+    isDay: Boolean,
+    precipMm: Double = -1.0,
+    cloud: Int = -1,
+    windKmh: Double = 0.0,
+    chance: Int = -1
+): String {
+    val sfx = if (isDay) "day" else "night"
+    val known = precipMm >= 0.0
+    if (kind.isPrecip && chance in 0..PRECIP_CHANCE_MIN) {
+        val dry = when {
+            windKmh >= 55.0 -> "windy"
+            cloud in 0..39 -> "mostly_clear_$sfx"
+            cloud in 40..69 -> "partly_cloudy_$sfx"
+            cloud in 70..84 -> "mostly_cloudy_$sfx"
+            else -> "cloudy"
+        }
+        return ICON_BASE + dry + ".svg"
+    }
+    val scattered = chance in (PRECIP_CHANCE_MIN + 1)..39
+    val file = when (kind) {
+        Condition.Clear -> if (windKmh >= 55.0) "windy" else "clear_$sfx"
+        Condition.FewClouds -> "mostly_clear_$sfx"
+        Condition.MoreClouds -> if (cloud in 0..69) "partly_cloudy_$sfx" else "mostly_cloudy_$sfx"
+        Condition.Cloudy -> if (windKmh >= 55.0) "windy" else "cloudy"
+        Condition.Fog -> if (windKmh >= 40.0) "windy" else "haze_fog_dust_smoke"
+        Condition.Drizzle -> "drizzle"
+        Condition.Rain -> when {
+            scattered || (known && precipMm < 1.0) -> "scattered_showers_$sfx"
+            known && precipMm >= 4.0 -> "heavy_rain"
+            else -> "showers_rain"
+        }
+        Condition.Storm -> when {
+            scattered || (known && precipMm < 0.5) -> "isolated_scattered_thunderstorms_$sfx"
+            known && precipMm < 2.0 -> "isolated_thunderstorms"
+            else -> "strong_thunderstorms"
+        }
+        Condition.Sleet -> when {
+            known && precipMm >= 2.0 -> "mixed_rain_hail_sleet"
+            known && precipMm >= 0.5 -> "mixed_rain_snow"
+            else -> "icy"
+        }
+        Condition.Hail -> "sleet_hail"
+        Condition.Snow -> when {
+            known && precipMm < 0.2 -> "flurries"
+            windKmh >= 25.0 && (scattered || precipMm < 0.8) -> "blowing_snow"
+            scattered || (known && precipMm < 0.8) -> "scattered_snow_showers_$sfx"
+            else -> "showers_snow"
+        }
+        Condition.HeavySnow -> "heavy_snow"
+        Condition.Blizzard -> "blizzard"
+    }
+    return ICON_BASE + file + ".svg"
 }
 
 fun Condition.label(isDay: Boolean): String = tr(
@@ -160,12 +209,20 @@ fun dayLabel(date: LocalDate, today: LocalDate): String = when (date) {
 }
 
 @Composable
-fun WeatherIcon(kind: Condition, isDay: Boolean, modifier: Modifier = Modifier) {
+fun WeatherIcon(
+    kind: Condition,
+    isDay: Boolean,
+    modifier: Modifier = Modifier,
+    precipMm: Double = -1.0,
+    cloud: Int = -1,
+    windKmh: Double = 0.0,
+    chance: Int = -1
+) {
     val context = LocalContext.current
     val version by IconKit.version.collectAsState()
     val custom = remember(kind, isDay, version) { IconKit.custom(context, kind, isDay) }
     AsyncImage(
-        model = custom ?: iconUrl(kind, isDay),
+        model = custom ?: iconUrl(kind, isDay, precipMm, cloud, windKmh, chance),
         contentDescription = kind.label(isDay),
         modifier = modifier,
         contentScale = ContentScale.Fit
