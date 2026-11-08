@@ -92,7 +92,8 @@ internal class VisualCrossingProvider(private val get: suspend (String) -> Strin
                     uv = o.optDouble("uvindex", 0.0),
                     aqi = null,
                     pressure = o.optDouble("pressure", 1013.0),
-                    visibility = o.optDouble("visibility", 10.0) * 1000.0
+                    visibility = o.optDouble("visibility", 10.0) * 1000.0,
+                    precipProb = if (o.has("precipprob")) o.optDouble("precipprob", 0.0).roundToInt() else -1
                 )
             }
         }
