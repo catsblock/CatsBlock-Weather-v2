@@ -1,7 +1,8 @@
 import { metricsCall } from "./analytics.js";
+import { listFeedback } from "./feedback.js";
 
 export const ADMIN_COMMAND = "/adminpanelcommandbycatsblockcorporation2026weather";
-export const ADMIN_PATHS = new Set(["/v1/admin/stage1", "/v1/admin/stage2", "/v1/admin/metrics"]);
+export const ADMIN_PATHS = new Set(["/v1/admin/stage1", "/v1/admin/stage2", "/v1/admin/metrics", "/v1/admin/feedback"]);
 
 const BAN_MS = 14 * 60 * 60 * 1000;
 const MAX_FAILURES = 2;
@@ -366,12 +367,17 @@ export async function handleAdmin(request, env, path, h) {
   const keys = await deriveKeys(env, h);
   if (!keys || !env.APP_KV || !env.ADMIN_GUARD) return h.jsonResponse({ error: "unavailable" }, 503);
 
-  if (path === "/v1/admin/metrics") {
+  if (path === "/v1/admin/metrics" || path === "/v1/admin/feedback") {
     const header = request.headers.get("Authorization") || "";
     const token = header.startsWith("Bearer ") ? header.slice(7).trim() : "";
     const session = await readToken(h, keys.sign, token, "a2", id.deviceHash);
     if (!session) return h.jsonResponse({ error: "session_expired" }, 401);
     const body = (await readBody(request)) || {};
+    if (path === "/v1/admin/feedback") {
+      const page = await listFeedback(env, body.cursor);
+      if (!page) return h.jsonResponse({ error: "unavailable" }, 503);
+      return h.jsonResponse(Object.assign({ ok: true }, page), 200);
+    }
     const days = Number.isInteger(body.days) ? Math.min(60, Math.max(1, body.days)) : 30;
     const snapshot = await metricsCall(env, "snapshot", { days });
     if (!snapshot) return h.jsonResponse({ error: "unavailable" }, 503);
