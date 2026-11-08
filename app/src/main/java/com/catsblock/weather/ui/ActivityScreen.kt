@@ -23,6 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.AcUnit
+import androidx.compose.material.icons.rounded.Air
 import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.EventAvailable
 import androidx.compose.material.icons.rounded.Grain
@@ -400,8 +401,10 @@ private fun SectionTitle(text: String, top: androidx.compose.ui.unit.Dp = 24.dp)
 
 private fun conditionIcon(kind: Condition): ImageVector = when (kind) {
     Condition.Storm -> Icons.Rounded.Thunderstorm
-    Condition.Rain, Condition.Drizzle -> Icons.Rounded.WaterDrop
-    Condition.Snow, Condition.HeavySnow, Condition.Blizzard, Condition.Sleet -> Icons.Rounded.AcUnit
+    Condition.Rain, Condition.Drizzle, Condition.HeavyRain -> Icons.Rounded.WaterDrop
+    Condition.Snow, Condition.HeavySnow, Condition.Blizzard, Condition.Sleet, Condition.Icy,
+    Condition.Flurries, Condition.BlowingSnow -> Icons.Rounded.AcUnit
+    Condition.Windy -> Icons.Rounded.Air
     Condition.Hail -> Icons.Rounded.Grain
     Condition.Fog -> Icons.Rounded.Grain
     Condition.Clear, Condition.FewClouds -> Icons.Rounded.WbSunny
