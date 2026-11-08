@@ -110,7 +110,8 @@ data class Hour(
     val aqi: Double?,
     val pressure: Double = 1013.0,
     val visibility: Double = 10000.0,
-    val cloud: Int = -1
+    val cloud: Int = -1,
+    val precipProb: Int = -1
 ) {
     val kind: Condition get() = wmoCondition(code, windSpeed)
 }
