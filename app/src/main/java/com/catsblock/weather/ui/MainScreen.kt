@@ -289,6 +289,7 @@ fun MainScreen(vm: WeatherViewModel) {
         }
     }
     val progress = (scroll.value / 700f).coerceIn(0f, 1f)
+    val sky = skyColors(kind, isDay, bundle?.current?.now?.toLocalTime())
     val headerHeight = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 112.dp
 
     val sound = remember { WeatherSoundPlayer() }
@@ -334,8 +335,22 @@ fun MainScreen(vm: WeatherViewModel) {
                     bundle?.let { b -> b.hours.firstOrNull { it.time == b.current.now.truncatedTo(ChronoUnit.HOURS) }?.precip } ?: -1.0
                 )
             }
-            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = progress * 0.32f)))
-            Box(Modifier.fillMaxSize().background(scheme.primary.copy(alpha = progress * 0.14f)))
+            Box(Modifier.fillMaxSize().background(sky.base.copy(alpha = progress)))
+
+            ParticleOverlay(
+                when {
+                    bundle == null || effectsOff -> ParticleWeather.None
+                    kind == Condition.Storm -> ParticleWeather.Storm
+                    kind == Condition.Rain || kind == Condition.Hail -> ParticleWeather.HeavyRain
+                    kind == Condition.Drizzle -> ParticleWeather.Rain
+                    kind in snowKinds -> ParticleWeather.Snow
+                    else -> ParticleWeather.None
+                },
+                windSpeedKmh = bundle?.current?.windSpeed ?: 0.0,
+                windDirDeg = bundle?.current?.windDir ?: 0.0,
+                alpha = 1f - progress
+            )
+
 
             CompositionLocalProvider(LocalOverscrollFactory provides null) {
             Box(
@@ -422,19 +437,6 @@ fun MainScreen(vm: WeatherViewModel) {
             }
 
             PullIndicator(elastic, refreshing, headerHeight)
-
-            ParticleOverlay(
-                when {
-                    bundle == null || effectsOff -> ParticleWeather.None
-                    kind == Condition.Storm -> ParticleWeather.Storm
-                    kind == Condition.Rain || kind == Condition.Hail -> ParticleWeather.HeavyRain
-                    kind == Condition.Drizzle -> ParticleWeather.Rain
-                    kind in snowKinds -> ParticleWeather.Snow
-                    else -> ParticleWeather.None
-                },
-                windSpeedKmh = bundle?.current?.windSpeed ?: 0.0,
-                windDirDeg = bundle?.current?.windDir ?: 0.0
-            )
 
             HeaderBar(
                 mode = mode,
@@ -608,11 +610,12 @@ private fun WeatherDetails(
     }
     val alert = remember(bundle, fahrenheit) { buildAlert(bundle, fahrenheit) }
     val baseScheme = MaterialTheme.colorScheme
-    val glassScheme = remember(baseScheme) {
+    val sky = skyColors(cur.kind, cur.isDay, cur.now.toLocalTime())
+    val glassScheme = remember(baseScheme, sky.accent, sky.base) {
         baseScheme.copy(
-            primary = Color(0xFFCDE6FF),
-            onPrimary = Color(0xFF0B1B2E),
-            secondary = Color(0xFF9FD8FF),
+            primary = sky.accent,
+            onPrimary = sky.base,
+            secondary = sky.accent,
             onSurface = Color.White,
             onSurfaceVariant = Color(0xCCFFFFFF),
             outline = Color(0x99FFFFFF),
@@ -670,6 +673,7 @@ private fun WeatherDetails(
 
         CompositionLocalProvider(
             LocalGlass provides true,
+            LocalSkyColors provides sky,
             LocalEntrance provides entrance,
             LocalRainIntensity provides rainIntensity(cur.kind),
             LocalSnowIntensity provides snowIntensity(cur.kind)
