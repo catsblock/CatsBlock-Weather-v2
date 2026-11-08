@@ -47,17 +47,17 @@ private fun palette(kind: Condition, day: Boolean): Palette = if (day) {
             Palette(c(0xFF4A7BE3), c(0xFFA7B1EC), c(0xCCFFFFFF), 0.66f, 0.26f)
         Condition.MoreClouds ->
             Palette(c(0xFF5B86D6), c(0xFFA3B4D8), c(0x66FFFFFF), 0.66f, 0.26f)
-        Condition.Cloudy ->
+        Condition.Cloudy, Condition.Windy ->
             Palette(c(0xFF6C7F9A), c(0xFF9AA8BC), c(0x33FFFFFF), 0.6f, 0.2f)
         Condition.Fog ->
             Palette(c(0xFF7D8A99), c(0xFFAAB3BE), c(0x33FFFFFF), 0.6f, 0.2f)
-        Condition.Drizzle, Condition.Rain ->
+        Condition.Drizzle, Condition.Rain, Condition.HeavyRain ->
             Palette(c(0xFF48607F), c(0xFF7B8CA6), c(0x22FFFFFF), 0.6f, 0.2f)
         Condition.Storm ->
             Palette(c(0xFF34394F), c(0xFF5E6480), c(0x14FFFFFF), 0.6f, 0.2f)
-        Condition.Sleet, Condition.Hail ->
+        Condition.Sleet, Condition.Hail, Condition.Icy ->
             Palette(c(0xFF566A86), c(0xFF93A4BA), c(0x22FFFFFF), 0.6f, 0.2f)
-        Condition.Snow, Condition.HeavySnow, Condition.Blizzard ->
+        Condition.Snow, Condition.HeavySnow, Condition.Blizzard, Condition.Flurries, Condition.BlowingSnow ->
             Palette(c(0xFF8CA4C4), c(0xFFD3DEEC), c(0x55FFFFFF), 0.6f, 0.2f)
     }
 } else {
@@ -66,13 +66,13 @@ private fun palette(kind: Condition, day: Boolean): Palette = if (day) {
             Palette(c(0xFF0D1B45), c(0xFF2B3C7A), c(0x33CFD8FF), 0.7f, 0.25f)
         Condition.MoreClouds ->
             Palette(c(0xFF16233F), c(0xFF38476B), c(0x22FFFFFF), 0.65f, 0.25f)
-        Condition.Cloudy, Condition.Fog ->
+        Condition.Cloudy, Condition.Fog, Condition.Windy ->
             Palette(c(0xFF232B3A), c(0xFF4A5568), c(0x14FFFFFF), 0.6f, 0.2f)
-        Condition.Drizzle, Condition.Rain, Condition.Sleet, Condition.Hail ->
+        Condition.Drizzle, Condition.Rain, Condition.HeavyRain, Condition.Sleet, Condition.Hail, Condition.Icy ->
             Palette(c(0xFF1A2335), c(0xFF3A4760), c(0x10FFFFFF), 0.6f, 0.2f)
         Condition.Storm ->
             Palette(c(0xFF12141F), c(0xFF2D3248), c(0x10FFFFFF), 0.6f, 0.2f)
-        Condition.Snow, Condition.HeavySnow, Condition.Blizzard ->
+        Condition.Snow, Condition.HeavySnow, Condition.Blizzard, Condition.Flurries, Condition.BlowingSnow ->
             Palette(c(0xFF3A4A66), c(0xFF7C8FAF), c(0x22FFFFFF), 0.6f, 0.2f)
     }
 }
@@ -358,7 +358,7 @@ private fun buildTips(s: WidgetSnapshot): List<Tip> {
         else -> "The current weather is good for outdoor exercise."
     }
     val travel = when {
-        s.kind == Condition.Storm || s.kind == Condition.Blizzard || s.wind >= 60.0 || s.precip > 10.0 ->
+        s.kind == Condition.Storm || s.kind == Condition.Blizzard || s.kind == Condition.HeavyRain || s.wind >= 60.0 || s.precip > 10.0 ->
             "The current weather is not suitable for travel."
         s.kind.isWet || s.kind == Condition.Fog || s.wind >= 40.0 || feels >= 36.0 ->
             "The current weather is not very suitable for travel."
