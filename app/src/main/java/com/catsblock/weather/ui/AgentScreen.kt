@@ -1,6 +1,24 @@
+
+@file:OptIn(ExperimentalLayoutApi::class)
+
 package com.catsblock.weather.ui
 
+import android.content.ActivityNotFoundException
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.Intent
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkHorizontally
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.MutableTransitionState
@@ -17,9 +35,15 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -43,13 +67,25 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.ThumbDownOffAlt
+import androidx.compose.material.icons.outlined.ThumbUpOffAlt
 import androidx.compose.material.icons.rounded.ArrowUpward
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Stars
+import androidx.compose.material.icons.rounded.ThumbDown
+import androidx.compose.material.icons.rounded.ThumbUp
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -67,6 +103,8 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -82,6 +120,8 @@ import com.catsblock.weather.data.AgentLimits
 import com.catsblock.weather.data.AgentMessages
 import com.catsblock.weather.data.AgentStep
 import com.catsblock.weather.data.AppSettings
+import com.catsblock.weather.data.FeedbackRating
+import com.catsblock.weather.data.FeedbackReason
 import com.catsblock.weather.data.StepStatus
 import com.catsblock.weather.data.wmoCondition
 import com.catsblock.weather.i18n.tr
@@ -96,16 +136,20 @@ private val Suggestions = listOf(
     "What day will the temperature drop?"
 )
 
+private const val HIDDEN_STEP = "limiter"
 private const val IdleDelayMs = 5000L
 private const val TypeStepMs = 55L
 private const val EraseStepMs = 28L
 private const val HoldMs = 1800L
 private const val PauseMs = 450L
 
+private data class FeedbackTarget(val messageId: Long, val rating: FeedbackRating)
+
+private enum class BarState { WorkersLimit, Checking, Unavailable, Limited, Input }
+
 private fun stepLabel(id: String): String = tr(
     when (id) {
         "region" -> "Checking region"
-        "limiter" -> "Checking request limit"
         "validate" -> "Validating message"
         "locate" -> "Locating place"
         "weather" -> "Fetching weather data"
@@ -116,8 +160,8 @@ private fun stepLabel(id: String): String = tr(
 )
 
 private fun liveLabel(steps: List<AgentStep>): String {
-    val running = steps.lastOrNull { it.status == StepStatus.Run }
-    return if (running != null) stepLabel(running.id) else tr("Working")
+    val running = steps.lastOrNull { it.status == StepStatus.Run && it.id != HIDDEN_STEP }
+    return if (running != null) stepLabel(running.id) else tr("Thinking")
 }
 
 @Composable
@@ -136,12 +180,26 @@ fun AgentScreen(vm: WeatherViewModel) {
     val submit = {
         if (canSend && chat.send(text, city, settings)) text = ""
     }
+    var feedbackTarget by remember { mutableStateOf<FeedbackTarget?>(null) }
     val listState = rememberLazyListState()
     val bottomInset = LocalBottomInset.current
     val imeBottom = WindowInsets.ime.asPaddingValues().calculateBottomPadding()
     val bottom = if (imeBottom > bottomInset) imeBottom else bottomInset
 
     if (adminRequested) AdminPanel(onDismiss = { chat.adminRequested.value = false })
+
+    feedbackTarget?.let { target ->
+        FeedbackDialog(
+            rating = target.rating,
+            onDismiss = { feedbackTarget = null },
+            onSubmit = { reasons, done ->
+                chat.submitFeedback(target.messageId, target.rating, reasons, settings.language.code) { sent ->
+                    if (sent) feedbackTarget = null
+                    done(sent)
+                }
+            }
+        )
+    }
 
     LaunchedEffect(Unit) {
         chat.refreshAvailability()
@@ -174,24 +232,45 @@ fun AgentScreen(vm: WeatherViewModel) {
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     items(messages, key = { it.id }) { message ->
-                        AgentBubbleRow(message, settings, Modifier.animateItem())
+                        AgentBubbleRow(
+                            message,
+                            settings,
+                            { rating -> feedbackTarget = FeedbackTarget(message.id, rating) },
+                            Modifier.animateItem()
+                        )
                     }
                 }
             }
             val barModifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = bottom)
-            when {
-                gate == AgentGate.WorkersLimit -> AgentWorkersLimitBar(barModifier)
-                gate == AgentGate.Checking -> AgentCheckingBar(barModifier)
-                gate == AgentGate.Unavailable -> AgentUnavailableBar(barModifier)
-                limited -> AgentLimitBar(blockedUntil, barModifier)
-                else -> AgentInputBar(
-                    text = text,
-                    onTextChange = { text = clampAgentInput(it) },
-                    canSend = canSend,
-                    sending = false,
-                    onSend = { submit() },
-                    modifier = barModifier
-                )
+            val barState = when {
+                gate == AgentGate.WorkersLimit -> BarState.WorkersLimit
+                gate == AgentGate.Checking -> BarState.Checking
+                gate == AgentGate.Unavailable -> BarState.Unavailable
+                limited -> BarState.Limited
+                else -> BarState.Input
+            }
+            AnimatedContent(
+                targetState = barState,
+                modifier = Modifier.fillMaxWidth(),
+                transitionSpec = {
+                    (fadeIn(tween(220)) + slideInVertically(tween(260)) { it / 3 }) togetherWith fadeOut(tween(120))
+                },
+                label = "agent-bar"
+            ) { state ->
+                when (state) {
+                    BarState.WorkersLimit -> AgentWorkersLimitBar(barModifier)
+                    BarState.Checking -> AgentCheckingBar(barModifier)
+                    BarState.Unavailable -> AgentUnavailableBar(barModifier)
+                    BarState.Limited -> AgentLimitBar(blockedUntil, barModifier)
+                    BarState.Input -> AgentInputBar(
+                        text = text,
+                        onTextChange = { text = clampAgentInput(it) },
+                        canSend = canSend,
+                        sending = false,
+                        onSend = { submit() },
+                        modifier = barModifier
+                    )
+                }
             }
         }
     }
@@ -327,7 +406,7 @@ private fun AgentCheckingBar(modifier: Modifier) {
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        ExpressiveLoader(size = 26.dp, color = scheme.onSurfaceVariant)
+        ExpressiveLoader(size = 40.dp, contained = true)
         Spacer(Modifier.width(12.dp))
         Text(
             tr("Checking Agent availability"),
@@ -353,11 +432,16 @@ private fun AgentEmptyState(modifier: Modifier) {
         animationSpec = infiniteRepeatable(tween(2600, easing = FastOutSlowInEasing), RepeatMode.Reverse),
         label = "emptyCorner"
     )
+    val enter = remember { MutableTransitionState(false).apply { targetState = true } }
     Column(
         modifier.padding(horizontal = 32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
+        AnimatedVisibility(
+            visibleState = enter,
+            enter = fadeIn(tween(420)) + scaleIn(spring(dampingRatio = 0.62f, stiffness = Spring.StiffnessLow), initialScale = 0.7f)
+        ) {
         Box(
             Modifier
                 .size(120.dp)
@@ -371,18 +455,29 @@ private fun AgentEmptyState(modifier: Modifier) {
         ) {
             Icon(Icons.Rounded.Stars, contentDescription = null, tint = scheme.onPrimaryContainer, modifier = Modifier.size(64.dp))
         }
+        }
         Spacer(Modifier.height(24.dp))
-        Text(
-            tr("Ask the Agent about the weather"),
-            style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Black),
-            color = scheme.onSurfaceVariant,
-            textAlign = TextAlign.Center
-        )
+        AnimatedVisibility(
+            visibleState = enter,
+            enter = fadeIn(tween(420, delayMillis = 180)) + slideInVertically(tween(420, delayMillis = 180)) { it / 2 }
+        ) {
+            Text(
+                tr("Ask the Agent about the weather"),
+                style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Black),
+                color = scheme.onSurfaceVariant,
+                textAlign = TextAlign.Center
+            )
+        }
     }
 }
 
 @Composable
-private fun AgentBubbleRow(message: AgentMessage, settings: AppSettings, modifier: Modifier) {
+private fun AgentBubbleRow(
+    message: AgentMessage,
+    settings: AppSettings,
+    onFeedback: (FeedbackRating) -> Unit,
+    modifier: Modifier
+) {
     val visible = remember { MutableTransitionState(false).apply { targetState = true } }
     AnimatedVisibility(
         visibleState = visible,
@@ -399,7 +494,16 @@ private fun AgentBubbleRow(message: AgentMessage, settings: AppSettings, modifie
             Modifier.fillMaxWidth(),
             horizontalArrangement = if (message.fromUser) Arrangement.End else Arrangement.Start
         ) {
-            if (message.fromUser) UserBubble(message.text, message.error) else AgentBubble(message, settings)
+            if (message.fromUser) {
+                UserBubble(message.text, message.error)
+            } else {
+                Column(horizontalAlignment = Alignment.Start) {
+                    AgentBubble(message, settings)
+                    if (!message.pending && !message.notice && message.text.isNotEmpty()) {
+                        MessageActions(message, onFeedback)
+                    }
+                }
+            }
         }
     }
 }
@@ -442,27 +546,35 @@ private fun AgentBubble(message: AgentMessage, settings: AppSettings) {
         shape = RoundedCornerShape(28.dp, 28.dp, 28.dp, 8.dp),
         modifier = Modifier.widthIn(max = 360.dp)
     ) {
-        Column(
-            Modifier.padding(horizontal = 14.dp, vertical = 14.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            if (message.pending) {
-                WorkingIndicator(message.steps, content)
-            } else {
-                if (message.text.isNotEmpty()) {
-                    Text(
-                        if (message.notice) tr(message.text) else message.text,
-                        modifier = Modifier.padding(horizontal = 4.dp),
-                        style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium, lineHeight = 24.sp),
-                        color = content
-                    )
-                }
-                message.cards.forEach { card ->
-                    when (card) {
-                        is AgentCard.Current -> CurrentWeatherCard(card, settings, content)
-                        is AgentCard.Days -> DaysCard(card, settings, content)
-                        is AgentCard.Metric -> MetricCard(card, settings, content)
-                        is AgentCard.MapView -> AgentMapCard(card, settings, content)
+        AnimatedContent(
+            targetState = message.pending,
+            transitionSpec = { fadeIn(tween(240, delayMillis = 80)) togetherWith fadeOut(tween(80)) },
+            label = "bubble-state"
+        ) { pending ->
+            Column(
+                Modifier.padding(horizontal = 14.dp, vertical = 14.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                if (pending) {
+                    WorkingIndicator(message.steps, content)
+                } else {
+                    if (message.text.isNotEmpty()) {
+                        Text(
+                            if (message.notice) tr(message.text) else message.text,
+                            modifier = Modifier.padding(horizontal = 4.dp),
+                            style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium, lineHeight = 24.sp),
+                            color = content
+                        )
+                    }
+                    message.cards.forEachIndexed { index, card ->
+                        StaggerIn(index) {
+                            when (card) {
+                                is AgentCard.Current -> CurrentWeatherCard(card, settings, content)
+                                is AgentCard.Days -> DaysCard(card, settings, content)
+                                is AgentCard.Metric -> MetricCard(card, settings, content)
+                                is AgentCard.MapView -> AgentMapCard(card, settings, content)
+                            }
+                        }
                     }
                 }
             }
@@ -476,15 +588,24 @@ private fun WorkingIndicator(steps: List<AgentStep>, content: Color) {
         Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        ExpressiveLoader(size = 30.dp, color = content)
+        ExpressiveLoader(size = 44.dp, contained = true)
         Spacer(Modifier.width(12.dp))
-        Text(
-            liveLabel(steps),
-            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Black),
-            color = content,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
+        AnimatedContent(
+            targetState = liveLabel(steps),
+            transitionSpec = {
+                (fadeIn(tween(200)) + slideInVertically(tween(240)) { it / 2 }) togetherWith
+                    (fadeOut(tween(120)) + slideOutVertically(tween(160)) { -it / 2 })
+            },
+            label = "working-label"
+        ) { label ->
+            Text(
+                label,
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Black),
+                color = content,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
     }
 }
 
@@ -668,7 +789,11 @@ private fun AgentInputBar(
                         keyboardActions = KeyboardActions(onSend = { onSend() })
                     )
                 }
-                if (!empty) {
+                AnimatedVisibility(
+                    visible = !empty,
+                    enter = fadeIn(tween(160)) + expandHorizontally(tween(200)),
+                    exit = fadeOut(tween(120)) + shrinkHorizontally(tween(160))
+                ) {
                     Text(
                         "$count/${AgentLimits.MAX_CHARS}",
                         modifier = Modifier.padding(horizontal = 8.dp),
@@ -730,5 +855,263 @@ private fun SendButton(enabled: Boolean, sending: Boolean, onClick: () -> Unit) 
         } else {
             Icon(Icons.Rounded.ArrowUpward, contentDescription = tr("Send"), tint = tint, modifier = Modifier.size(26.dp))
         }
+    }
+}
+
+@Composable
+private fun StaggerIn(index: Int, content: @Composable () -> Unit) {
+    var shown by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        delay(90L + index * 90L)
+        shown = true
+    }
+    AnimatedVisibility(
+        visible = shown,
+        enter = fadeIn(tween(260)) + slideInVertically(tween(300)) { it / 6 } + expandVertically(tween(300))
+    ) { content() }
+}
+
+private fun copyText(context: Context, text: String): Boolean {
+    val manager = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return false
+    return runCatching { manager.setPrimaryClip(ClipData.newPlainText(tr("Agent"), text)) }.isSuccess
+}
+
+private fun shareText(context: Context, text: String) {
+    val send = Intent(Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(Intent.EXTRA_TEXT, text)
+    }
+    val chooser = Intent.createChooser(send, tr("Share")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    try {
+        context.startActivity(chooser)
+    } catch (_: ActivityNotFoundException) {
+    }
+}
+
+@Composable
+private fun MessageActions(message: AgentMessage, onFeedback: (FeedbackRating) -> Unit) {
+    val context = LocalContext.current
+    val scheme = MaterialTheme.colorScheme
+    var copied by remember { mutableStateOf(false) }
+    LaunchedEffect(copied) {
+        if (copied) {
+            delay(1600L)
+            copied = false
+        }
+    }
+    val rating = message.rating
+    val rated = rating != null
+    val canChange = message.feedbackCount < FEEDBACK_MAX_SUBMISSIONS
+    val idle = scheme.onSurfaceVariant
+    Row(
+        Modifier.padding(start = 4.dp, top = 2.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        ActionIcon(
+            index = 0,
+            icon = if (rating == FeedbackRating.Good) Icons.Rounded.ThumbUp else Icons.Outlined.ThumbUpOffAlt,
+            description = tr("Good response"),
+            tint = when {
+                rating == FeedbackRating.Good -> scheme.primary
+                else -> idle
+            },
+            enabled = canChange && rating != FeedbackRating.Good,
+            selected = rating == FeedbackRating.Good
+        ) { onFeedback(FeedbackRating.Good) }
+        ActionIcon(
+            index = 1,
+            icon = if (rating == FeedbackRating.Bad) Icons.Rounded.ThumbDown else Icons.Outlined.ThumbDownOffAlt,
+            description = tr("Bad response"),
+            tint = when {
+                rating == FeedbackRating.Bad -> scheme.error
+                else -> idle
+            },
+            enabled = canChange && rating != FeedbackRating.Bad,
+            selected = rating == FeedbackRating.Bad
+        ) { onFeedback(FeedbackRating.Bad) }
+        ActionIcon(
+            index = 2,
+            icon = if (copied) Icons.Rounded.Check else Icons.Rounded.ContentCopy,
+            description = tr(if (copied) "Copied" else "Copy"),
+            tint = if (copied) scheme.primary else idle
+        ) {
+            if (copyText(context, message.text)) copied = true
+        }
+        ActionIcon(
+            index = 3,
+            icon = Icons.Rounded.Share,
+            description = tr("Share"),
+            tint = idle
+        ) { shareText(context, message.text) }
+        AnimatedVisibility(
+            visible = rated,
+            modifier = Modifier.weight(1f, fill = false),
+            enter = fadeIn(tween(300)) + expandHorizontally(tween(300)),
+            exit = fadeOut(tween(150))
+        ) {
+            Text(
+                tr("Thank you for your feedback."),
+                modifier = Modifier.padding(start = 8.dp, end = 4.dp),
+                style = MaterialTheme.typography.labelMedium,
+                color = idle,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+@Composable
+private fun ActionIcon(
+    index: Int,
+    icon: ImageVector,
+    description: String,
+    tint: Color,
+    enabled: Boolean = true,
+    selected: Boolean = false,
+    onClick: () -> Unit
+) {
+    var shown by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        delay(120L + index * 70L)
+        shown = true
+    }
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val press by animateFloatAsState(
+        if (pressed) 0.82f else 1f,
+        spring(dampingRatio = 0.5f, stiffness = Spring.StiffnessMedium),
+        label = "actionPress"
+    )
+    val pop = remember { Animatable(1f) }
+    LaunchedEffect(selected) {
+        if (selected) {
+            pop.animateTo(1.35f, spring(dampingRatio = 0.4f, stiffness = Spring.StiffnessMedium))
+            pop.animateTo(1f, spring(dampingRatio = 0.35f, stiffness = Spring.StiffnessLow))
+        }
+    }
+    AnimatedVisibility(
+        visible = shown,
+        enter = fadeIn(tween(180)) + scaleIn(spring(dampingRatio = 0.55f, stiffness = Spring.StiffnessMediumLow), initialScale = 0.4f)
+    ) {
+        IconButton(
+            onClick = onClick,
+            enabled = enabled,
+            interactionSource = interaction,
+            modifier = Modifier
+                .size(40.dp)
+                .graphicsLayer {
+                    scaleX = press * pop.value
+                    scaleY = press * pop.value
+                }
+        ) {
+            Crossfade(targetState = icon, animationSpec = tween(180), label = "actionIcon") { current ->
+                Icon(current, contentDescription = description, tint = tint, modifier = Modifier.size(20.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun FeedbackDialog(
+    rating: FeedbackRating,
+    onDismiss: () -> Unit,
+    onSubmit: (Set<FeedbackReason>, (Boolean) -> Unit) -> Unit
+) {
+    val scheme = MaterialTheme.colorScheme
+    val good = rating == FeedbackRating.Good
+    val reasons = remember(rating) { FeedbackReason.forRating(rating) }
+    var selected by remember { mutableStateOf(emptySet<FeedbackReason>()) }
+    var sending by remember { mutableStateOf(false) }
+    var failed by remember { mutableStateOf(false) }
+    AlertDialog(
+        onDismissRequest = { if (!sending) onDismiss() },
+        icon = {
+            Icon(
+                if (good) Icons.Rounded.ThumbUp else Icons.Rounded.ThumbDown,
+                contentDescription = null,
+                tint = if (good) scheme.primary else scheme.error
+            )
+        },
+        title = { Text(tr(if (good) "Why was this response good?" else "Why was this response bad?")) },
+        text = {
+            Column(
+                Modifier.verticalScroll(rememberScrollState()).animateContentSize(),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Text(tr("Select all that apply."), style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant)
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    reasons.forEachIndexed { index, reason ->
+                        ReasonChip(reason, index, reason in selected, !sending) {
+                            selected = if (reason in selected) selected - reason else selected + reason
+                            failed = false
+                        }
+                    }
+                }
+                Text(
+                    tr("Your question and this reply will be sent to the administrators."),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = scheme.onSurfaceVariant
+                )
+                AnimatedVisibility(visible = failed, enter = fadeIn(tween(200)) + expandVertically(tween(200))) {
+                    Text(tr("Feedback could not be sent. Try again."), style = MaterialTheme.typography.labelLarge, color = scheme.error)
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    if (!sending && selected.isNotEmpty()) {
+                        sending = true
+                        failed = false
+                        onSubmit(selected) { sent ->
+                            sending = false
+                            if (!sent) failed = true
+                        }
+                    }
+                },
+                enabled = selected.isNotEmpty()
+            ) {
+                AnimatedContent(targetState = sending, label = "submit-state") { busy ->
+                    if (busy) {
+                        ExpressiveLoader(size = 28.dp, color = scheme.onPrimary)
+                    } else {
+                        Text(tr("Submit"))
+                    }
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, enabled = !sending) { Text(tr("Cancel")) }
+        }
+    )
+}
+
+@Composable
+private fun ReasonChip(reason: FeedbackReason, index: Int, selected: Boolean, enabled: Boolean, onClick: () -> Unit) {
+    var shown by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        delay(index * 45L)
+        shown = true
+    }
+    AnimatedVisibility(
+        visible = shown,
+        enter = fadeIn(tween(200)) + scaleIn(spring(dampingRatio = 0.7f, stiffness = Spring.StiffnessMediumLow), initialScale = 0.8f)
+    ) {
+        FilterChip(
+            selected = selected,
+            onClick = onClick,
+            enabled = enabled,
+            label = { Text(tr(reason.label)) },
+            leadingIcon = if (selected) {
+                { Icon(Icons.Rounded.Check, contentDescription = null, modifier = Modifier.size(18.dp)) }
+            } else {
+                null
+            },
+            modifier = Modifier.animateContentSize()
+        )
     }
 }
