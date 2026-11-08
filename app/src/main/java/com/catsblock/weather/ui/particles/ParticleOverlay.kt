@@ -17,6 +17,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntSize
@@ -197,9 +198,10 @@ fun ParticleOverlay(
     weather: ParticleWeather,
     windSpeedKmh: Double = 0.0,
     windDirDeg: Double = 0.0,
+    alpha: Float = 1f,
     modifier: Modifier = Modifier
 ) {
-    if (weather == ParticleWeather.None) return
+    if (weather == ParticleWeather.None || alpha <= 0.02f) return
     val density = LocalDensity.current.density
     val isStorm = weather == ParticleWeather.Storm
     val isSnow = weather == ParticleWeather.Snow
@@ -248,7 +250,7 @@ fun ParticleOverlay(
         }
     }
 
-    Canvas(modifier.fillMaxSize().onSizeChanged { canvasSize = it }) {
+    Canvas(modifier.fillMaxSize().graphicsLayer { this.alpha = alpha }.onSizeChanged { canvasSize = it }) {
         @Suppress("UNUSED_EXPRESSION")
         tick
         rainSim?.draw(this)
