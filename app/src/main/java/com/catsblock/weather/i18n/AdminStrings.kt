@@ -38,5 +38,11 @@ internal val adminStrings: Map<String, Array<out String>> = mapOf(
     row("No data yet", "Ainda sem dados", "Ainda sem dados", "Aún no hay datos", "Pas encore de données", "Данных пока нет", "Noch keine Daten", "Ancora nessun dato", "아직 데이터가 없습니다", "Belum ada data"),
     row("Updated %s", "Atualizado %s", "Atualizado %s", "Actualizado %s", "Mis à jour %s", "Обновлено %s", "Aktualisiert %s", "Aggiornato %s", "%s 업데이트됨", "Diperbarui %s"),
     row("Chart: %s, latest value %s", "Gráfico: %s, valor mais recente %s", "Gráfico: %s, valor mais recente %s", "Gráfico: %s, último valor %s", "Graphique : %s, dernière valeur %s", "График: %s, последнее значение %s", "Diagramm: %s, letzter Wert %s", "Grafico: %s, ultimo valore %s", "차트: %s, 최근 값 %s", "Grafik: %s, nilai terbaru %s"),
-    row("Peak %s", "Pico %s", "Pico %s", "Máximo %s", "Pic %s", "Максимум %s", "Spitze %s", "Picco %s", "최고 %s", "Puncak %s")
+    row("Peak %s", "Pico %s", "Pico %s", "Máximo %s", "Pic %s", "Максимум %s", "Spitze %s", "Picco %s", "최고 %s", "Puncak %s"),
+    row("Agent feedback", "Feedback do Agente", "Feedback do Agente", "Comentarios sobre el Agente", "Avis sur l'Agent", "Отзывы об Агенте", "Agent-Feedback", "Feedback sull'Agente", "에이전트 피드백", "Masukan Agen"),
+    row("No feedback yet", "Ainda sem feedback", "Ainda sem feedback", "Aún no hay comentarios", "Pas encore d'avis", "Отзывов пока нет", "Noch kein Feedback", "Ancora nessun feedback", "아직 피드백이 없습니다", "Belum ada masukan"),
+    row("Load more", "Carregar mais", "Carregar mais", "Cargar más", "Charger plus", "Загрузить ещё", "Mehr laden", "Carica altro", "더 보기", "Muat lebih banyak"),
+    row("%d good, %d bad", "%d boas, %d ruins", "%d boas, %d más", "%d buenas, %d malas", "%d bonnes, %d mauvaises", "Хороших: %d, плохих: %d", "%d gut, %d schlecht", "%d buone, %d scadenti", "좋음 %d, 나쁨 %d", "%d bagus, %d buruk"),
+    row("Question", "Pergunta", "Pergunta", "Pregunta", "Question", "Вопрос", "Frage", "Domanda", "질문", "Pertanyaan"),
+    row("Reply", "Resposta", "Resposta", "Respuesta", "Réponse", "Ответ", "Antwort", "Risposta", "답변", "Balasan")
 )
