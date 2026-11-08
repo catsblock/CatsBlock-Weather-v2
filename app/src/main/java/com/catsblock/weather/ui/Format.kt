@@ -24,25 +24,23 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlin.math.roundToInt
 
-private const val ICON_SET_5 =
-    "https://raw.githubusercontent.com/mrdarrengriffin/google-weather-icons/refs/heads/main/sets/set-5/light/"
-private const val ICON_SET_6 =
-    "https://raw.githubusercontent.com/mrdarrengriffin/google-weather-icons/refs/heads/main/sets/set-6/light/"
+private const val ICON_BASE =
+    "https://raw.githubusercontent.com/mrdarrengriffin/google-weather-icons/refs/heads/main/sets/set-4/light/"
 
-fun iconUrl(kind: Condition, isDay: Boolean): String = when (kind) {
-    Condition.Clear -> if (isDay) ICON_SET_6 + "sunny.svg" else ICON_SET_6 + "clear_night.svg"
-    Condition.FewClouds -> if (isDay) ICON_SET_5 + "mostly_sunny.svg" else ICON_SET_6 + "mostly_clear_night.svg"
-    Condition.MoreClouds -> if (isDay) ICON_SET_5 + "partly_cloudy.svg" else ICON_SET_6 + "partly_cloudy_night.svg"
-    Condition.Cloudy -> ICON_SET_5 + "cloudy.svg"
-    Condition.Fog -> ICON_SET_6 + "windy.svg"
-    Condition.Drizzle -> ICON_SET_6 + "drizzle.svg"
-    Condition.Rain -> ICON_SET_6 + "heavy_rain.svg"
-    Condition.Storm -> ICON_SET_6 + "strong_thunderstorms.svg"
-    Condition.Sleet -> ICON_SET_6 + "wintry_mix.svg"
-    Condition.Hail -> ICON_SET_6 + "sleet_hail.svg"
-    Condition.Snow -> ICON_SET_6 + "flurries.svg"
-    Condition.HeavySnow -> ICON_SET_6 + "heavy_snow.svg"
-    Condition.Blizzard -> ICON_SET_6 + "blowing_snow.svg"
+fun iconUrl(kind: Condition, isDay: Boolean): String = ICON_BASE + when (kind) {
+    Condition.Clear -> if (isDay) "clear_day.svg" else "clear_night.svg"
+    Condition.FewClouds -> if (isDay) "mostly_clear_day.svg" else "mostly_clear_night.svg"
+    Condition.MoreClouds -> if (isDay) "partly_cloudy_day.svg" else "partly_cloudy_night.svg"
+    Condition.Cloudy -> "cloudy.svg"
+    Condition.Fog -> "haze_fog_dust_smoke.svg"
+    Condition.Drizzle -> "drizzle.svg"
+    Condition.Rain -> "showers_rain.svg"
+    Condition.Storm -> "strong_thunderstorms.svg"
+    Condition.Sleet -> "mixed_rain_hail_sleet.svg"
+    Condition.Hail -> "sleet_hail.svg"
+    Condition.Snow -> "showers_snow.svg"
+    Condition.HeavySnow -> "heavy_snow.svg"
+    Condition.Blizzard -> "blizzard.svg"
 }
 
 fun Condition.label(isDay: Boolean): String = tr(
