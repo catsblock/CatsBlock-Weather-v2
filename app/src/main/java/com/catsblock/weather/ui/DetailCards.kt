@@ -41,7 +41,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
@@ -79,10 +81,13 @@ import java.time.Duration
 import java.time.LocalDate
 import java.time.LocalDateTime
 import kotlin.math.cos
+import kotlin.math.roundToInt
 import kotlin.math.min
 import kotlin.math.sin
 
 private val HourStep = 68.dp
+private val DayChipWidth = 150.dp
+private val DayChipGap = 8.dp
 private val DayStep = 70.dp
 
 val LocalGlass = compositionLocalOf { false }
@@ -202,18 +207,34 @@ fun HoursCard(
 ) {
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
-    var selected by remember { mutableIntStateOf(0) }
+    val chipScroll = rememberScrollState()
+    val selected by remember(hours, days) {
+        derivedStateOf {
+            if (hours.isEmpty() || days.isEmpty()) {
+                0
+            } else {
+                val stepPx = with(density) { HourStep.toPx() }
+                val index = (scrollState.value / stepPx).roundToInt().coerceIn(0, hours.lastIndex)
+                days.indexOfFirst { it.date == hours[index].time.toLocalDate() }.coerceAtLeast(0)
+            }
+        }
+    }
+    LaunchedEffect(selected, showDays) {
+        if (showDays) {
+            val target = with(density) { ((DayChipWidth + DayChipGap) * selected).roundToPx() }
+            chipScroll.animateScrollTo(target)
+        }
+    }
     GlassCard(Modifier.fillMaxWidth()) {
         CardHeader(Icons.Rounded.Schedule, title)
         Spacer(Modifier.height(14.dp))
         if (showDays) {
             Row(
-                Modifier.horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                Modifier.horizontalScroll(chipScroll),
+                horizontalArrangement = Arrangement.spacedBy(DayChipGap)
             ) {
                 days.forEachIndexed { i, d ->
                     DayChip(d, today, fahrenheit, selected == i) {
-                        selected = i
                         val index = hours.indexOfFirst { it.time.toLocalDate() == d.date }.coerceAtLeast(0)
                         scope.launch {
                             scrollState.animateScrollTo(with(density) { (HourStep * index).roundToPx() })
@@ -234,7 +255,7 @@ private fun DayChip(day: Day, today: LocalDate, fahrenheit: Boolean, selected: B
     val content = if (selected) scheme.onSecondaryContainer else scheme.onSurface
     Box(
         Modifier
-            .width(150.dp)
+            .width(DayChipWidth)
             .clip(RoundedCornerShape(20.dp))
             .background(background)
             .clickable(onClick = onClick)
@@ -251,7 +272,38 @@ private fun DayChip(day: Day, today: LocalDate, fahrenheit: Boolean, selected: B
             Spacer(Modifier.height(2.dp))
             Text(day.kind.label(true), style = MaterialTheme.typography.bodyMedium, color = content, maxLines = 1)
         }
-        WeatherIcon(day.kind, true, Modifier.align(Alignment.TopEnd).size(34.dp))
+        WeatherIcon(day.kind, true, Modifier.align(Alignment.TopEnd).size(34.dp), chance = day.rainChance)
+    }
+}
+
+@Composable
+private fun PrecipChance(chance: Int) {
+    val scheme = MaterialTheme.colorScheme
+    val wet = chance > PRECIP_CHANCE_MIN
+    Column(Modifier.height(30.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        if (chance >= 0) {
+            Text(
+                "$chance%",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = if (wet) FontWeight.Bold else FontWeight.Normal,
+                color = if (wet) scheme.primary else scheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(3.dp))
+            Box(
+                Modifier
+                    .width(32.dp)
+                    .height(4.dp)
+                    .clip(CircleShape)
+                    .background(scheme.onSurface.copy(alpha = 0.12f))
+            ) {
+                Box(
+                    Modifier
+                        .fillMaxWidth(chance.coerceIn(0, 100) / 100f)
+                        .height(4.dp)
+                        .background(if (wet) scheme.primary else scheme.onSurfaceVariant)
+                )
+            }
+        }
     }
 }
 
@@ -307,7 +359,7 @@ private fun HoursChart(hours: List<Hour>, fahrenheit: Boolean, scrollState: Scro
         Row {
             hours.forEachIndexed { i, h ->
                 Column(Modifier.width(HourStep), horizontalAlignment = Alignment.CenterHorizontally) {
-                    WeatherIcon(h.kind, h.isDay, Modifier.size(36.dp))
+                    WeatherIcon(h.kind, h.isDay, Modifier.size(36.dp), h.precip, h.cloud, h.windSpeed, h.precipProb)
                     Spacer(Modifier.height(4.dp))
                     Text(
                         h.kind.label(h.isDay),
@@ -317,6 +369,8 @@ private fun HoursChart(hours: List<Hour>, fahrenheit: Boolean, scrollState: Scro
                         minLines = 2,
                         overflow = TextOverflow.Ellipsis
                     )
+                    Spacer(Modifier.height(6.dp))
+                    PrecipChance(h.precipProb)
                     Spacer(Modifier.height(6.dp))
                     Text(
                         if (i == 0) nowLabel else hourLabel(h.time),
@@ -426,7 +480,7 @@ private fun DaysChart(days: List<Day>, today: LocalDate, fahrenheit: Boolean, on
                     )
                 }
                 Spacer(Modifier.height(8.dp))
-                WeatherIcon(d.kind, true, Modifier.size(34.dp))
+                WeatherIcon(d.kind, true, Modifier.size(34.dp), chance = d.rainChance)
                 Box(Modifier.height(18.dp), contentAlignment = Alignment.Center) {
                     if (d.rainChance >= 30) {
                         Text(
