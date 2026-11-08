@@ -62,7 +62,9 @@ fun buildPrecipitationForecast(bundle: WeatherBundle): PrecipitationForecast? {
         }
     }
     val kind = bundle.current.kind
-    val rainyKind = kind == Condition.Drizzle || kind == Condition.Rain || kind == Condition.HeavyRain || kind == Condition.Storm
+    val rainyKind = kind == Condition.Drizzle || kind == Condition.Rain || kind == Condition.HeavyRain || kind == Condition.Storm ||
+        kind == Condition.ScatteredShowers || kind == Condition.ScatteredStorms ||
+        kind == Condition.IsolatedStorms || kind == Condition.StrongStorms
     val raining = values[0] >= WET_THRESHOLD || rainyKind
     val firstWet = values.indexOfFirst { it >= WET_THRESHOLD }
     val start = when {
