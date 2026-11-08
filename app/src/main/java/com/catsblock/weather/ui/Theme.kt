@@ -131,6 +131,11 @@ fun weatherSeed(kind: Condition?, isDay: Boolean): Color = when (kind) {
     Condition.Snow -> Color(0xFF42A5D8)
     Condition.HeavySnow -> Color(0xFF5C9BC4)
     Condition.Blizzard -> Color(0xFF7F9FB5)
+    Condition.Windy -> Color(0xFF607D8B)
+    Condition.Icy -> Color(0xFF5BA3C7)
+    Condition.Flurries -> Color(0xFF6BB3DC)
+    Condition.BlowingSnow -> Color(0xFF7FA8C4)
+    Condition.HeavyRain -> Color(0xFF0D47A1)
 }
 
 private fun hsl(hue: Float, saturation: Float, lightness: Float): Color =
