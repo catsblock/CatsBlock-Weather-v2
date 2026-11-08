@@ -2,6 +2,7 @@ import { limiterCall, AGENT_TOKEN_LIMIT, AGENT_IP_TOKEN_LIMIT, AGENT_WINDOW_MS, 
 import { isRegionBlocked, REGION_MESSAGE } from "./region.js";
 import { ADMIN_COMMAND, ADMIN_PATHS, handleAdmin, isBannedAtEdge } from "./admin.js";
 import { recordHit } from "./analytics.js";
+import { handleFeedback } from "./feedback.js";
 
 export { RateLimiter } from "./limiter.js";
 export { AdminGuard } from "./admin.js";
@@ -1824,6 +1825,16 @@ async function handleRequest(request, env, ctx) {
       }
       const availability = await agentAvailability(env);
       return jsonResponse({ available: availability.available, reason: availability.reason }, 200);
+    }
+
+    if (path === "/v1/agent/feedback") {
+      if (request.method !== "POST") {
+        return jsonResponse({ error: "method_not_allowed" }, 405, { Allow: "POST, OPTIONS" });
+      }
+      if (!(await authorized(request, env))) {
+        return jsonResponse({ error: "unauthorized" }, 401);
+      }
+      return await handleFeedback(request, env, { jsonResponse, identify });
     }
 
     if (path === "/v1/agent") {
