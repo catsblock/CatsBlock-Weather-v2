@@ -53,10 +53,10 @@ private fun backgroundAsset(kind: Condition, phase: SkyPhase): String = ASSET_BA
         SkyPhase.Night -> "Partly_cloudy_night.jpg"
         SkyPhase.Day -> "Partlycloud.jpg"
     }
-    Condition.Cloudy, Condition.Fog -> "cloudy.jpg"
-    Condition.Drizzle, Condition.Rain, Condition.Sleet -> "Rain.jpg"
+    Condition.Cloudy, Condition.Fog, Condition.Windy -> "cloudy.jpg"
+    Condition.Drizzle, Condition.Rain, Condition.Sleet, Condition.Icy, Condition.HeavyRain -> "Rain.jpg"
     Condition.Storm, Condition.Hail -> "Storm.jpg"
-    Condition.Snow, Condition.HeavySnow, Condition.Blizzard -> "Ssnow.jpg"
+    Condition.Snow, Condition.HeavySnow, Condition.Blizzard, Condition.Flurries, Condition.BlowingSnow -> "Ssnow.jpg"
 }
 
 class SkyColors(val base: Color, val card: Color, val accent: Color)
@@ -81,10 +81,10 @@ fun skyColors(kind: Condition, isDay: Boolean, time: LocalTime?): SkyColors {
             SkyPhase.Night -> palette(0xFF0A1226, 0xFF15213D, 0xFFC0D0F2)
             SkyPhase.Day -> palette(0xFF16314F, 0xFF21456B, 0xFFCFE5F8)
         }
-        Condition.Cloudy, Condition.Fog -> palette(0xFF1F262E, 0xFF2D3740, 0xFFD3DCE4)
-        Condition.Drizzle, Condition.Rain, Condition.Sleet -> palette(0xFF121C27, 0xFF1D2C3B, 0xFFB9D6EE)
+        Condition.Cloudy, Condition.Fog, Condition.Windy -> palette(0xFF1F262E, 0xFF2D3740, 0xFFD3DCE4)
+        Condition.Drizzle, Condition.Rain, Condition.Sleet, Condition.Icy, Condition.HeavyRain -> palette(0xFF121C27, 0xFF1D2C3B, 0xFFB9D6EE)
         Condition.Storm, Condition.Hail -> palette(0xFF0B0F18, 0xFF161D2B, 0xFFC6CCFF)
-        Condition.Snow, Condition.HeavySnow, Condition.Blizzard -> palette(0xFF2A3A4C, 0xFF3A4E64, 0xFFE6F1FB)
+        Condition.Snow, Condition.HeavySnow, Condition.Blizzard, Condition.Flurries, Condition.BlowingSnow -> palette(0xFF2A3A4C, 0xFF3A4E64, 0xFFE6F1FB)
     }
     if (!isDay && !phased) {
         return SkyColors(
