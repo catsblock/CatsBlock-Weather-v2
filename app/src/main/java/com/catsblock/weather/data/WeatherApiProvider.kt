@@ -96,7 +96,8 @@ internal class WeatherApiProvider(private val get: suspend (String) -> String) {
                     aqi = null,
                     pressure = o.optDouble("pressure_mb", 1013.0),
                     visibility = o.optDouble("vis_km", 10.0) * 1000.0,
-                    cloud = if (o.has("cloud")) o.optInt("cloud", -1) else -1
+                    cloud = if (o.has("cloud")) o.optInt("cloud", -1) else -1,
+                    precipProb = max(o.optInt("chance_of_rain", 0), o.optInt("chance_of_snow", 0))
                 )
             }
         }
