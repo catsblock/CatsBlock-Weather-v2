@@ -180,7 +180,8 @@ fun lifeIndex(
         else -> "High" to "Big temperature swings or uncomfortable air raise the flu risk. Keep warm."
     }
     val travel = when {
-        kind == Condition.Storm || kind == Condition.Blizzard || kind == Condition.HeavyRain || wind >= 60.0 || precip > 10.0 ->
+        kind == Condition.Storm || kind == Condition.StrongStorms || kind == Condition.ScatteredStorms ||
+        kind == Condition.Blizzard || kind == Condition.HeavyRain || wind >= 60.0 || precip > 10.0 ->
             "Poor" to "Delay non-essential trips if you can."
         wet || kind == Condition.Fog || wind >= 40.0 ->
             "Fair" to "Allow extra time and drive carefully."
