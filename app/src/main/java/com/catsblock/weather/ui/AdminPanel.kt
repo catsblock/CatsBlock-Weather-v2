@@ -5,6 +5,7 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -34,9 +35,11 @@ import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -68,14 +71,17 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.SecureFlagPolicy
 import com.catsblock.weather.data.AdminClient
+import com.catsblock.weather.data.AdminFeedback
 import com.catsblock.weather.data.AdminMetrics
 import com.catsblock.weather.data.AdminPoint
 import com.catsblock.weather.data.AdminResult
+import com.catsblock.weather.data.FeedbackReason
 import com.catsblock.weather.i18n.I18n
 import com.catsblock.weather.i18n.tr
 import com.catsblock.weather.ui.components.ExpressiveLoader
@@ -93,6 +99,7 @@ private enum class AdminStage { Code, Question, Dashboard, Blocked, Unavailable 
 private const val CODE_LENGTH = 10
 private const val ANSWER_MAX = 64
 private const val REFRESH_MS = 15_000L
+private const val FEEDBACK_REFRESH_MS = 60_000L
 private val RANGES = listOf(7, 14, 30, 60)
 
 @Composable
@@ -330,7 +337,7 @@ private fun GateForm(
     }
 }
 
-private enum class Section { Headline, Users, Today, History, Hourly }
+private enum class Section { Headline, Users, Today, History, Hourly, Feedback }
 
 @Composable
 private fun Dashboard(client: AdminClient, session: String, onFailure: (AdminResult<*>) -> Unit) {
@@ -352,6 +359,30 @@ private fun Dashboard(client: AdminClient, session: String, onFailure: (AdminRes
                 }
             }
             delay(REFRESH_MS)
+        }
+    }
+
+    var feedback by remember { mutableStateOf<List<AdminFeedback>>(emptyList()) }
+    var feedbackCursor by remember { mutableStateOf("") }
+    var feedbackLoading by remember { mutableStateOf(false) }
+    var feedbackProblem by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
+    LaunchedEffect(session) {
+        while (true) {
+            when (val result = client.feedback(session, "")) {
+                is AdminResult.Success -> {
+                    if (feedback.isEmpty()) feedbackCursor = result.value.cursor
+                    feedback = (result.value.items + feedback).distinctBy { it.id }.sortedBy { it.id }
+                    feedbackProblem = false
+                }
+                AdminResult.Network, AdminResult.Busy, AdminResult.Unavailable -> feedbackProblem = true
+                else -> {
+                    onFailure(result)
+                    return@LaunchedEffect
+                }
+            }
+            delay(FEEDBACK_REFRESH_MS)
         }
     }
 
@@ -384,6 +415,26 @@ private fun Dashboard(client: AdminClient, session: String, onFailure: (AdminRes
                 Section.Today -> TodaySection(current, number)
                 Section.History -> HistorySection(current, number)
                 Section.Hourly -> HourlySection(current, number)
+                Section.Feedback -> FeedbackSection(
+                    items = feedback,
+                    hasMore = feedbackCursor.isNotEmpty(),
+                    loading = feedbackLoading,
+                    problem = feedbackProblem
+                ) {
+                    scope.launch {
+                        feedbackLoading = true
+                        when (val result = client.feedback(session, feedbackCursor)) {
+                            is AdminResult.Success -> {
+                                feedback = (feedback + result.value.items).distinctBy { it.id }.sortedBy { it.id }
+                                feedbackCursor = result.value.cursor
+                                feedbackProblem = false
+                            }
+                            AdminResult.Network, AdminResult.Busy, AdminResult.Unavailable -> feedbackProblem = true
+                            else -> onFailure(result)
+                        }
+                        feedbackLoading = false
+                    }
+                }
             }
         }
     }
@@ -533,6 +584,95 @@ private fun HourlySection(metrics: AdminMetrics, number: NumberFormat) {
         charts.forEach { (title, key) -> LineChart(title, metrics.hourly[key].orEmpty(), number) }
     }
 }
+
+@Composable
+private fun FeedbackSection(
+    items: List<AdminFeedback>,
+    hasMore: Boolean,
+    loading: Boolean,
+    problem: Boolean,
+    onMore: () -> Unit
+) {
+    val scheme = MaterialTheme.colorScheme
+    val good = items.count { it.good }
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Text(tr("Agent feedback"), style = MaterialTheme.typography.titleLarge)
+        if (items.isNotEmpty()) {
+            Text(
+                tr("%d good, %d bad").format(good, items.size - good),
+                style = MaterialTheme.typography.labelLarge,
+                color = scheme.onSurfaceVariant
+            )
+        }
+        if (problem) {
+            Text(tr("Connection problem. Try again."), style = MaterialTheme.typography.labelLarge, color = scheme.error)
+        }
+        if (items.isEmpty()) {
+            if (!problem) Text(tr("No feedback yet"), style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant)
+        } else {
+            items.forEachIndexed { index, item ->
+                if (index > 0) HorizontalDivider(color = scheme.outlineVariant)
+                FeedbackRow(item)
+            }
+        }
+        if (hasMore) {
+            OutlinedButton(
+                onClick = onMore,
+                enabled = !loading,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+            ) {
+                if (loading) ExpressiveLoader(size = 24.dp) else Text(tr("Load more"))
+            }
+        }
+    }
+}
+
+@Composable
+private fun FeedbackRow(item: AdminFeedback) {
+    val scheme = MaterialTheme.colorScheme
+    var expanded by remember { mutableStateOf(false) }
+    val reasons = item.reasons.joinToString(" · ") { wire -> FeedbackReason.fromWire(wire)?.label?.let { tr(it) } ?: wire }
+    Column(
+        Modifier.fillMaxWidth().clickable { expanded = !expanded }.padding(vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                tr(if (item.good) "Good response" else "Bad response"),
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.titleSmall,
+                color = if (item.good) scheme.primary else scheme.error
+            )
+            feedbackTime(item.timestamp)?.let {
+                Text(it, style = MaterialTheme.typography.labelMedium, color = scheme.onSurfaceVariant)
+            }
+        }
+        if (reasons.isNotEmpty()) Text(reasons, style = MaterialTheme.typography.bodyMedium)
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(tr("Question"), style = MaterialTheme.typography.labelMedium, color = scheme.onSurfaceVariant)
+            Text(
+                item.prompt,
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = if (expanded) Int.MAX_VALUE else 2,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(tr("Reply"), style = MaterialTheme.typography.labelMedium, color = scheme.onSurfaceVariant)
+            Text(
+                item.reply,
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = if (expanded) Int.MAX_VALUE else 4,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+private fun feedbackTime(millis: Long): String? = if (millis <= 0L) null else runCatching {
+    Instant.ofEpochMilli(millis).atZone(ZoneId.systemDefault())
+        .format(DateTimeFormatter.ofLocalizedDateTime(FormatStyle.SHORT).withLocale(I18n.lang.locale))
+}.getOrNull()
 
 @Composable
 private fun LineChart(
