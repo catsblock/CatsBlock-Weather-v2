@@ -173,7 +173,10 @@ private val textShadow = TextStyle(
     shadow = Shadow(Color(0x66000000), offset = Offset(0f, 2f), blurRadius = 10f)
 )
 
-private val snowKinds = setOf(Condition.Snow, Condition.HeavySnow, Condition.Blizzard, Condition.Sleet)
+private val snowKinds = setOf(
+    Condition.Snow, Condition.HeavySnow, Condition.Blizzard, Condition.Sleet,
+    Condition.Flurries, Condition.BlowingSnow
+)
 
 fun beaufort(kmh: Double): Int = when {
     kmh < 1 -> 0
@@ -341,7 +344,7 @@ fun MainScreen(vm: WeatherViewModel) {
                 when {
                     bundle == null || effectsOff -> ParticleWeather.None
                     kind == Condition.Storm -> ParticleWeather.Storm
-                    kind == Condition.Rain || kind == Condition.Hail -> ParticleWeather.HeavyRain
+                    kind == Condition.Rain || kind == Condition.HeavyRain || kind == Condition.Hail -> ParticleWeather.HeavyRain
                     kind == Condition.Drizzle -> ParticleWeather.Rain
                     kind in snowKinds -> ParticleWeather.Snow
                     else -> ParticleWeather.None
