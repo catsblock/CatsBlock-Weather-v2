@@ -51,6 +51,9 @@ object WeatherDecisionEngine {
         val base = current.kind
         val rate = hour?.precip ?: 0.0
         if (base == Condition.Storm) return Condition.Storm
+        if (base == Condition.Windy || base == Condition.Icy || base == Condition.Flurries ||
+            base == Condition.BlowingSnow || base == Condition.HeavyRain
+        ) return base
         if (base == Condition.HeavySnow || base == Condition.Blizzard || base == Condition.Hail || base == Condition.Fog) return base
         val score = bundle?.let { rainScore(current, hour, cloud, it, radar) }
         val nextRate = bundle?.let { nextHourRate(current, it) } ?: 0.0
