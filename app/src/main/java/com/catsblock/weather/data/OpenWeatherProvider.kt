@@ -102,7 +102,8 @@ internal class OpenWeatherProvider(private val get: suspend (String) -> String) 
                     aqi = null,
                     pressure = o.optDouble("pressure", 1013.0),
                     visibility = o.optDouble("visibility", 10000.0),
-                    cloud = if (o.has("clouds")) o.optInt("clouds", -1) else -1
+                    cloud = if (o.has("clouds")) o.optInt("clouds", -1) else -1,
+                    precipProb = if (o.has("pop")) (o.optDouble("pop", 0.0) * 100.0).roundToInt() else -1
                 )
             }
         }
