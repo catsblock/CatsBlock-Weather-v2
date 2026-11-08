@@ -10,6 +10,8 @@ import com.catsblock.weather.data.AgentStep
 import com.catsblock.weather.data.AgentTurn
 import com.catsblock.weather.data.AppSettings
 import com.catsblock.weather.data.City
+import com.catsblock.weather.data.FeedbackRating
+import com.catsblock.weather.data.FeedbackReason
 import com.catsblock.weather.data.StepStatus
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -19,6 +21,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.util.UUID
 
 enum class AgentGate { Checking, Open, Unavailable, WorkersLimit }
 
@@ -30,8 +33,14 @@ data class AgentMessage(
     val pending: Boolean = false,
     val notice: Boolean = false,
     val steps: List<AgentStep> = emptyList(),
-    val error: String? = null
+    val error: String? = null,
+    val prompt: String = "",
+    val rating: FeedbackRating? = null,
+    val feedbackCount: Int = 0,
+    val key: String = UUID.randomUUID().toString()
 )
+
+const val FEEDBACK_MAX_SUBMISSIONS = 2
 
 private data class QueuedRequest(
     val userId: Long,
@@ -100,6 +109,28 @@ class AgentChat(
         val until = System.currentTimeMillis() + seconds.coerceAtLeast(1L) * 1000L
         blockedUntil.value = until
         onBlockChanged(until)
+    }
+
+    fun submitFeedback(
+        messageId: Long,
+        rating: FeedbackRating,
+        reasons: Collection<FeedbackReason>,
+        language: String,
+        onResult: (Boolean) -> Unit
+    ) {
+        val message = messages.value.firstOrNull { it.id == messageId }
+        if (message == null || message.fromUser || message.pending || message.notice || message.rating == rating ||
+            message.feedbackCount >= FEEDBACK_MAX_SUBMISSIONS || reasons.isEmpty()) {
+            onResult(false)
+            return
+        }
+        scope.launch {
+            val sent = client.sendFeedback(message.key, rating, reasons.toList(), message.prompt, message.text, language)
+            if (sent) {
+                messages.update { list -> list.map { if (it.id == messageId) it.copy(rating = rating, feedbackCount = it.feedbackCount + 1) else it } }
+            }
+            onResult(sent)
+        }
     }
 
     private fun addNotice(text: String) {
@@ -197,7 +228,8 @@ class AgentChat(
                         text = outcome.text,
                         cards = outcome.cards,
                         notice = outcome.text == AgentMessages.REFUSED,
-                        steps = steps
+                        steps = steps,
+                        prompt = request.text
                     )
                 )
                 if (outcome.remaining == 0) block(outcome.resetSeconds)
