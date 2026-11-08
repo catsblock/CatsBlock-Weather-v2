@@ -400,10 +400,13 @@ private fun SectionTitle(text: String, top: androidx.compose.ui.unit.Dp = 24.dp)
 }
 
 private fun conditionIcon(kind: Condition): ImageVector = when (kind) {
-    Condition.Storm -> Icons.Rounded.Thunderstorm
-    Condition.Rain, Condition.Drizzle, Condition.HeavyRain -> Icons.Rounded.WaterDrop
+    Condition.Storm, Condition.ScatteredStorms, Condition.IsolatedStorms,
+    Condition.StrongStorms -> Icons.Rounded.Thunderstorm
+    Condition.Rain, Condition.Drizzle, Condition.HeavyRain,
+    Condition.ScatteredShowers -> Icons.Rounded.WaterDrop
     Condition.Snow, Condition.HeavySnow, Condition.Blizzard, Condition.Sleet, Condition.Icy,
-    Condition.Flurries, Condition.BlowingSnow -> Icons.Rounded.AcUnit
+    Condition.Flurries, Condition.BlowingSnow, Condition.ScatteredSnow, Condition.SnowShowers,
+    Condition.RainSnow, Condition.WintryMix -> Icons.Rounded.AcUnit
     Condition.Windy -> Icons.Rounded.Air
     Condition.Hail -> Icons.Rounded.Grain
     Condition.Fog -> Icons.Rounded.Grain
