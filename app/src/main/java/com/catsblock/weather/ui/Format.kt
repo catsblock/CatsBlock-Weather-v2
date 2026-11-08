@@ -32,7 +32,8 @@ const val PRECIP_CHANCE_MIN = 15
 private val Condition.isPrecip: Boolean
     get() = when (this) {
         Condition.Drizzle, Condition.Rain, Condition.Storm, Condition.Sleet, Condition.Hail,
-        Condition.Snow, Condition.HeavySnow, Condition.Blizzard -> true
+        Condition.Snow, Condition.HeavySnow, Condition.Blizzard, Condition.Icy, Condition.Flurries,
+        Condition.BlowingSnow, Condition.HeavyRain -> true
         else -> false
     }
 
@@ -99,6 +100,11 @@ fun weatherLook(
         }
         Condition.HeavySnow -> WeatherLook("heavy_snow", "Heavy snow")
         Condition.Blizzard -> WeatherLook("blizzard", "Blizzard")
+        Condition.Windy -> WeatherLook("windy", "Windy")
+        Condition.Icy -> WeatherLook("icy", "Icy")
+        Condition.Flurries -> WeatherLook("flurries", "Flurries")
+        Condition.BlowingSnow -> WeatherLook("blowing_snow", "Blowing snow")
+        Condition.HeavyRain -> WeatherLook("heavy_rain", "Heavy rain")
     }
 }
 
@@ -126,6 +132,11 @@ fun Condition.label(isDay: Boolean): String = tr(
         Condition.Snow -> "Snow"
         Condition.HeavySnow -> "Heavy snow"
         Condition.Blizzard -> "Blizzard"
+        Condition.Windy -> "Windy"
+        Condition.Icy -> "Icy"
+        Condition.Flurries -> "Flurries"
+        Condition.BlowingSnow -> "Blowing snow"
+        Condition.HeavyRain -> "Heavy rain"
     }
 )
 
