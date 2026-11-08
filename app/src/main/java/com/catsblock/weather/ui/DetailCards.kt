@@ -362,7 +362,7 @@ private fun HoursChart(hours: List<Hour>, fahrenheit: Boolean, scrollState: Scro
                     WeatherIcon(h.kind, h.isDay, Modifier.size(36.dp), h.precip, h.cloud, h.windSpeed, h.precipProb)
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        h.kind.label(h.isDay),
+                        tr(weatherLook(h.kind, h.isDay, h.precip, h.cloud, h.windSpeed, h.precipProb).title),
                         style = MaterialTheme.typography.labelSmall,
                         textAlign = TextAlign.Center,
                         maxLines = 2,
