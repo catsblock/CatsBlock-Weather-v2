@@ -37,7 +37,8 @@ object RainForecast {
     private const val PAIR_MM = 0.2
 
     private fun snowy(kind: Condition): Boolean =
-        kind == Condition.Snow || kind == Condition.HeavySnow || kind == Condition.Blizzard
+        kind == Condition.Snow || kind == Condition.HeavySnow || kind == Condition.Blizzard ||
+            kind == Condition.Flurries || kind == Condition.BlowingSnow
 
     private fun kindAt(bundle: WeatherBundle, time: LocalDateTime): Condition {
         val key = time.minusMinutes(1).truncatedTo(ChronoUnit.HOURS)
