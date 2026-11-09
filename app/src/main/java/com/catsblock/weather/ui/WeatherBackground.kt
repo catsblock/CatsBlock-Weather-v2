@@ -38,7 +38,8 @@ private fun skyPhase(time: LocalTime?, isDay: Boolean): SkyPhase {
 }
 
 private fun hasPhaseImage(kind: Condition): Boolean =
-    kind == Condition.Clear || kind == Condition.FewClouds || kind == Condition.MoreClouds
+    kind == Condition.Clear || kind == Condition.FewClouds ||
+        kind == Condition.PartlyCloudy || kind == Condition.MoreClouds
 
 private fun backgroundAsset(kind: Condition, phase: SkyPhase): String = ASSET_BASE + when (kind) {
     Condition.Clear, Condition.FewClouds -> when (phase) {
@@ -47,7 +48,7 @@ private fun backgroundAsset(kind: Condition, phase: SkyPhase): String = ASSET_BA
         SkyPhase.Night -> "Clean_night.jpg"
         SkyPhase.Day -> "Sunny.jpg"
     }
-    Condition.MoreClouds -> when (phase) {
+    Condition.PartlyCloudy, Condition.MoreClouds -> when (phase) {
         SkyPhase.Sunrise -> "Partly_cloudy_sunrise.jpg"
         SkyPhase.Sunset -> "Partly_cloudy_sunset.jpg"
         SkyPhase.Night -> "Partly_cloudy_night.jpg"
@@ -78,7 +79,7 @@ fun skyColors(kind: Condition, isDay: Boolean, time: LocalTime?): SkyColors {
             SkyPhase.Night -> palette(0xFF060D1F, 0xFF0F1B38, 0xFFB8CCFF)
             SkyPhase.Day -> palette(0xFF0B2A4A, 0xFF123B66, 0xFFBFE3FF)
         }
-        Condition.MoreClouds -> when (phase) {
+        Condition.PartlyCloudy, Condition.MoreClouds -> when (phase) {
             SkyPhase.Sunrise -> palette(0xFF2B2640, 0xFF3F3758, 0xFFFFD6B8)
             SkyPhase.Sunset -> palette(0xFF35242F, 0xFF4B3542, 0xFFFFCBA0)
             SkyPhase.Night -> palette(0xFF0A1226, 0xFF15213D, 0xFFC0D0F2)
