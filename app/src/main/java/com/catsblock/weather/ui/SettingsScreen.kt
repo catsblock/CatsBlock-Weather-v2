@@ -731,33 +731,13 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
 
             CategoryTitle(tr("Weather data"))
 
-
-            GroupLabel(tr("Data provider"))
-            Group {
-                WeatherSource.entries.forEachIndexed { index, source ->
-                    if (index > 0) GroupDivider()
-                    val available = SecretKeys.available(source)
-                    ListItem(
-                        modifier = Modifier.clickable(enabled = available) { vm.setWeatherSource(source) },
-                        leadingContent = {
-                            RadioButton(selected = settings.weatherSource == source, onClick = null, enabled = available)
-                        },
-                        headlineContent = { Text(sourceTitle(source)) },
-                        supportingContent = { Text(sourceNote(source, available)) },
-                        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-                    )
-                }
-            }
-
             UsageStatusBar(
                 status = usageStatus,
-                source = settings.weatherSource,
                 modifier = Modifier.fillMaxWidth().padding(top = 12.dp)
             )
 
             MonthlyUsageBar(
                 status = usageStatus,
-                source = settings.weatherSource,
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
             )
 
