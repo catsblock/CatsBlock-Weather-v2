@@ -20,7 +20,7 @@ class SettingsStore(private val context: Context) {
 
     private object Keys {
         val fahrenheit = booleanPreferencesKey("fahrenheit")
-        val weatherSource = stringPreferencesKey("weather_source")
+        val legacyWeatherSource = stringPreferencesKey("weather_source")
         val windUnit = stringPreferencesKey("wind_unit")
         val pressureUnit = stringPreferencesKey("pressure_unit")
         val backgroundUpdates = booleanPreferencesKey("background_updates")
@@ -60,7 +60,6 @@ class SettingsStore(private val context: Context) {
         AppSettings(
             fahrenheit = it[Keys.fahrenheit] ?: false,
             apiKeys = readKeys(it),
-            weatherSource = runCatching { WeatherSource.valueOf(it[Keys.weatherSource] ?: "") }.getOrDefault(WeatherSource.OpenMeteo).let { chosen -> if (SecretKeys.available(chosen)) chosen else WeatherSource.OpenMeteo },
             windUnit = runCatching { WindUnit.valueOf(it[Keys.windUnit] ?: "") }.getOrDefault(WindUnit.Kmh),
             pressureUnit = runCatching { PressureUnit.valueOf(it[Keys.pressureUnit] ?: "") }.getOrDefault(PressureUnit.Hpa),
             backgroundUpdates = it[Keys.backgroundUpdates] ?: true,
@@ -123,8 +122,8 @@ class SettingsStore(private val context: Context) {
         context.dataStore.edit { it[stringPreferencesKey("api_key_" + source.name)] = value.trim() }
     }
 
-    suspend fun setWeatherSource(value: WeatherSource) {
-        context.dataStore.edit { it[Keys.weatherSource] = value.name }
+    suspend fun purgeLegacyKeys() {
+        context.dataStore.edit { it.remove(Keys.legacyWeatherSource) }
     }
 
     suspend fun setWindUnit(value: WindUnit) {
