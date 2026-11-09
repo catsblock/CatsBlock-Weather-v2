@@ -45,7 +45,7 @@ private fun palette(kind: Condition, day: Boolean): Palette = if (day) {
     when (kind) {
         Condition.Clear, Condition.FewClouds ->
             Palette(c(0xFF4A7BE3), c(0xFFA7B1EC), c(0xCCFFFFFF), 0.66f, 0.26f)
-        Condition.MoreClouds ->
+        Condition.PartlyCloudy, Condition.MoreClouds ->
             Palette(c(0xFF5B86D6), c(0xFFA3B4D8), c(0x66FFFFFF), 0.66f, 0.26f)
         Condition.Cloudy, Condition.Windy ->
             Palette(c(0xFF6C7F9A), c(0xFF9AA8BC), c(0x33FFFFFF), 0.6f, 0.2f)
@@ -65,7 +65,7 @@ private fun palette(kind: Condition, day: Boolean): Palette = if (day) {
     when (kind) {
         Condition.Clear, Condition.FewClouds ->
             Palette(c(0xFF0D1B45), c(0xFF2B3C7A), c(0x33CFD8FF), 0.7f, 0.25f)
-        Condition.MoreClouds ->
+        Condition.PartlyCloudy, Condition.MoreClouds ->
             Palette(c(0xFF16233F), c(0xFF38476B), c(0x22FFFFFF), 0.65f, 0.25f)
         Condition.Cloudy, Condition.Fog, Condition.Windy ->
             Palette(c(0xFF232B3A), c(0xFF4A5568), c(0x14FFFFFF), 0.6f, 0.2f)
