@@ -109,7 +109,7 @@ fun main(args: Array<String>) {
             }
             conditions = null
             while (true) {
-                val result = withContext(Dispatchers.IO) { WeatherClient.forecast(city.lat, city.lon) }
+                val result = withContext(Dispatchers.IO) { AggregatedWeather.load(city.lat, city.lon) }
                 if (result != null) {
                     conditions = result
                     failed = false
