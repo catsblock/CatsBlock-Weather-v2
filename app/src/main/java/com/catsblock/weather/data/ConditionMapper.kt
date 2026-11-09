@@ -24,7 +24,7 @@ fun wmoCondition(code: Int, windKmh: Double = 0.0): Condition {
         in 0..3 -> if (windKmh >= WINDY_KMH) Condition.Windy else when (code) {
             0 -> Condition.Clear
             1 -> Condition.FewClouds
-            2 -> Condition.MoreClouds
+            2 -> Condition.PartlyCloudy
             else -> Condition.Cloudy
         }
         45, 48 -> Condition.Fog
