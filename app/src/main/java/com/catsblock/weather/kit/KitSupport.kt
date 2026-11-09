@@ -12,7 +12,10 @@ data class Slot(val kind: Condition, val day: Boolean, val paired: Boolean) {
     val key: String get() = "${kind.name}_${if (paired && !day) "n" else "d"}"
 }
 
-private val iconPaired: Set<Condition> = setOf(Condition.Clear, Condition.FewClouds, Condition.MoreClouds)
+private val iconPaired: Set<Condition> = setOf(
+    Condition.Clear, Condition.FewClouds, Condition.PartlyCloudy, Condition.MoreClouds,
+    Condition.ScatteredShowers, Condition.ScatteredStorms, Condition.ScatteredSnow
+)
 
 private val backgroundPaired: Set<Condition> = iconPaired + Condition.Fog
 
