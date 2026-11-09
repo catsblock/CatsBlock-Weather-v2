@@ -33,29 +33,31 @@ import com.catsblock.weather.data.WorkerHealth
 import com.catsblock.weather.data.WeatherSource
 import com.catsblock.weather.i18n.tr
 
+private val metered = listOf(WeatherSource.WeatherApi, WeatherSource.OpenWeather, WeatherSource.VisualCrossing)
+
 @Composable
-fun UsageStatusBar(status: UsageStatus, source: WeatherSource, modifier: Modifier = Modifier) {
+fun UsageStatusBar(status: UsageStatus, modifier: Modifier = Modifier) {
     val limited by WorkerHealth.limitReached.collectAsStateWithLifecycle()
-    LaunchedEffect(source) {
-        if (source != WeatherSource.OpenMeteo) WorkerHealth.check()
-    }
-    Column(modifier) {
+    LaunchedEffect(Unit) { WorkerHealth.check() }
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         AnimatedVisibility(
-            visible = limited && source != WeatherSource.OpenMeteo,
+            visible = limited,
             enter = fadeIn(),
             exit = fadeOut()
         ) {
-            WorkersLimitNotice(Modifier.padding(bottom = 8.dp))
+            WorkersLimitNotice()
         }
-        UsageCard(
-            title = tr(apiName(source)) + " · " + tr("Free limit used"),
-            used = status.usedFor(source).coerceAtLeast(0),
-            limit = status.limitFor(source),
-            resetSeconds = status.resetFor(source).takeIf { it > 0 } ?: status.exhaustedSeconds,
-            lockoutSeconds = status.lockoutSeconds,
-            visible = source != WeatherSource.OpenMeteo,
-            modifier = Modifier
-        )
+        metered.forEach { source ->
+            UsageCard(
+                title = tr(apiName(source)) + " · " + tr("Free limit used"),
+                used = status.usedFor(source).coerceAtLeast(0),
+                limit = status.limitFor(source),
+                resetSeconds = status.resetFor(source).takeIf { it > 0 } ?: status.exhaustedSeconds,
+                lockoutSeconds = status.lockoutSeconds,
+                visible = true,
+                modifier = Modifier
+            )
+        }
     }
 }
 
@@ -80,16 +82,20 @@ private fun WorkersLimitNotice(modifier: Modifier = Modifier) {
 }
 
 @Composable
-fun MonthlyUsageBar(status: UsageStatus, source: WeatherSource, modifier: Modifier = Modifier) {
-    UsageCard(
-        title = tr(apiName(source)) + " · " + tr("Monthly limit used"),
-        used = status.monthUsedFor(source).coerceAtLeast(0),
-        limit = status.monthLimitFor(source),
-        resetSeconds = status.monthResetFor(source),
-        lockoutSeconds = 0L,
-        visible = source != WeatherSource.OpenMeteo,
-        modifier = modifier
-    )
+fun MonthlyUsageBar(status: UsageStatus, modifier: Modifier = Modifier) {
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        metered.forEach { source ->
+            UsageCard(
+                title = tr(apiName(source)) + " · " + tr("Monthly limit used"),
+                used = status.monthUsedFor(source).coerceAtLeast(0),
+                limit = status.monthLimitFor(source),
+                resetSeconds = status.monthResetFor(source),
+                lockoutSeconds = 0L,
+                visible = true,
+                modifier = Modifier
+            )
+        }
+    }
 }
 
 @Composable
