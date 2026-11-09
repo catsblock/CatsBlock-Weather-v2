@@ -254,7 +254,6 @@ private fun collectDiagnostics(
         tr("Configuration"),
         listOf(
             DiagRow(tr("Language"), settings.language.label),
-            DiagRow(tr("Weather provider"), settings.weatherSource.name),
             DiagRow(tr("Personal keys"), String.format(locale, tr("%1\$d configured"), settings.apiKeys.values.count { it.isNotBlank() })),
             DiagRow(tr("Backend"), tr(if (SecretKeys.baseUrl().isNotEmpty()) "Configured" else "Missing")),
             DiagRow(tr("App token"), tr(if (SecretKeys.appToken().isNotEmpty()) "Configured" else "Missing")),
