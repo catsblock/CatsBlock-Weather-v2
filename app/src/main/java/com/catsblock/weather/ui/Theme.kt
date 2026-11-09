@@ -120,6 +120,7 @@ fun weatherSeed(kind: Condition?, isDay: Boolean): Color = when (kind) {
     null -> Color(0xFF1565C0)
     Condition.Clear -> if (isDay) Color(0xFF1E88E5) else Color(0xFF3949AB)
     Condition.FewClouds -> if (isDay) Color(0xFF2F8FD8) else Color(0xFF3F51B5)
+    Condition.PartlyCloudy -> Color(0xFF3F86C0)
     Condition.MoreClouds -> Color(0xFF4F7DA3)
     Condition.Cloudy -> Color(0xFF5B7083)
     Condition.Fog -> Color(0xFF7A8C99)
