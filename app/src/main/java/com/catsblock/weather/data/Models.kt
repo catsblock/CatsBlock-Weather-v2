@@ -261,7 +261,6 @@ enum class ThemeMode { System, Light, Dark }
 
 data class AppSettings(
     val fahrenheit: Boolean = false,
-    val weatherSource: WeatherSource = WeatherSource.OpenMeteo,
     val apiKeys: Map<WeatherSource, String> = emptyMap(),
     val windUnit: WindUnit = WindUnit.Kmh,
     val pressureUnit: PressureUnit = PressureUnit.Hpa,
