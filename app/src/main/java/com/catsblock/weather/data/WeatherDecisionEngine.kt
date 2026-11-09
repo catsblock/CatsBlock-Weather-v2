@@ -175,6 +175,7 @@ object WeatherDecisionEngine {
         return when {
             effective <= 12 -> Condition.Clear
             effective <= 37 -> Condition.FewClouds
+            effective <= 55 -> Condition.PartlyCloudy
             effective <= 70 -> Condition.MoreClouds
             else -> Condition.Cloudy
         }
@@ -183,7 +184,8 @@ object WeatherDecisionEngine {
     fun coverFor(kind: Condition): Float = when (kind) {
         Condition.Clear -> 0.04f
         Condition.FewClouds -> 0.2f
-        Condition.MoreClouds -> 0.5f
+        Condition.PartlyCloudy -> 0.35f
+        Condition.MoreClouds -> 0.6f
         Condition.Cloudy -> 0.9f
         Condition.Fog -> 0.8f
         Condition.Drizzle -> 0.85f
