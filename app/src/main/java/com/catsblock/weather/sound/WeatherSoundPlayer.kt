@@ -25,6 +25,7 @@ private data class Track(val urls: List<String>, val volume: Float)
 private fun trackFor(kind: Condition): Track = when (kind) {
     Condition.Clear -> Track(listOf(WIND_BASE + "wind.ogg"), 0.25f)
     Condition.FewClouds -> Track(listOf(WIND_BASE + "wind.ogg"), 0.30f)
+    Condition.PartlyCloudy -> Track(listOf(WIND_BASE + "wind.ogg"), 0.35f)
     Condition.MoreClouds -> Track(listOf(WIND_BASE + "wind.ogg"), 0.40f)
     Condition.Cloudy -> Track(listOf(WIND_BASE + "wind_quiet_creaks.ogg", WIND_BASE + "wind.ogg"), 0.40f)
     Condition.Fog -> Track(listOf(WIND_BASE + "rumbling_wind.ogg", WIND_BASE + "wind.ogg"), 0.30f)
