@@ -8,7 +8,7 @@ import java.time.LocalTime
 import java.util.Locale
 
 enum class Condition {
-    Clear, FewClouds, MoreClouds, Cloudy, Fog,
+    Clear, FewClouds, PartlyCloudy, MoreClouds, Cloudy, Fog,
     Drizzle, Rain, Storm,
     Sleet, Hail, Snow, HeavySnow, Blizzard,
     Windy, Icy, Flurries, BlowingSnow, HeavyRain,
