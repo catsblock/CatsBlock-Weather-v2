@@ -84,7 +84,7 @@ class WeatherWorker(context: Context, params: WorkerParameters) : CoroutineWorke
         runCatching { AppUpdates.check(app) }
         val city = store.currentCity.first() ?: return Result.success()
         return try {
-            val bundle = WeatherRepository().fetch(city, settings.weatherSource)
+            val bundle = WeatherRepository().fetch(city)
             WidgetUpdater.publish(app, city, bundle)
             runCatching { RainAlerts.onFresh(app, city, bundle) }
             runCatching { SnowAlerts.onFresh(app, city, bundle) }
