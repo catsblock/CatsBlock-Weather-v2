@@ -68,11 +68,8 @@ fun weatherLook(
             else -> WeatherLook("clear_night", "Clear")
         }
         Condition.FewClouds -> WeatherLook("mostly_clear_$sfx", "Mostly clear")
-        Condition.MoreClouds -> if (cloud in 0..69) {
-            WeatherLook("partly_cloudy_$sfx", "Partly cloudy")
-        } else {
-            WeatherLook("mostly_cloudy_$sfx", "Mostly cloudy")
-        }
+        Condition.PartlyCloudy -> WeatherLook("partly_cloudy_$sfx", "Partly cloudy")
+        Condition.MoreClouds -> WeatherLook("mostly_cloudy_$sfx", "Mostly cloudy")
         Condition.Cloudy -> if (windKmh >= 55.0) WeatherLook("windy", "Windy") else WeatherLook("cloudy", "Cloudy")
         Condition.Fog -> if (windKmh >= 40.0) WeatherLook("windy", "Windy") else WeatherLook("haze_fog_dust_smoke", "Fog")
         Condition.Drizzle -> WeatherLook("drizzle", "Drizzle")
@@ -131,6 +128,7 @@ fun Condition.label(isDay: Boolean): String = tr(
     when (this) {
         Condition.Clear -> if (isDay) "Sunny" else "Clear"
         Condition.FewClouds -> "Mostly clear"
+        Condition.PartlyCloudy -> "Partly cloudy"
         Condition.MoreClouds -> "Mostly cloudy"
         Condition.Cloudy -> "Cloudy"
         Condition.Fog -> "Fog"
