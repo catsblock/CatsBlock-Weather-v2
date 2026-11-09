@@ -56,6 +56,10 @@ object DailyAlerts {
     const val KEY_KIND = "kind"
     private const val STATE_FILE = "daily_alerts_state"
     private const val KEY_SEEN = "official_seen"
+    private const val KEY_SEEN_V2 = "official_seen_v2"
+    private const val OFFICIAL_HOLD_SECONDS = 12L * 3600L
+    private const val MAX_SEEN = 200
+    private val officialLock = Any()
     private const val OFFICIAL_CHANNEL = "official_alerts"
     private const val OFFICIAL_ID_BASE = 5000
     private const val OFFICIAL_REQUEST = 29
@@ -168,7 +172,7 @@ object DailyAlerts {
     private suspend fun freshBundle(app: Context, settings: AppSettings, city: City): WeatherBundle? {
         UserKeys.update(settings.apiKeys)
         if (!NetworkPolicy.foregroundAllowed(app, settings)) return null
-        return runCatching { WeatherRepository().fetch(city, settings.weatherSource) }.getOrNull()
+        return runCatching { WeatherRepository().fetch(city) }.getOrNull()
     }
 
     private fun fmt(template: String, vararg args: Any): String =
@@ -317,20 +321,43 @@ object DailyAlerts {
         val settings = SettingsStore(app).settings.first()
         I18n.lang = settings.language
         val prefs = app.getSharedPreferences(STATE_FILE, Context.MODE_PRIVATE)
-        val seen = (prefs.getStringSet(KEY_SEEN, emptySet()) ?: emptySet()).toMutableSet()
         val nowSeconds = System.currentTimeMillis() / 1000L
         ensureChannels(app)
-        bundle.alerts.forEach { alert ->
-            val level = levelOf(alert)
-            val wanted = when (level) {
-                0 -> state.yellowOn
-                1 -> state.orangeOn
-                else -> state.redOn
+        val due = ArrayList<Triple<GovAlert, Int, String>>()
+        synchronized(officialLock) {
+            val seen = HashMap<String, Long>()
+            (prefs.getStringSet(KEY_SEEN_V2, emptySet()) ?: emptySet()).forEach { entry ->
+                val split = entry.lastIndexOf('=')
+                val until = if (split > 0) entry.substring(split + 1).toLongOrNull() else null
+                if (until != null && until > nowSeconds) seen[entry.substring(0, split)] = until
             }
-            val ends = if (alert.endsEpoch > 100_000_000_000L) alert.endsEpoch / 1000L else alert.endsEpoch
-            if (!wanted || (ends in 1 until nowSeconds)) return@forEach
-            val key = "${city.id}|${alert.event}|${alert.headline}|${alert.endsEpoch}"
-            if (!seen.add(key)) return@forEach
+            bundle.alerts.forEach { alert ->
+                val level = levelOf(alert)
+                val wanted = when (level) {
+                    0 -> state.yellowOn
+                    1 -> state.orangeOn
+                    else -> state.redOn
+                }
+                val ends = if (alert.endsEpoch > 100_000_000_000L) alert.endsEpoch / 1000L else alert.endsEpoch
+                if (!wanted || (ends in 1 until nowSeconds)) return@forEach
+                val key = identityOf(city, alert, level)
+                val known = seen[key]
+                if (known != null) {
+                    if (ends > known) seen[key] = ends
+                    return@forEach
+                }
+                seen[key] = if (ends > nowSeconds) ends else nowSeconds + OFFICIAL_HOLD_SECONDS
+                due += Triple(alert, level, key)
+            }
+            prefs.edit(commit = true) {
+                remove(KEY_SEEN)
+                putStringSet(
+                    KEY_SEEN_V2,
+                    seen.entries.sortedByDescending { it.value }.take(MAX_SEEN).map { "${it.key}=${it.value}" }.toSet()
+                )
+            }
+        }
+        due.forEach { (alert, level, key) ->
             val headline = alert.headline.ifBlank { alert.event }
             val detail = alert.description.trim().take(600)
             val big = listOf(headline, detail, alert.sender).filter { it.isNotBlank() }.joinToString("\n\n")
@@ -343,7 +370,11 @@ object DailyAlerts {
             )
             post(app, OFFICIAL_CHANNEL, OFFICIAL_ID_BASE + (key.hashCode() and 0x3FF), OFFICIAL_REQUEST, Notice(title, headline, big))
         }
-        prefs.edit { putStringSet(KEY_SEEN, seen.toList().takeLast(60).toSet()) }
+    }
+
+    private fun identityOf(city: City, alert: GovAlert, level: Int): String {
+        val event = alert.event.ifBlank { alert.headline }.lowercase().filter { it.isLetterOrDigit() }
+        return "${city.id}|$event|$level"
     }
 
     private fun levelOf(alert: GovAlert): Int {
