@@ -3,12 +3,13 @@ import { isRegionBlocked, REGION_MESSAGE } from "./region.js";
 import { ADMIN_COMMAND, ADMIN_PATHS, handleAdmin, isBannedAtEdge } from "./admin.js";
 import { recordHit } from "./analytics.js";
 import { handleFeedback } from "./feedback.js";
+import { PROVIDER_ORDER, aggregateForAgent, normalizeProvider } from "./aggregate.js";
 
 export { RateLimiter } from "./limiter.js";
 export { AdminGuard } from "./admin.js";
 export { MetricsHub } from "./analytics.js";
 
-const CACHE_TTL_S = 900;
+const CACHE_TTL_S = 1800;
 const UPSTREAM_TIMEOUT_MS = 10000;
 const MAX_BODY_CHARS = 3000000;
 const MAX_URL_LENGTH = 512;
@@ -337,8 +338,22 @@ function upstreamUrl(provider, lat, lon, apiKey) {
 async function readCapped(response) {
   const declared = Number(response.headers.get("Content-Length") || 0);
   if (declared > MAX_BODY_CHARS) return null;
-  const text = await response.text();
-  return text.length > MAX_BODY_CHARS ? null : text;
+  if (!response.body) return "";
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder("utf-8");
+  let text = "";
+  let bytes = 0;
+  for (;;) {
+    const part = await reader.read();
+    if (part.done) break;
+    bytes += part.value.byteLength;
+    if (bytes > MAX_BODY_CHARS) {
+      await reader.cancel();
+      return null;
+    }
+    text += decoder.decode(part.value, { stream: true });
+  }
+  return text + decoder.decode();
 }
 
 async function handleStatus(request, env) {
@@ -1032,7 +1047,7 @@ function validateAgentInput(body) {
   };
 }
 
-async function agentFetchJson(url) {
+async function agentFetchText(url) {
   const response = await fetch(url, {
     method: "GET",
     redirect: "manual",
@@ -1042,7 +1057,68 @@ async function agentFetchJson(url) {
   if (!response.ok) throw new Error("weather_http");
   const text = await readCapped(response);
   if (text === null) throw new Error("weather_size");
-  return JSON.parse(text);
+  return text;
+}
+
+async function agentFetchJson(url) {
+  return JSON.parse(await agentFetchText(url));
+}
+
+function roundCoordinate(value) {
+  return Math.round(value * 100) / 100;
+}
+
+async function agentProviderText(env, provider, coords) {
+  const key =
+    provider === "openmeteo"
+      ? "cache:openmeteo:" + coords.lat.toFixed(2) + ":" + coords.lon.toFixed(2)
+      : cacheKey(provider, coords.lat, coords.lon);
+  try {
+    const cached = await env.APP_KV.get(key);
+    if (cached) return cached;
+  } catch (err) {
+    return null;
+  }
+  let text = null;
+  if (provider === "openmeteo") {
+    text = await agentFetchText(agentForecastUrl(coords.lat, coords.lon));
+  } else {
+    if ((await exhaustedSeconds(env.APP_KV, provider)) > 0) return null;
+    const pool = await sharedKeyPool(env, provider);
+    if (pool.length === 0) return null;
+    const upstream = await queryUpstream(env, provider, coords, pool, false);
+    if (upstream.kind === "unreachable") return null;
+    await recordUsage(env.APP_KV, provider);
+    if (upstream.kind === "exhausted") {
+      await markExhausted(env.APP_KV, provider, providerExhaust(provider));
+      return null;
+    }
+    if (upstream.kind !== "ok") return null;
+    text = upstream.bodyText;
+  }
+  try {
+    JSON.parse(text);
+  } catch (err) {
+    return null;
+  }
+  await writeJSONText(env.APP_KV, key, text, CACHE_TTL_S);
+  return text;
+}
+
+async function loadAggregatedRaw(env, lat, lon) {
+  const coords = { lat: roundCoordinate(lat), lon: roundCoordinate(lon) };
+  const settled = await Promise.all(
+    PROVIDER_ORDER.map(async (provider) => {
+      try {
+        const text = await agentProviderText(env, provider, coords);
+        const data = normalizeProvider(provider, text);
+        return data ? { provider, data } : null;
+      } catch (err) {
+        return null;
+      }
+    })
+  );
+  return aggregateForAgent(settled.filter(Boolean));
 }
 
 function extractCityCandidate(message) {
@@ -1276,7 +1352,7 @@ function buildAgentWeather(raw, place, imperial) {
   return { model, cards };
 }
 
-async function loadAgentWeather(input, step) {
+async function loadAgentWeather(env, input, step) {
   let lat = input.lat;
   let lon = input.lon;
   let place = input.city || lat.toFixed(2) + "," + lon.toFixed(2);
@@ -1297,7 +1373,7 @@ async function loadAgentWeather(input, step) {
   }
   const forecastCommand = "forecast --lat " + lat.toFixed(1) + " --lon " + lon.toFixed(1) + " --past 3 --ahead 6";
   step("weather", "run", forecastCommand);
-  const raw = await agentFetchJson(agentForecastUrl(lat, lon));
+  const raw = await loadAggregatedRaw(env, lat, lon);
   const weather = buildAgentWeather(raw, place, input.imperial);
   weather.lat = Math.round(lat * 100) / 100;
   weather.lon = Math.round(lon * 100) / 100;
@@ -1586,7 +1662,7 @@ async function runAgent(request, env, read, emit, id) {
     let ipReserved = false;
     let settlementStarted = false;
     try {
-      const weather = await loadAgentWeather(input, step);
+      const weather = await loadAgentWeather(env, input, step);
       step("limiter", "run", "limiter.peek --scope client");
       const latestClient = await limiterCall(env, id.hash, "agent.peek");
       const latestIp = id.hasDevice ? await limiterCall(env, id.ipHash, "agent.peek") : latestClient;
