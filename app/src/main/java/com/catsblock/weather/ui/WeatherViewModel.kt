@@ -2,6 +2,7 @@ package com.catsblock.weather.ui
 
 import com.catsblock.weather.i18n.tr
 import java.time.LocalDate
+import com.catsblock.weather.data.SecretKeys
 import com.catsblock.weather.data.UserKeys
 import com.catsblock.weather.data.WeatherSource
 import com.catsblock.weather.work.BackgroundUpdates
@@ -127,7 +128,8 @@ class WeatherViewModel(private val app: Application) : AndroidViewModel(app) {
 
     init {
         viewModelScope.launch {
-            if (settings.first().weatherSource != WeatherSource.OpenMeteo) repo.refreshUsageStatus()
+            runCatching { store.purgeLegacyKeys() }
+            if (SecretKeys.available(WeatherSource.WeatherApi)) repo.refreshUsageStatus()
         }
         viewModelScope.launch {
             val saved = store.currentCity.first()
@@ -148,18 +150,6 @@ class WeatherViewModel(private val app: Application) : AndroidViewModel(app) {
                 .distinctUntilChanged()
                 .drop(1)
                 .collect { runCatching { WidgetUpdater.refresh(app) } }
-        }
-        viewModelScope.launch {
-            settings
-                .map { it.weatherSource }
-                .distinctUntilChanged()
-                .drop(1)
-                .collect {
-                    cache.clear()
-                    lastUpdated.clear()
-                    if (it != WeatherSource.OpenMeteo) viewModelScope.launch { repo.refreshUsageStatus() }
-                    if (city.value != null) refresh(silent = true)
-                }
         }
         viewModelScope.launch {
             settings
@@ -465,7 +455,7 @@ class WeatherViewModel(private val app: Application) : AndroidViewModel(app) {
             return
         }
         try {
-            val bundle = repo.fetch(target, current.weatherSource)
+            val bundle = repo.fetch(target)
             cache[target.id] = bundle
             lastUpdated[target.id] = SystemClock.elapsedRealtime()
             weather.value = WeatherState.Success(bundle)
@@ -569,10 +559,6 @@ class WeatherViewModel(private val app: Application) : AndroidViewModel(app) {
                 if (value.isBlank()) map.remove(source) else map[source] = value.trim()
             })
         }
-    }
-
-    fun setWeatherSource(value: WeatherSource) {
-        viewModelScope.launch { store.setWeatherSource(value) }
     }
 
     fun setWindUnit(value: WindUnit) {
