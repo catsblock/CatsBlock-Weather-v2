@@ -5,11 +5,16 @@ import com.catsblock.weather.WeatherApp
 import com.catsblock.weather.ui.developer.AppLog
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
@@ -20,6 +25,8 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.temporal.ChronoUnit
+import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import kotlin.math.max
 
@@ -28,6 +35,12 @@ internal class WorkerHttpException(val code: Int) : IOException("Worker HTTP $co
 internal class WorkerLimitException(val waitSeconds: Long, val exhausted: Boolean) : IOException("Worker limit reached")
 
 class WeatherRepository {
+
+    private companion object {
+        val bundles = TtlCache<WeatherBundle>(WeatherAggregator.CACHE_TTL_MS, 32)
+        val summaries = TtlCache<CitySummary>(WeatherAggregator.CACHE_TTL_MS, 64)
+        val locks = ConcurrentHashMap<String, Mutex>()
+    }
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
@@ -90,23 +103,20 @@ class WeatherRepository {
         SecretKeys.appToken().takeIf { it.isNotEmpty() }?.let { builder.header("X-App-Token", it) }
         builder.header("X-Device-Id", DeviceFingerprint.id)
         client.newCall(builder.build()).execute().use { response ->
-            val prev = _usageStatus.value
-            val shortRemaining = response.header("X-RateLimit-Remaining-10m")?.toIntOrNull() ?: prev.shortRemaining
-            val shortLimit = response.header("X-RateLimit-Limit-10m")?.toIntOrNull() ?: prev.shortLimit
-            val longRemaining = response.header("X-RateLimit-Remaining-12h")?.toIntOrNull() ?: prev.longRemaining
-            val longLimit = response.header("X-RateLimit-Limit-12h")?.toIntOrNull() ?: prev.longLimit
             val lockoutSeconds = response.header("X-Lockout-Seconds")?.toLongOrNull() ?: 0L
             val exhaustedSeconds = response.header("X-Global-Exhausted-Seconds")?.toLongOrNull() ?: 0L
-            val base = prev.copy(
-                shortRemaining = shortRemaining,
-                shortLimit = shortLimit,
-                longRemaining = longRemaining,
-                longLimit = longLimit,
-                lockoutSeconds = lockoutSeconds,
-                exhaustedSeconds = exhaustedSeconds,
-                usingFallback = lockoutSeconds > 0 || exhaustedSeconds > 0
-            )
-            _usageStatus.value = applyUsage(base, response.request.url.encodedPath, response)
+            _usageStatus.update { prev ->
+                val base = prev.copy(
+                    shortRemaining = response.header("X-RateLimit-Remaining-10m")?.toIntOrNull() ?: prev.shortRemaining,
+                    shortLimit = response.header("X-RateLimit-Limit-10m")?.toIntOrNull() ?: prev.shortLimit,
+                    longRemaining = response.header("X-RateLimit-Remaining-12h")?.toIntOrNull() ?: prev.longRemaining,
+                    longLimit = response.header("X-RateLimit-Limit-12h")?.toIntOrNull() ?: prev.longLimit,
+                    lockoutSeconds = lockoutSeconds,
+                    exhaustedSeconds = exhaustedSeconds,
+                    usingFallback = lockoutSeconds > 0 || exhaustedSeconds > 0
+                )
+                applyUsage(base, response.request.url.encodedPath, response)
+            }
             if (!response.isSuccessful) {
                 val wait = max(lockoutSeconds, exhaustedSeconds)
                 if (response.code == 429 || response.code == 503 || wait > 0) {
@@ -199,6 +209,8 @@ class WeatherRepository {
     }
 
     suspend fun summary(city: City): CitySummary {
+        val key = locationKey(city)
+        summaries.get(key)?.let { return it }
         val raw = get(
             url(
                 "https://api.open-meteo.com/v1/forecast",
@@ -214,7 +226,7 @@ class WeatherRepository {
         val cur = root.getJSONObject("current")
         val now = cur.getDouble("temperature_2m")
         val daily = root.optJSONObject("daily")
-        return CitySummary(
+        val result = CitySummary(
             kind = wmoCondition(cur.getInt("weather_code")),
             isDay = cur.getInt("is_day") == 1,
             temp = now,
@@ -222,100 +234,64 @@ class WeatherRepository {
             max = daily?.optJSONArray("temperature_2m_max")?.optDouble(0, now) ?: now,
             localTime = runCatching { LocalDateTime.parse(cur.getString("time")).toLocalTime() }.getOrNull()
         )
+        summaries.put(key, result)
+        return result
     }
 
-    suspend fun fetch(city: City, source: WeatherSource = WeatherSource.OpenMeteo): WeatherBundle {
-        val raw = fetchRaw(city, source)
-        val radar = withTimeoutOrNull(5000) { RadarProbe.read(city.lat, city.lon) }
-        AppLog.info("Weather", "Forecast loaded via ${source.name}: ${raw.hours.size} hours, ${raw.days.size} days, radar=${radar != null}")
-        return WeatherDecisionEngine.apply(raw, radar)
+    suspend fun fetch(city: City): WeatherBundle {
+        val key = locationKey(city)
+        bundles.get(key)?.let { return it }
+        return locks.getOrPut(key) { Mutex() }.withLock {
+            bundles.get(key)?.let { return@withLock it }
+            val loaded = load(city)
+            bundles.put(key, loaded)
+            loaded
+        }
     }
 
-    private suspend fun fetchRaw(city: City, source: WeatherSource): WeatherBundle {
-        if (source == WeatherSource.OpenMeteo) return fetchOpenMeteo(city)
+    private suspend fun load(city: City): WeatherBundle = coroutineScope {
         val base = SecretKeys.baseUrl()
-        if (base.isEmpty() || SecretKeys.appToken().isEmpty()) return fetchOpenMeteo(city)
-        return try {
-            fetchViaWorker(city, source, base)
+        val viaWorker = base.isNotEmpty() && SecretKeys.appToken().isNotEmpty()
+        val radar = async {
+            try {
+                withTimeoutOrNull(5000) { RadarProbe.read(city.lat, city.lon) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                null
+            }
+        }
+        val jobs = ArrayList<Deferred<ProviderResult?>>()
+        jobs += async { attempt(WeatherSource.OpenMeteo) { fetchOpenMeteo(city) } }
+        if (viaWorker) {
+            jobs += async { attempt(WeatherSource.WeatherApi) { WeatherApiProvider { workerGet(it) }.fetch(city, base) } }
+            jobs += async { attempt(WeatherSource.OpenWeather) { OpenWeatherProvider { workerGet(it) }.fetch(city, base) } }
+            jobs += async { attempt(WeatherSource.VisualCrossing) { VisualCrossingProvider { workerGet(it) }.fetch(city, base) } }
+        }
+        val results = jobs.awaitAll().filterNotNull()
+        if (results.isEmpty()) throw IOException("No weather provider responded")
+        if (viaWorker && results.size < jobs.size) _usageStatus.update { it.copy(usingFallback = true) }
+        val merged = WeatherAggregator.merge(results)
+        val reading = radar.await()
+        AppLog.info("Weather", "Aggregated ${results.size}/${jobs.size} providers: ${merged.hours.size} hours, ${merged.days.size} days, radar=${reading != null}")
+        WeatherDecisionEngine.apply(merged, reading)
+    }
+
+    private suspend fun attempt(source: WeatherSource, block: suspend () -> WeatherBundle): ProviderResult? =
+        try {
+            ProviderResult(source, block())
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            _usageStatus.value = _usageStatus.value.copy(usingFallback = true)
             if (e is WorkerHttpException && (e.code == 401 || e.code == 403)) {
                 AppLog.warn("Weather", "Worker rejected the app token (HTTP ${e.code}). The APP_TOKEN used to build the APK must match the Worker secret APP_TOKEN.", e)
             } else {
-                AppLog.warn("Weather", "Provider ${source.name} failed, falling back to Open-Meteo", e)
+                AppLog.warn("Weather", "Provider ${source.name} failed and was excluded from the aggregate", e)
             }
-            fetchOpenMeteo(city)
+            null
         }
-    }
 
-    private suspend fun fetchViaWorker(city: City, source: WeatherSource, base: String): WeatherBundle = coroutineScope {
-        val air = async { runCatching { airMap(city) }.getOrDefault(emptyMap()) }
-        val rainSlots = async { runCatching { rainMap(city) }.getOrDefault(emptyList()) }
-        val bundle = try {
-            when (source) {
-                WeatherSource.WeatherApi -> WeatherApiProvider { workerGet(it) }.fetch(city, base)
-                WeatherSource.OpenWeather -> OpenWeatherProvider { workerGet(it) }.fetch(city, base)
-                else -> VisualCrossingProvider { workerGet(it) }.fetch(city, base)
-            }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: WorkerLimitException) {
-            throw e
-        } catch (e: WorkerHttpException) {
-            throw e
-        } catch (e: Exception) {
-            throw IOException("Provider response could not be parsed", e)
-        }
-        val aqi = air.await()
-        bundle.copy(
-            rain = rainSlots.await(),
-            current = bundle.current.copy(aqi = aqi[bundle.current.now.truncatedTo(ChronoUnit.HOURS).toString()]),
-            hours = bundle.hours.map { it.copy(aqi = aqi[it.time.toString()]) }
-        )
-    }
-
-    private suspend fun rainMap(city: City): List<RainSlot> {
-        val raw = get(
-            url(
-                "https://api.open-meteo.com/v1/forecast",
-                "latitude" to city.lat.toString(),
-                "longitude" to city.lon.toString(),
-                "minutely_15" to "precipitation",
-                "forecast_minutely_15" to "48",
-                "timezone" to "auto"
-            )
-        )
-        val minutely = JSONObject(raw).getJSONObject("minutely_15")
-        val t = minutely.getJSONArray("time")
-        val v = minutely.getJSONArray("precipitation")
-        return (0 until t.length()).map { i ->
-            RainSlot(LocalDateTime.parse(t.getString(i)), v.optDouble(i, 0.0))
-        }
-    }
-
-    private suspend fun airMap(city: City): Map<String, Double> {
-        val raw = get(
-            url(
-                "https://air-quality-api.open-meteo.com/v1/air-quality",
-                "latitude" to city.lat.toString(),
-                "longitude" to city.lon.toString(),
-                "hourly" to "us_aqi",
-                "timezone" to "auto",
-                "past_days" to "1",
-                "forecast_days" to "7"
-            )
-        )
-        val h = JSONObject(raw).getJSONObject("hourly")
-        val t = h.getJSONArray("time")
-        val v = h.getJSONArray("us_aqi")
-        val map = HashMap<String, Double>()
-        for (i in 0 until t.length()) {
-            if (!v.isNull(i)) map[LocalDateTime.parse(t.getString(i)).toString()] = v.getDouble(i)
-        }
-        return map
-    }
+    private fun locationKey(city: City): String = String.format(Locale.US, "%.2f,%.2f", city.lat, city.lon)
 
     private suspend fun fetchOpenMeteo(city: City): WeatherBundle = coroutineScope {
         val lat = city.lat.toString()
