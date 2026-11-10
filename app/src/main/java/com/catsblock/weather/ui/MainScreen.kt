@@ -691,7 +691,6 @@ private fun WeatherDetails(
                     alert?.let { AlertCard(it) }
                     if (bundle.alerts.isNotEmpty()) GovAlertCard(bundle.alerts, bundle.utcOffsetSeconds)
                     if (settings.showPrecipitation && bundle.rain.isNotEmpty()) PrecipitationCard(bundle)
-                    bundle.radar?.let { StormTrackerCard(it, bundle, settings.windUnit) }
                     HoursCard(next36, chipDays, today, fahrenheit, chartScroll)
                     DaysCard(
                         days = upcoming,
