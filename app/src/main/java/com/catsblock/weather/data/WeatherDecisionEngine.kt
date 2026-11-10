@@ -1,8 +1,10 @@
 package com.catsblock.weather.data
 
+import java.time.LocalDateTime
 import java.time.temporal.ChronoUnit
 import kotlin.math.abs
 import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.sin
 
 enum class CloudBand { Clear, Few, Partly, Mostly, Overcast }
@@ -32,6 +34,17 @@ object WeatherDecisionEngine {
     private const val DRY_CONSENSUS = 0.2
     private const val HISTORY_HOURS = 3L
     private const val RADAR_FILTER_SCORE = 0.35
+    private const val FORECAST_HOURS = 36L
+    private const val RADAR_HORIZON_HOURS = 6L
+    private const val RADAR_MIN_WINDOW = 15
+    private const val RADAR_DEFAULT_NOW_WINDOW = 30
+    private const val RADAR_DEFAULT_ARRIVAL_WINDOW = 60
+    private const val FORECAST_DAYS = 7
+    private const val WET_HOUR_MM = 0.1
+    private const val WET_DAY_MM = 1.0
+    private const val WET_PROB_FLOOR = 75
+    private const val DRY_PROB_CEILING = 49
+    private const val MIN_WET_HOURS_FOR_DAY = 2
 
     private class Signal(val weight: Double, val value: Double)
 
@@ -45,7 +58,141 @@ object WeatherDecisionEngine {
             else -> -1
         }
         val resolved = resolve(current, hour, cloud, bundle, radar, trusted)
-        return bundle.copy(current = current.copy(kind = resolved, cloud = cloud))
+        val decided = bundle.copy(current = current.copy(kind = resolved, cloud = cloud))
+        return reconcileDays(correctHours(decided, nowHour, radar))
+    }
+
+    private fun correctHours(bundle: WeatherBundle, nowHour: LocalDateTime, radar: RadarReading?): WeatherBundle {
+        val end = nowHour.plusHours(FORECAST_HOURS)
+        val hours = bundle.hours.map { hour ->
+            when {
+                hour.time.isBefore(nowHour) || !hour.time.isBefore(end) -> hour
+                hour.time == nowHour -> align(hour, bundle.current.kind)
+                else -> {
+                    val pseudo = Current(
+                        now = hour.time,
+                        temp = hour.temp,
+                        feels = hour.feels,
+                        text = "",
+                        kind = hour.kind,
+                        isDay = hour.isDay,
+                        windSpeed = hour.windSpeed,
+                        windDir = hour.windDir,
+                        humidity = hour.humidity,
+                        uv = hour.uv,
+                        aqi = hour.aqi,
+                        pressure = hour.pressure,
+                        visibility = hour.visibility,
+                        cloud = hour.cloud
+                    )
+                    val view = radar?.let { radarView(it, bundle.current.now, hour.time) }
+                    align(hour, resolve(pseudo, hour, hour.cloud, bundle, view))
+                }
+            }
+        }
+        return bundle.copy(hours = hours)
+    }
+
+    private fun radarView(radar: RadarReading, now: LocalDateTime, hourStart: LocalDateTime): RadarReading? {
+        val start = ChronoUnit.MINUTES.between(now, hourStart).toDouble()
+        if (start + 60.0 <= 0.0 || start >= RADAR_HORIZON_HOURS * 60.0) return null
+        val end = start + 60.0
+        val track = radar.track
+        var overlap = 0.0
+        fun consider(from: Double, to: Double) {
+            overlap = max(overlap, min(end, to) - max(start, from))
+        }
+        val covered = track != null && track.onTarget && track.etaMinutes == 0
+        if (radar.wet || covered) {
+            val length = (track?.takeIf { it.etaMinutes == 0 }?.durationMinutes ?: RADAR_DEFAULT_NOW_WINDOW).coerceAtLeast(RADAR_MIN_WINDOW)
+            consider(0.0, length.toDouble())
+        }
+        if (track != null && track.onTarget) {
+            val eta = track.etaMinutes ?: 0
+            if (eta > 0) {
+                val length = (track.durationMinutes ?: RADAR_DEFAULT_ARRIVAL_WINDOW).coerceAtLeast(RADAR_MIN_WINDOW)
+                consider(eta.toDouble(), (eta + length).toDouble())
+            }
+        }
+        return radar.copy(wet = overlap > 0.0)
+    }
+
+    private fun align(hour: Hour, kind: Condition): Hour {
+        val wasWet = hour.kind.isWet
+        if (wasWet == kind.isWet) return hour
+        return if (kind.isWet) {
+            hour.copy(
+                code = codeFor(kind),
+                precip = max(hour.precip, WET_HOUR_MM),
+                precipProb = max(hour.precipProb, WET_PROB_FLOOR)
+            )
+        } else {
+            hour.copy(
+                code = codeFor(kind),
+                precipProb = if (hour.precipProb < 0) hour.precipProb else min(hour.precipProb, DRY_PROB_CEILING)
+            )
+        }
+    }
+
+    private fun codeFor(kind: Condition): Int = when (kind) {
+        Condition.Clear -> 0
+        Condition.FewClouds -> 1
+        Condition.PartlyCloudy, Condition.MoreClouds -> 2
+        Condition.Drizzle -> 61
+        Condition.Rain -> 63
+        Condition.HeavyRain -> 65
+        Condition.Storm -> 97
+        Condition.Sleet -> 66
+        Condition.Snow -> 73
+        Condition.HeavySnow, Condition.Blizzard -> 75
+        Condition.Hail -> 77
+        else -> if (kind.isWet) 63 else 3
+    }
+
+    private fun isWetCode(code: Int): Boolean =
+        code in 51..67 || code in 71..77 || code in 80..86 || code in 95..99
+
+    private fun reconcileDays(bundle: WeatherBundle): WeatherBundle {
+        val today = bundle.current.now.toLocalDate()
+        val covered = bundle.days.filter { !it.date.isBefore(today) }.take(FORECAST_DAYS).map { it.date }.toSet()
+        val days = bundle.days.map { day ->
+            if (day.date in covered) reconcileDay(day, bundle.hours.filter { it.time.toLocalDate() == day.date }) else day
+        }
+        return bundle.copy(days = days)
+    }
+
+    private fun reconcileDay(day: Day, hours: List<Hour>): Day {
+        if (hours.isEmpty()) return day
+        val wetHours = hours.filter { it.precip >= WET_HOUR_MM || isWetCode(it.code) }
+        val hoursWet = wetHours.size >= MIN_WET_HOURS_FOR_DAY || wetHours.any { it.precip >= RAIN_RATE }
+        val dayWet = day.kind.isWet
+        return when {
+            !dayWet && hoursWet -> {
+                val codes = wetHours.map { it.code }.filter { isWetCode(it) }
+                val code = codes.groupingBy { it }.eachCount().entries
+                    .maxWithOrNull(compareBy<Map.Entry<Int, Int>>({ it.value }, { it.key }))?.key ?: 61
+                day.copy(
+                    code = code,
+                    precipSum = max(day.precipSum, wetHours.sumOf { it.precip }),
+                    rainChance = max(day.rainChance, wetHours.maxOf { it.precipProb })
+                )
+            }
+            dayWet && wetHours.isEmpty() && day.precipSum < WET_DAY_MM -> {
+                val clouds = hours.map { it.cloud }.filter { it >= 0 }
+                val cloud = if (clouds.isEmpty()) -1 else clouds.average().toInt()
+                day.copy(
+                    code = when {
+                        cloud < 0 -> 2
+                        cloud >= 85 -> 3
+                        cloud >= 50 -> 2
+                        cloud >= 20 -> 1
+                        else -> 0
+                    },
+                    rainChance = min(day.rainChance, DRY_PROB_CEILING)
+                )
+            }
+            else -> day
+        }
     }
 
     fun resolve(current: Current, hour: Hour?, cloud: Int, bundle: WeatherBundle? = null, radar: RadarReading? = null, trusted: Boolean? = null): Condition {
