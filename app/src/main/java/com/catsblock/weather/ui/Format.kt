@@ -27,6 +27,29 @@ import kotlin.math.roundToInt
 private const val ICON_BASE =
     "https://raw.githubusercontent.com/mrdarrengriffin/google-weather-icons/refs/heads/main/sets/set-4/light/"
 
+private const val ICON_BASE_V0 =
+    "https://raw.githubusercontent.com/bignutty/google-weather-icons/refs/heads/main/icons/weather/v0/dark/"
+
+private val ICON_V0_FILES: Map<String, String> = mapOf(
+    "drizzle" to "drizzle",
+    "showers_rain" to "showers_rain",
+    "heavy_rain" to "heavy_rain",
+    "flurries" to "flurries",
+    "showers_snow" to "snow_showers_snow",
+    "heavy_snow" to "heavy_snow",
+    "icy" to "icy",
+    "sleet_hail" to "sleet_hail",
+    "mixed_rain_hail_sleet" to "wintry_mix_rain_snow",
+    "scattered_showers_day" to "scattered_showers_day",
+    "scattered_showers_night" to "scattered_showers_night",
+    "scattered_snow_showers_day" to "scattered_snow_showers_day",
+    "scattered_snow_showers_night" to "scattered_snow_showers_night",
+    "isolated_scattered_thunderstorms_day" to "isolated_scattered_tstorms_day",
+    "isolated_scattered_thunderstorms_night" to "isolated_scattered_tstorms_night",
+    "isolated_thunderstorms" to "isolated_tstorms",
+    "strong_thunderstorms" to "strong_tstorms"
+)
+
 const val PRECIP_CHANCE_MIN = 15
 
 private val Condition.isPrecip: Boolean
@@ -122,7 +145,11 @@ fun iconUrl(
     cloud: Int = -1,
     windKmh: Double = 0.0,
     chance: Int = -1
-): String = ICON_BASE + weatherLook(kind, isDay, precipMm, cloud, windKmh, chance).file + ".svg"
+): String {
+    val file = weatherLook(kind, isDay, precipMm, cloud, windKmh, chance).file
+    val updated = ICON_V0_FILES[file]
+    return if (updated != null) ICON_BASE_V0 + updated + ".svg" else ICON_BASE + file + ".svg"
+}
 
 fun Condition.label(isDay: Boolean): String = tr(
     when (this) {
