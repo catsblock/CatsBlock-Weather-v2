@@ -62,6 +62,44 @@ internal object WeatherAggregator {
         else -> participants - 1
     }
 
+    fun physicalLikelihood(humidity: Int, pressure: Double, uv: Double, isDay: Boolean): Int {
+        val humidityScore = when {
+            humidity >= 90 -> 1.0
+            humidity >= 80 -> 0.7
+            humidity >= 70 -> 0.4
+            humidity >= 60 -> 0.15
+            else -> 0.0
+        }
+        val pressureScore = when {
+            pressure < 1000.0 -> 1.0
+            pressure < 1005.0 -> 0.8
+            pressure < 1010.0 -> 0.55
+            pressure < 1015.0 -> 0.3
+            pressure < 1020.0 -> 0.1
+            else -> 0.0
+        }
+        val uvScore = when {
+            uv <= 1.0 -> 1.0
+            uv <= 2.0 -> 0.7
+            uv <= 4.0 -> 0.35
+            uv <= 6.0 -> 0.1
+            else -> 0.0
+        }
+        var total = 0.45 * humidityScore + 0.35 * pressureScore
+        var weight = 0.8
+        if (isDay) {
+            total += 0.2 * uvScore
+            weight += 0.2
+        }
+        return (100.0 * total / weight).roundToInt().coerceIn(0, 100)
+    }
+
+    private fun blend(api: Int, estimate: Int, trusted: Boolean): Int {
+        if (api < 0) return estimate
+        val weight = if (trusted) 0.8 else 0.65
+        return (api * weight + estimate * (1.0 - weight)).roundToInt()
+    }
+
     fun trustedVerdict(votes: List<Pair<WeatherSource, Boolean>>): Boolean? {
         val picks = votes.filter { it.first in trusted }
         if (picks.map { it.first }.toSet().size < trusted.size) return null
@@ -104,7 +142,7 @@ internal object WeatherAggregator {
         val sorted = results.sortedBy { order.indexOf(it.source) }
         val primary = sorted.first().bundle
         val hours = mergeHours(sorted)
-        val days = mergeDays(sorted)
+        val days = mergeDays(sorted, hours)
         val current = mergeCurrent(sorted, hours)
         return WeatherBundle(
             current = current,
@@ -136,21 +174,29 @@ internal object WeatherAggregator {
             rainy -> wet
             else -> dry
         }
-        val prob = meanPercent((if (verdict != null) pair else list).map { it.precipProb })
+        val humidity = mean(list.map { it.humidity.toDouble() }).roundToInt()
+        val uv = mean(list.map { it.uv })
+        val pressure = mean(list.map { it.pressure }, 1013.0)
+        val isDay = list.count { it.isDay } * 2 >= list.size
+        val prob = blend(
+            meanPercent((if (verdict != null) pair else list).map { it.precipProb }),
+            physicalLikelihood(humidity, pressure, uv, isDay),
+            verdict != null
+        )
         val first = list.first()
         return Hour(
             time = first.time,
             temp = mean(list.map { it.temp }),
             feels = mean(list.map { it.feels }),
             code = mode(voters.map { it.code }, first.code),
-            isDay = list.count { it.isDay } * 2 >= list.size,
+            isDay = isDay,
             precip = if (rainy) max(WET_HOUR_MM, mean(voters.map { it.precip })) else mean(voters.map { it.precip }),
             windSpeed = mean(list.map { it.windSpeed }),
             windDir = meanDirection(list.map { it.windDir }),
-            humidity = mean(list.map { it.humidity.toDouble() }).roundToInt(),
-            uv = mean(list.map { it.uv }),
+            humidity = humidity,
+            uv = uv,
             aqi = list.mapNotNull { it.aqi }.takeIf { it.isNotEmpty() }?.average(),
-            pressure = mean(list.map { it.pressure }, 1013.0),
+            pressure = pressure,
             visibility = mean(list.map { it.visibility }, 10000.0),
             cloud = meanPercent(list.map { it.cloud }),
             precipProb = when {
@@ -161,13 +207,13 @@ internal object WeatherAggregator {
         )
     }
 
-    private fun mergeDays(sorted: List<ProviderResult>): List<Day> {
+    private fun mergeDays(sorted: List<ProviderResult>, hours: List<Hour>): List<Day> {
         val grouped = LinkedHashMap<LocalDate, MutableList<Pair<WeatherSource, Day>>>()
         sorted.forEach { result -> result.bundle.days.forEach { grouped.getOrPut(it.date) { ArrayList() } += result.source to it } }
-        return grouped.entries.sortedBy { it.key }.map { combineDays(it.value) }
+        return grouped.entries.sortedBy { it.key }.map { entry -> combineDays(entry.value, hours.filter { it.time.toLocalDate() == entry.key }) }
     }
 
-    private fun combineDays(entries: List<Pair<WeatherSource, Day>>): Day {
+    private fun combineDays(entries: List<Pair<WeatherSource, Day>>, dayHours: List<Hour>): Day {
         val list = entries.map { it.second }
         val verdict = trustedVerdict(entries.map { it.first to wetDay(it.second) })
         val pair = entries.filter { it.first in trusted }.map { it.second }
@@ -179,7 +225,13 @@ internal object WeatherAggregator {
             rainy -> wet
             else -> dry
         }
-        val chance = meanPercent((if (verdict != null) pair else list).map { it.rainChance }).coerceAtLeast(0)
+        val apiChance = meanPercent((if (verdict != null) pair else list).map { it.rainChance })
+        val chance = if (dayHours.isEmpty()) {
+            apiChance.coerceAtLeast(0)
+        } else {
+            val estimate = dayHours.map { physicalLikelihood(it.humidity, it.pressure, it.uv, it.isDay) }.average().roundToInt()
+            blend(apiChance, estimate, verdict != null)
+        }
         val first = list.first()
         return Day(
             date = first.date,
