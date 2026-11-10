@@ -20,6 +20,7 @@ import com.catsblock.weather.data.StormIntensity
 import com.catsblock.weather.data.WeatherBundle
 import com.catsblock.weather.data.WindUnit
 import com.catsblock.weather.data.compassLabel
+import com.catsblock.weather.data.isWet
 import com.catsblock.weather.i18n.I18n
 import com.catsblock.weather.i18n.tr
 import java.time.LocalDateTime
