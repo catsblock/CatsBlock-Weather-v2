@@ -9,12 +9,12 @@ import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
 import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneOffset
+import java.time.temporal.ChronoUnit
 import java.util.concurrent.TimeUnit
 import kotlin.math.PI
 import kotlin.math.atan2
@@ -54,6 +54,8 @@ object TravelPlanner {
 
     private const val STOP_COUNT = 6
     private const val MAX_HOURS = 60
+
+    private val repository = WeatherRepository()
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(12, TimeUnit.SECONDS)
@@ -141,42 +143,29 @@ object TravelPlanner {
         }
     }
 
-    private suspend fun forecast(samples: List<Sample>, durationMinutes: Int, departure: Instant): List<TravelStop> {
+    private suspend fun forecast(samples: List<Sample>, durationMinutes: Int, departure: Instant): List<TravelStop> = coroutineScope {
         val tripHours = durationMinutes / 60.0
         if (tripHours > MAX_HOURS) throw TravelException("This trip is too long to forecast.")
-        val days = ((tripHours + 24) / 24).toInt().coerceIn(2, 4)
-        val url = "https://api.open-meteo.com/v1/forecast".toHttpUrl().newBuilder()
-            .addQueryParameter("latitude", samples.joinToString(",") { "%.4f".format(java.util.Locale.US, it.point.lat) })
-            .addQueryParameter("longitude", samples.joinToString(",") { "%.4f".format(java.util.Locale.US, it.point.lon) })
-            .addQueryParameter("hourly", "precipitation,visibility,cloud_cover,weather_code,is_day")
-            .addQueryParameter("timezone", "auto")
-            .addQueryParameter("forecast_days", days.toString())
-            .build()
-        val raw = get(url.toString())
-        val array = if (raw.trimStart().startsWith("[")) JSONArray(raw) else JSONArray().put(JSONObject(raw))
-        if (array.length() != samples.size) throw TravelException("The weather service returned incomplete data.")
-        return samples.mapIndexed { index, sample ->
-            val item = array.getJSONObject(index)
-            val offset = item.optInt("utc_offset_seconds", 0)
+        val bundles = samples
+            .map { sample -> async { repository.fetchForRoute(City("", "", "", "", sample.point.lat, sample.point.lon)) } }
+            .awaitAll()
+        samples.mapIndexed { index, sample ->
+            val bundle = bundles[index]
             val arrivalUtc = departure.plusSeconds((durationMinutes * 60L * sample.fraction).toLong())
-            val arrival = LocalDateTime.ofEpochSecond(arrivalUtc.epochSecond + offset, 0, ZoneOffset.UTC)
-            val hourly = item.getJSONObject("hourly")
-            val times = hourly.getJSONArray("time")
-            val key = arrival.withMinute(0).withSecond(0).withNano(0)
-            var slot = 0
-            for (i in 0 until times.length()) {
-                if (LocalDateTime.parse(times.getString(i)) <= key) slot = i else break
-            }
+            val arrival = LocalDateTime.ofEpochSecond(arrivalUtc.epochSecond + bundle.utcOffsetSeconds, 0, ZoneOffset.UTC)
+            val key = arrival.truncatedTo(ChronoUnit.HOURS)
+            val hour = bundle.hours.lastOrNull { !it.time.isAfter(key) } ?: bundle.hours.firstOrNull()
+                ?: throw TravelException("The weather service returned incomplete data.")
             TravelStop(
                 index = index,
                 distanceKm = sample.distanceKm,
                 point = sample.point,
                 arrival = arrival,
-                kind = wmoCondition(hourly.getJSONArray("weather_code").optInt(slot, 0)),
-                isDay = hourly.getJSONArray("is_day").optInt(slot, 1) == 1,
-                precipMm = hourly.getJSONArray("precipitation").optDouble(slot, 0.0).takeIf { !it.isNaN() } ?: 0.0,
-                visibilityKm = (hourly.getJSONArray("visibility").optDouble(slot, 10000.0).takeIf { !it.isNaN() } ?: 10000.0) / 1000.0,
-                cloudPercent = hourly.getJSONArray("cloud_cover").optInt(slot, 0)
+                kind = wmoCondition(hour.code),
+                isDay = hour.isDay,
+                precipMm = hour.precip.takeIf { !it.isNaN() } ?: 0.0,
+                visibilityKm = hour.visibility.takeIf { !it.isNaN() }?.div(1000.0) ?: 10.0,
+                cloudPercent = hour.cloud.coerceAtLeast(0)
             )
         }
     }
