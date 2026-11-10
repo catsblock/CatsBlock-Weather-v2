@@ -13,21 +13,12 @@ const CACHE_TTL_S = 1800;
 const UPSTREAM_TIMEOUT_MS = 10000;
 const MAX_BODY_CHARS = 3000000;
 const MAX_URL_LENGTH = 512;
-const WEATHER_EXHAUST_MS = 14 * 24 * 60 * 60 * 1000;
-const WEATHER_WINDOW_MS = 4 * 24 * 60 * 60 * 1000;
-const VISUAL_EXHAUST_MS = 24 * 60 * 60 * 1000;
-const VISUAL_WINDOW_MS = 12 * 60 * 60 * 1000;
-const WEATHER_LIMIT = 220;
-const VISUAL_LIMIT = 75;
-const OPENWEATHER_EXHAUST_MS = 24 * 60 * 60 * 1000;
-const OPENWEATHER_WINDOW_MS = 12 * 60 * 60 * 1000;
-const OPENWEATHER_LIMIT = 100;
-const OPENWEATHER_MONTH_LIMIT = 350;
-const MONTH_MS = 30 * 24 * 60 * 60 * 1000;
-const WEATHER_MONTH_LIMIT = 590;
-const VISUAL_MONTH_LIMIT = 260;
+const KEY_QUOTA_DOWN_S = 3600;
 
 const USER_KEY_PATTERN = /^[A-Za-z0-9_-]{16,64}$/;
+const PUBLIC_PATHS = new Set(["/", "/v1/health", "/v1/region"]);
+const PROTECTED_PATHS = new Set(["/v1/weather", "/v1/visual", "/v1/openweather", "/v1/agent", "/v1/agent/status", "/v1/agent/feedback"]);
+const BROWSER_HEADERS = ["Origin", "Sec-Fetch-Mode", "Sec-Fetch-Site", "Sec-Fetch-Dest"];
 const COORD_PATTERN = /^-?\d{1,3}(\.\d{1,10})?$/;
 
 const SAFE_HEADERS = {
@@ -39,6 +30,8 @@ const SAFE_HEADERS = {
   "Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'",
   "Strict-Transport-Security": "max-age=63072000; includeSubDomains; preload",
   "Permissions-Policy": "geolocation=(), camera=(), microphone=()",
+  "Cross-Origin-Opener-Policy": "same-origin",
+  "X-Permitted-Cross-Domain-Policies": "none",
 };
 
 function redact(text, secrets) {
@@ -63,31 +56,6 @@ function textResponse(body, status, contentType, extraHeaders) {
     status,
     headers: Object.assign({ "Content-Type": contentType }, SAFE_HEADERS, extraHeaders || {}),
   });
-}
-
-async function readJSON(kv, key) {
-  let raw;
-  try {
-    raw = await kv.get(key);
-  } catch (err) {
-    return null;
-  }
-  if (!raw) return null;
-  try {
-    const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === "object" ? parsed : null;
-  } catch (err) {
-    return null;
-  }
-}
-
-async function writeJSON(kv, key, value, ttlSeconds) {
-  try {
-    await kv.put(key, JSON.stringify(value), { expirationTtl: Math.max(60, Math.ceil(ttlSeconds || 60)) });
-    return true;
-  } catch (err) {
-    return false;
-  }
 }
 
 function constantTimeEqual(a, b) {
@@ -179,96 +147,6 @@ async function authorized(request, env) {
   return expected.length >= 32 && constantTimeEqual(provided, expected);
 }
 
-async function exhaustedSeconds(kv, provider) {
-  const data = await readJSON(kv, "exhausted:" + provider);
-  if (!data || typeof data.until !== "number" || data.until <= Date.now()) return 0;
-  return Math.ceil((data.until - Date.now()) / 1000);
-}
-
-async function markExhausted(kv, provider, durationMs) {
-  const now = Date.now();
-  const current = await readJSON(kv, "exhausted:" + provider);
-  const until = Math.max(now + durationMs, current && current.until > now ? current.until : 0);
-  await writeJSON(kv, "exhausted:" + provider, { until }, (until - now) / 1000);
-}
-
-function providerLimit(provider) {
-  if (provider === "weather") return WEATHER_LIMIT;
-  if (provider === "openweather") return OPENWEATHER_LIMIT;
-  return VISUAL_LIMIT;
-}
-
-function providerWindow(provider) {
-  if (provider === "weather") return WEATHER_WINDOW_MS;
-  if (provider === "openweather") return OPENWEATHER_WINDOW_MS;
-  return VISUAL_WINDOW_MS;
-}
-
-function providerExhaust(provider) {
-  if (provider === "weather") return WEATHER_EXHAUST_MS;
-  if (provider === "openweather") return OPENWEATHER_EXHAUST_MS;
-  return VISUAL_EXHAUST_MS;
-}
-
-function monthlyLimit(provider) {
-  if (provider === "weather") return WEATHER_MONTH_LIMIT;
-  if (provider === "openweather") return OPENWEATHER_MONTH_LIMIT;
-  return VISUAL_MONTH_LIMIT;
-}
-
-async function peekCounter(kv, key, limit) {
-  const now = Date.now();
-  const data = await readJSON(kv, key);
-  if (!data || typeof data.reset !== "number" || data.reset <= now) return { used: 0, limit, resetSeconds: 0 };
-  const used = Math.min(Number(data.count) || 0, limit);
-  return { used, limit, resetSeconds: used >= limit ? Math.ceil((data.reset - now) / 1000) : 0 };
-}
-
-async function peekAll(kv, provider) {
-  return {
-    short: await peekCounter(kv, "usage:" + provider, providerLimit(provider)),
-    monthly: await peekCounter(kv, "monthly:" + provider, monthlyLimit(provider)),
-  };
-}
-
-async function recordCounter(kv, key, limit, windowMs, exhaustMs, provider, extend) {
-  const now = Date.now();
-  let data = await readJSON(kv, key);
-  if (!data || typeof data.reset !== "number" || data.reset <= now) data = { count: 0, reset: now + windowMs };
-  data.count = (Number(data.count) || 0) + 1;
-  if (data.count >= limit) {
-    if (extend) data.reset = now + exhaustMs;
-    await markExhausted(kv, provider, Math.max(1000, data.reset - now));
-  }
-  await writeJSON(kv, key, data, (data.reset - now) / 1000 + 5);
-}
-
-async function recordUsage(kv, provider) {
-  await recordCounter(kv, "usage:" + provider, providerLimit(provider), providerWindow(provider), providerExhaust(provider), provider, true);
-  await recordCounter(kv, "monthly:" + provider, monthlyLimit(provider), MONTH_MS, MONTH_MS, provider, false);
-}
-
-function usageHeaders(all) {
-  return {
-    "X-Provider-Used": String(all.short.used),
-    "X-Provider-Limit": String(all.short.limit),
-    "X-Provider-Reset-Seconds": String(all.short.resetSeconds),
-    "X-Monthly-Used": String(all.monthly.used),
-    "X-Monthly-Limit": String(all.monthly.limit),
-    "X-Monthly-Reset-Seconds": String(all.monthly.resetSeconds),
-  };
-}
-
-function rateHeaders(limitState) {
-  return {
-    "X-RateLimit-Remaining-10m": String(limitState.shortRemaining),
-    "X-RateLimit-Limit-10m": String(limitState.shortLimit),
-    "X-RateLimit-Remaining-12h": String(limitState.longRemaining),
-    "X-RateLimit-Limit-12h": String(limitState.longLimit),
-    "X-Lockout-Seconds": String(limitState.lockoutSeconds || 0),
-  };
-}
-
 function parseCoordinates(url) {
   const rawLat = url.searchParams.get("lat");
   const rawLon = url.searchParams.get("lon");
@@ -354,51 +232,6 @@ async function readCapped(response) {
     text += decoder.decode(part.value, { stream: true });
   }
   return text + decoder.decode();
-}
-
-async function handleStatus(request, env) {
-  const id = await identify(request, env);
-  if (id.error) return jsonResponse({ error: id.error }, id.error === "client_unidentified" ? 400 : 503);
-  let limitState;
-  try {
-    limitState = await limiterCall(env, id.hash, "peek");
-  } catch (err) {
-    return jsonResponse({ error: "service_unavailable" }, 503);
-  }
-  const weatherExhausted = await exhaustedSeconds(env.APP_KV, "weather");
-  const visualExhausted = await exhaustedSeconds(env.APP_KV, "visual");
-  const openweatherExhausted = await exhaustedSeconds(env.APP_KV, "openweather");
-  const openweatherAll = await peekAll(env.APP_KV, "openweather");
-  const weatherAll = await peekAll(env.APP_KV, "weather");
-  const visualAll = await peekAll(env.APP_KV, "visual");
-  return jsonResponse(
-    {
-      usage: {
-        weather: weatherAll.short,
-        visual: visualAll.short,
-        openweather: openweatherAll.short,
-        monthly: {
-          weather: weatherAll.monthly,
-          visual: visualAll.monthly,
-          openweather: openweatherAll.monthly,
-        },
-      },
-      rateLimit: {
-        shortRemaining: limitState.shortRemaining,
-        shortLimit: limitState.shortLimit,
-        longRemaining: limitState.longRemaining,
-        longLimit: limitState.longLimit,
-        lockoutSeconds: limitState.lockoutSeconds,
-      },
-      exhausted: {
-        weather: weatherExhausted,
-        visual: visualExhausted,
-        openweather: openweatherExhausted,
-      },
-    },
-    200,
-    rateHeaders(limitState)
-  );
 }
 
 const KEY_POOL_MAX = 8;
@@ -493,7 +326,7 @@ async function queryUpstream(env, provider, coords, pool, usingUserKey) {
     }
     if (isQuotaExceeded(provider, response.status, text)) {
       quotaHit = true;
-      await flagPoolKey(env, provider, candidate.fp, providerExhaust(provider) / 1000, "q");
+      await flagPoolKey(env, provider, candidate.fp, KEY_QUOTA_DOWN_S, "q");
       continue;
     }
     if (response.status === 401 || response.status === 403) {
@@ -507,6 +340,12 @@ async function queryUpstream(env, provider, coords, pool, usingUserKey) {
 
 async function handleProxy(request, env, provider) {
   const url = new URL(request.url);
+  for (const name of url.searchParams.keys()) {
+    if (name !== "lat" && name !== "lon") return jsonResponse({ error: "invalid_parameters" }, 400);
+  }
+  if (url.searchParams.getAll("lat").length !== 1 || url.searchParams.getAll("lon").length !== 1) {
+    return jsonResponse({ error: "invalid_parameters" }, 400);
+  }
   const coords = parseCoordinates(url);
   if (!coords) {
     return jsonResponse({ error: "invalid_coordinates" }, 400);
@@ -527,22 +366,6 @@ async function handleProxy(request, env, provider) {
     return jsonResponse({ error: id.error }, id.error === "client_unidentified" ? 400 : 503);
   }
 
-  const exhaustDuration = providerExhaust(provider);
-  if (!usingUserKey) {
-    const remainingExhaust = await exhaustedSeconds(env.APP_KV, provider);
-    if (remainingExhaust > 0) {
-      const blockedUsage = await peekAll(env.APP_KV, provider);
-      return jsonResponse(
-        { error: "provider_exhausted", provider, retryAfterSeconds: remainingExhaust },
-        503,
-        Object.assign(usageHeaders(blockedUsage), {
-          "X-Global-Exhausted-Seconds": String(remainingExhaust),
-          "Retry-After": String(remainingExhaust),
-        })
-      );
-    }
-  }
-
   let guard;
   try {
     guard = await limiterCall(env, id.ipHash, "ip.guard");
@@ -550,7 +373,8 @@ async function handleProxy(request, env, provider) {
     return jsonResponse({ error: "service_unavailable" }, 503);
   }
   if (guard.exceeded) {
-    return jsonResponse({ error: "rate_limited", retryAfterSeconds: 600 }, 429, { "Retry-After": "600" });
+    const retry = String(guard.retrySeconds || 60);
+    return jsonResponse({ error: "rate_limited", retryAfterSeconds: Number(retry) }, 429, { "Retry-After": retry, "X-Lockout-Seconds": retry });
   }
 
   let verdict;
@@ -560,16 +384,12 @@ async function handleProxy(request, env, provider) {
     return jsonResponse({ error: "service_unavailable" }, 503);
   }
   if (verdict.ceilingExceeded) {
-    return jsonResponse({ error: "rate_limited", retryAfterSeconds: 600 }, 429, { "Retry-After": "600" });
+    const retry = String(verdict.retrySeconds || 60);
+    return jsonResponse({ error: "rate_limited", retryAfterSeconds: Number(retry) }, 429, { "Retry-After": retry, "X-Lockout-Seconds": retry });
   }
-
-  const limitState = verdict.state;
-  if (!limitState.allowed) {
-    return jsonResponse(
-      { error: "rate_limited", retryAfterSeconds: limitState.lockoutSeconds },
-      429,
-      { "X-Lockout-Seconds": String(limitState.lockoutSeconds), "Retry-After": String(limitState.lockoutSeconds) }
-    );
+  if (!verdict.state.allowed) {
+    const retry = String(verdict.state.lockoutSeconds || 60);
+    return jsonResponse({ error: "rate_limited", retryAfterSeconds: Number(retry) }, 429, { "Retry-After": retry, "X-Lockout-Seconds": retry });
   }
 
   const key = cacheKey(provider, coords.lat, coords.lon);
@@ -580,58 +400,37 @@ async function handleProxy(request, env, provider) {
     cached = null;
   }
   if (cached) {
-    const cachedUsage = await peekAll(env.APP_KV, provider);
-    return textResponse(
-      cached,
-      200,
-      "application/json; charset=utf-8",
-      Object.assign(rateHeaders(limitState), usageHeaders(cachedUsage), { "X-Cache": "HIT" })
-    );
+    return textResponse(cached, 200, "application/json; charset=utf-8", { "X-Cache": "HIT" });
   }
 
   const upstream = await queryUpstream(env, provider, coords, pool, usingUserKey);
-  if (upstream.kind === "unreachable") {
-    const failedUsage = await peekAll(env.APP_KV, provider);
-    return jsonResponse({ error: "upstream_unreachable" }, 502, Object.assign(rateHeaders(limitState), usageHeaders(failedUsage)));
-  }
-
-  if (!usingUserKey) {
-    await recordUsage(env.APP_KV, provider);
-  }
-  const usage = await peekAll(env.APP_KV, provider);
-  const metaHeaders = Object.assign(rateHeaders(limitState), usageHeaders(usage));
-
-  if (upstream.kind === "unreadable") return jsonResponse({ error: "upstream_unreadable" }, 502, metaHeaders);
-  if (upstream.kind === "too_large") return jsonResponse({ error: "upstream_too_large" }, 502, metaHeaders);
+  if (upstream.kind === "unreachable") return jsonResponse({ error: "upstream_unreachable" }, 502);
+  if (upstream.kind === "unreadable") return jsonResponse({ error: "upstream_unreadable" }, 502);
+  if (upstream.kind === "too_large") return jsonResponse({ error: "upstream_too_large" }, 502);
   if (upstream.kind === "user_key_rejected") {
-    return jsonResponse({ error: "user_api_key_rejected", status: upstream.status }, 401, metaHeaders);
+    return jsonResponse({ error: "user_api_key_rejected", status: upstream.status }, 401);
   }
   if (upstream.kind === "exhausted") {
-    await markExhausted(env.APP_KV, provider, exhaustDuration);
-    return jsonResponse(
-      { error: "provider_exhausted", provider, retryAfterSeconds: Math.ceil(exhaustDuration / 1000) },
-      503,
-      Object.assign({}, metaHeaders, { "X-Global-Exhausted-Seconds": String(Math.ceil(exhaustDuration / 1000)) })
-    );
+    return jsonResponse({ error: "provider_unavailable", provider, retryAfterSeconds: 300 }, 503, { "Retry-After": "300" });
   }
   if (upstream.kind === "keys_rejected") {
     console.warn("provider_keys_rejected", JSON.stringify({ provider }));
-    return jsonResponse({ error: "service_unavailable" }, 503, metaHeaders);
+    return jsonResponse({ error: "service_unavailable" }, 503);
   }
   if (upstream.kind !== "ok") {
-    return jsonResponse({ error: "upstream_error", status: upstream.status || 0 }, 502, metaHeaders);
+    return jsonResponse({ error: "upstream_error", status: upstream.status || 0 }, 502);
   }
   const bodyText = upstream.bodyText;
 
   try {
     JSON.parse(bodyText);
   } catch (err) {
-    return jsonResponse({ error: "upstream_invalid_response" }, 502, metaHeaders);
+    return jsonResponse({ error: "upstream_invalid_response" }, 502);
   }
 
   if (!usingUserKey) await writeJSONText(env.APP_KV, key, bodyText, CACHE_TTL_S);
 
-  return textResponse(bodyText, 200, "application/json; charset=utf-8", Object.assign({}, metaHeaders, { "X-Cache": "MISS" }));
+  return textResponse(bodyText, 200, "application/json; charset=utf-8", { "X-Cache": "MISS" });
 }
 
 async function writeJSONText(kv, key, text, ttlSeconds) {
@@ -1083,16 +882,9 @@ async function agentProviderText(env, provider, coords) {
   if (provider === "openmeteo") {
     text = await agentFetchText(agentForecastUrl(coords.lat, coords.lon));
   } else {
-    if ((await exhaustedSeconds(env.APP_KV, provider)) > 0) return null;
     const pool = await sharedKeyPool(env, provider);
     if (pool.length === 0) return null;
     const upstream = await queryUpstream(env, provider, coords, pool, false);
-    if (upstream.kind === "unreachable") return null;
-    await recordUsage(env.APP_KV, provider);
-    if (upstream.kind === "exhausted") {
-      await markExhausted(env.APP_KV, provider, providerExhaust(provider));
-      return null;
-    }
     if (upstream.kind !== "ok") return null;
     text = upstream.bodyText;
   }
@@ -1872,6 +1664,12 @@ async function handleRequest(request, env, ctx) {
     if (request.url.length > MAX_URL_LENGTH) {
       return jsonResponse({ error: "uri_too_long" }, 414);
     }
+    if (BROWSER_HEADERS.some((name) => request.headers.has(name))) {
+      return jsonResponse({ error: "forbidden" }, 403);
+    }
+    if (request.method === "GET" && (Number(request.headers.get("Content-Length") || 0) > 0 || request.headers.has("Transfer-Encoding"))) {
+      return jsonResponse({ error: "bad_request" }, 400);
+    }
 
     const url = new URL(request.url);
     const path = url.pathname.length > 1 ? url.pathname.replace(/\/+$/, "") : url.pathname;
@@ -1910,6 +1708,9 @@ async function handleRequest(request, env, ctx) {
       if (!(await authorized(request, env))) {
         return jsonResponse({ error: "unauthorized" }, 401);
       }
+      if (!/^application\/json/i.test(request.headers.get("Content-Type") || "")) {
+        return jsonResponse({ error: "unsupported_media_type" }, 415);
+      }
       return await handleFeedback(request, env, { jsonResponse, identify });
     }
 
@@ -1919,6 +1720,9 @@ async function handleRequest(request, env, ctx) {
       }
       if (!(await authorized(request, env))) {
         return jsonResponse({ error: "unauthorized", message: MSG_FAILED }, 401);
+      }
+      if (!/^application\/json/i.test(request.headers.get("Content-Type") || "")) {
+        return jsonResponse({ error: "unsupported_media_type" }, 415);
       }
       return await handleAgent(request, env, ctx);
     }
@@ -1932,7 +1736,6 @@ async function handleRequest(request, env, ctx) {
     }
 
     const routes = {
-      "/v1/status": null,
       "/v1/weather": "weather",
       "/v1/visual": "visual",
       "/v1/openweather": "openweather",
@@ -1945,14 +1748,32 @@ async function handleRequest(request, env, ctx) {
       return jsonResponse({ error: "unauthorized" }, 401);
     }
 
-    if (path === "/v1/status") {
-      return await handleStatus(request, env);
-    }
     return await handleProxy(request, env, routes[path]);
   } catch (err) {
     console.error("worker_unhandled", err && err.message ? String(err.message).slice(0, 200) : "unknown");
     return jsonResponse({ error: "internal_error" }, 500);
   }
+}
+
+function requestPath(request) {
+  const raw = new URL(request.url).pathname;
+  return raw.length > 1 ? raw.replace(/\/+$/, "") : raw;
+}
+
+async function authFailureGate(request, env, id) {
+  if (!id || id.error || !PROTECTED_PATHS.has(requestPath(request))) return null;
+  if (await authorized(request, env)) return null;
+  let verdict;
+  try {
+    verdict = await limiterCall(env, id.ipHash, "auth.fail");
+  } catch (err) {
+    return jsonResponse({ error: "unauthorized" }, 401);
+  }
+  if (verdict.locked) {
+    const retry = String(verdict.lockSeconds || 60);
+    return jsonResponse({ error: "rate_limited", retryAfterSeconds: Number(retry) }, 429, { "Retry-After": retry, "X-Lockout-Seconds": retry });
+  }
+  return jsonResponse({ error: "unauthorized" }, 401);
 }
 
 const TRACKED_PATHS = {
@@ -1961,14 +1782,12 @@ const TRACKED_PATHS = {
   "/v1/openweather": "openweather",
   "/v1/agent": "agent",
   "/v1/agent/status": "status",
-  "/v1/status": "status",
 };
 const UNTRACKED_STATUSES = new Set([401, 403, 404, 405, 414, 451]);
 
 async function trackRequest(request, env, ctx, id, response) {
   if (!id || id.error || UNTRACKED_STATUSES.has(response.status)) return;
-  const raw = new URL(request.url).pathname;
-  const path = raw.length > 1 ? raw.replace(/\/+$/, "") : raw;
+  const path = requestPath(request);
   const category = Object.prototype.hasOwnProperty.call(TRACKED_PATHS, path) ? TRACKED_PATHS[path] : "";
   if (!category) return;
   recordHit(env, ctx, id.hasDevice ? id.deviceHash : id.ipHash, category, response.status >= 400);
@@ -1980,11 +1799,11 @@ export default {
     if (request.method !== "OPTIONS" && request.url.length <= MAX_URL_LENGTH) {
       try {
         id = await identify(request, env);
-        const rawPath = new URL(request.url).pathname;
-        const requestPath = rawPath.length > 1 ? rawPath.replace(/\/+$/, "") : rawPath;
-        if (ADMIN_PATHS.has(requestPath) && !id.error && (await isBannedAtEdge(env, id))) {
+        if (ADMIN_PATHS.has(requestPath(request)) && !id.error && (await isBannedAtEdge(env, id))) {
           return jsonResponse({ error: "forbidden" }, 403);
         }
+        const gate = await authFailureGate(request, env, id);
+        if (gate) return gate;
       } catch (err) {
         id = null;
       }
