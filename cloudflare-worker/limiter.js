@@ -1,16 +1,17 @@
-export const SHORT_WINDOW_MS = 10 * 60 * 1000;
-export const LONG_WINDOW_MS = 12 * 60 * 60 * 1000;
-export const LOCKOUT_MS = 6 * 60 * 60 * 1000;
-export const SHORT_LIMIT = 20;
-export const LONG_LIMIT = 150;
-export const IP_CEILING_LIMIT = 400;
+export const PROXY_BURST_WINDOW_MS = 10 * 1000;
+export const PROXY_BURST_LIMIT = 150;
+export const PROXY_LOCK_MS = 60 * 1000;
+export const IP_CEILING_LIMIT = 1500;
 export const IP_CEILING_WINDOW_MS = 10 * 60 * 1000;
+export const AUTH_FAIL_WINDOW_MS = 10 * 60 * 1000;
+export const AUTH_FAIL_LIMIT = 20;
+export const AUTH_FAIL_LOCK_MS = 30 * 60 * 1000;
 export const AGENT_TOKEN_LIMIT = 30000;
 export const AGENT_IP_TOKEN_LIMIT = 100000;
 export const BURST_WINDOW_MS = 10 * 1000;
 export const BURST_LIMIT = 6;
 export const BURST_LOCK_MS = 60 * 1000;
-export const IP_SHARED_LIMIT = 4000;
+export const IP_SHARED_LIMIT = 6000;
 export const IP_SHARED_WINDOW_MS = 10 * 60 * 1000;
 export const AGENT_WINDOW_MS = 5 * 60 * 60 * 1000;
 export const SPAM_WINDOW_MS = 15 * 60 * 1000;
@@ -24,7 +25,7 @@ export const AGENT_RESERVATION_MS = 150 * 1000;
 
 const KEY_PATTERN = /^[a-f0-9]{64}$/;
 const SAFETY_MARGIN_S = 5;
-const WINDOW_FIELDS = ["s", "l", "ip", "ag", "sh", "bu"];
+const WINDOW_FIELDS = ["pb", "ip", "ag", "sh", "bu", "af"];
 
 function freshWindow(entry, now, windowMs) {
   if (!entry || typeof entry.r !== "number" || entry.r <= now) return { c: 0, r: now + windowMs };
@@ -43,6 +44,7 @@ function prune(data, now) {
   }
   if (typeof data.u === "number" && data.u > now) next.u = data.u;
   if (typeof data.bl === "number" && data.bl > now) next.bl = data.bl;
+  if (typeof data.al === "number" && data.al > now) next.al = data.al;
   for (const field of ["sp", "spi"]) {
     if (!Array.isArray(data[field])) continue;
     const hits = data[field].filter((t) => typeof t === "number" && t > now - SPAM_WINDOW_MS);
@@ -73,7 +75,7 @@ function expiry(data) {
     if (data[field] && data[field].r > latest) latest = data[field].r;
   }
   if (typeof data.u === "number" && data.u > latest) latest = data.u;
-  for (const field of ["bl", "bli"]) {
+  for (const field of ["bl", "bli", "al"]) {
     if (typeof data[field] === "number" && data[field] > latest) latest = data[field];
   }
   for (const field of ["sp", "spi"]) {
@@ -96,41 +98,41 @@ function expiry(data) {
   return latest;
 }
 
-function proxyState(data, now) {
-  const short = freshWindow(data.s, now, SHORT_WINDOW_MS);
-  const long = freshWindow(data.l, now, LONG_WINDOW_MS);
-  return {
-    shortRemaining: Math.max(0, SHORT_LIMIT - short.c),
-    shortLimit: SHORT_LIMIT,
-    longRemaining: Math.max(0, LONG_LIMIT - long.c),
-    longLimit: LONG_LIMIT,
-    lockoutSeconds: data.u && data.u > now ? Math.ceil((data.u - now) / 1000) : 0,
-  };
-}
-
 function consumeProxy(data, now) {
   const ceiling = freshWindow(data.ip, now, IP_CEILING_WINDOW_MS);
   ceiling.c += 1;
-  if (IP_CEILING_LIMIT && ceiling.c > IP_CEILING_LIMIT) return { ceilingExceeded: true };
+  if (ceiling.c > IP_CEILING_LIMIT) {
+    return { ceilingExceeded: true, retrySeconds: Math.max(1, Math.ceil((ceiling.r - now) / 1000)) };
+  }
   data.ip = ceiling;
 
   if (data.u && data.u > now) {
     return { ceilingExceeded: false, state: { allowed: false, lockoutSeconds: Math.ceil((data.u - now) / 1000) } };
   }
-  const short = freshWindow(data.s, now, SHORT_WINDOW_MS);
-  const long = freshWindow(data.l, now, LONG_WINDOW_MS);
-  short.c += 1;
-  long.c += 1;
-  data.s = short;
-  data.l = long;
-  if (short.c > SHORT_LIMIT || long.c > LONG_LIMIT) {
-    data.u = now + LOCKOUT_MS;
-    return { ceilingExceeded: false, state: { allowed: false, lockoutSeconds: Math.ceil(LOCKOUT_MS / 1000) } };
+  const burst = freshWindow(data.pb, now, PROXY_BURST_WINDOW_MS);
+  burst.c += 1;
+  data.pb = burst;
+  if (burst.c > PROXY_BURST_LIMIT) {
+    data.u = now + PROXY_LOCK_MS;
+    data.pb = { c: 0, r: now + PROXY_BURST_WINDOW_MS };
+    return { ceilingExceeded: false, state: { allowed: false, lockoutSeconds: Math.ceil(PROXY_LOCK_MS / 1000) } };
   }
-  return {
-    ceilingExceeded: false,
-    state: Object.assign({ allowed: true }, proxyState(data, now)),
-  };
+  return { ceilingExceeded: false, state: { allowed: true, lockoutSeconds: 0 } };
+}
+
+function authFail(data, now) {
+  if (typeof data.al === "number" && data.al > now) {
+    return { locked: true, lockSeconds: Math.ceil((data.al - now) / 1000) };
+  }
+  const window = freshWindow(data.af, now, AUTH_FAIL_WINDOW_MS);
+  window.c += 1;
+  data.af = window;
+  if (window.c >= AUTH_FAIL_LIMIT) {
+    data.al = now + AUTH_FAIL_LOCK_MS;
+    data.af = { c: 0, r: now + AUTH_FAIL_WINDOW_MS };
+    return { locked: true, lockSeconds: Math.ceil(AUTH_FAIL_LOCK_MS / 1000) };
+  }
+  return { locked: false, lockSeconds: 0 };
 }
 
 function reservationTotal(data, now) {
@@ -203,9 +205,9 @@ function agentCancel(data, now, reservationId) {
 function sharedGuard(data, now) {
   const window = freshWindow(data.sh, now, IP_SHARED_WINDOW_MS);
   window.c += 1;
-  if (window.c > IP_SHARED_LIMIT) return { exceeded: true };
+  if (window.c > IP_SHARED_LIMIT) return { exceeded: true, retrySeconds: Math.max(1, Math.ceil((window.r - now) / 1000)) };
   data.sh = window;
-  return { exceeded: false };
+  return { exceeded: false, retrySeconds: 0 };
 }
 
 function clampTokens(value) {
@@ -342,12 +344,11 @@ export class RateLimiter {
     let result;
     let mutated = true;
     switch (body.op) {
-      case "peek":
-        result = proxyState(this.data, now);
-        mutated = false;
-        break;
       case "proxy":
         result = consumeProxy(this.data, now);
+        break;
+      case "auth.fail":
+        result = authFail(this.data, now);
         break;
       case "agent.peek":
         result = agentPeek(this.data, now);
