@@ -179,7 +179,7 @@ class WeatherRepository {
         val merged = WeatherAggregator.merge(results)
         val reading = radar?.await()
         AppLog.info("Weather", "Aggregated ${results.size}/${jobs.size} providers: ${merged.hours.size} hours, ${merged.days.size} days, radar=${reading != null}")
-        WeatherDecisionEngine.apply(merged, reading)
+        WeatherDecisionEngine.apply(merged, reading, WeatherAggregator.trustedCurrent(results))
     }
 
     private suspend fun attempt(source: WeatherSource, block: suspend () -> WeatherBundle): ProviderResult? =
