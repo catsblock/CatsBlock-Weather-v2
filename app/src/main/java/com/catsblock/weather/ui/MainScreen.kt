@@ -3,10 +3,6 @@ package com.catsblock.weather.ui
 import com.catsblock.weather.ui.detail.MetricDetailScreen
 import com.catsblock.weather.ui.detail.MetricKind
 import com.catsblock.weather.ui.components.ExpressiveLoader
-import androidx.compose.ui.platform.LocalContext
-import com.catsblock.weather.data.NetworkPolicy
-import com.catsblock.weather.data.HubAlert
-import com.catsblock.weather.data.AlertHub
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutLinearInEasing
@@ -595,15 +591,6 @@ private fun WeatherDetails(
     val chipDays = upcoming.filter { d -> next36.any { it.time.toLocalDate() == d.date } }
     val chartScroll = rememberScrollState()
     var sheet by remember { mutableStateOf<Sheet?>(null) }
-    val hubContext = LocalContext.current
-    var hubAlerts by remember(city?.id) { mutableStateOf(emptyList<HubAlert>()) }
-    var hubSheet by remember { mutableStateOf(false) }
-    LaunchedEffect(city?.id, cur.now, settings.language) {
-        val target = city
-        if (target != null && NetworkPolicy.foregroundAllowed(hubContext, settings)) {
-            hubAlerts = runCatching { AlertHub.fetch(target.lat, target.lon) }.getOrDefault(hubAlerts)
-        }
-    }
     val layout = LocalWindowLayout.current
     val screenHeight = LocalConfiguration.current.screenHeightDp
     val heroFactor = (if (settings.compactHero) 0.46f else 0.66f) * (if (layout.isWide && layout.landscape) 0.78f else 1f)
@@ -704,8 +691,8 @@ private fun WeatherDetails(
                     alert?.let { AlertCard(it) }
                     if (bundle.alerts.isNotEmpty()) GovAlertCard(bundle.alerts, bundle.utcOffsetSeconds)
                     if (settings.showPrecipitation && bundle.rain.isNotEmpty()) PrecipitationCard(bundle)
+                    bundle.radar?.let { StormTrackerCard(it, bundle, settings.windUnit) }
                     HoursCard(next36, chipDays, today, fahrenheit, chartScroll)
-                    if (hubAlerts.isNotEmpty()) HubAlertCard(hubAlerts, { hubSheet = true })
                     DaysCard(
                         days = upcoming,
                         today = today,
@@ -768,8 +755,6 @@ private fun WeatherDetails(
     }
     }
     }
-
-    if (hubSheet && hubAlerts.isNotEmpty()) HubAlertsSheet(hubAlerts) { hubSheet = false }
 
     (sheet as? Sheet.DaySheet)?.let { current ->
         DayDetailSheet(current.day, bundle.hours, fahrenheit, today, cur.now) { sheet = null }
