@@ -179,74 +179,8 @@ data class WeatherBundle(
 )
 
 data class UsageStatus(
-    val shortRemaining: Int = 20,
-    val shortLimit: Int = 20,
-    val longRemaining: Int = 150,
-    val longLimit: Int = 150,
-    val lockoutSeconds: Long = 0,
-    val exhaustedSeconds: Long = 0,
-    val usingFallback: Boolean = false,
-    val weatherUsed: Int = 0,
-    val weatherLimit: Int = 220,
-    val weatherResetSeconds: Long = 0,
-    val visualUsed: Int = 0,
-    val visualLimit: Int = 75,
-    val visualResetSeconds: Long = 0,
-    val weatherMonthUsed: Int = 0,
-    val weatherMonthLimit: Int = 590,
-    val weatherMonthResetSeconds: Long = 0,
-    val visualMonthUsed: Int = 0,
-    val visualMonthLimit: Int = 260,
-    val visualMonthResetSeconds: Long = 0,
-    val openWeatherUsed: Int = 0,
-    val openWeatherLimit: Int = 100,
-    val openWeatherResetSeconds: Long = 0,
-    val openWeatherMonthUsed: Int = 0,
-    val openWeatherMonthLimit: Int = 350,
-    val openWeatherMonthResetSeconds: Long = 0
-) {
-    fun monthUsedFor(source: WeatherSource): Int = when (source) {
-        WeatherSource.WeatherApi -> weatherMonthUsed
-        WeatherSource.VisualCrossing -> visualMonthUsed
-        WeatherSource.OpenWeather -> openWeatherMonthUsed
-        else -> 0
-    }
-
-    fun monthLimitFor(source: WeatherSource): Int = when (source) {
-        WeatherSource.WeatherApi -> weatherMonthLimit
-        WeatherSource.VisualCrossing -> visualMonthLimit
-        WeatherSource.OpenWeather -> openWeatherMonthLimit
-        else -> 0
-    }
-
-    fun monthResetFor(source: WeatherSource): Long = when (source) {
-        WeatherSource.WeatherApi -> weatherMonthResetSeconds
-        WeatherSource.VisualCrossing -> visualMonthResetSeconds
-        WeatherSource.OpenWeather -> openWeatherMonthResetSeconds
-        else -> 0
-    }
-
-    fun usedFor(source: WeatherSource): Int = when (source) {
-        WeatherSource.WeatherApi -> weatherUsed
-        WeatherSource.VisualCrossing -> visualUsed
-        WeatherSource.OpenWeather -> openWeatherUsed
-        else -> 0
-    }
-
-    fun limitFor(source: WeatherSource): Int = when (source) {
-        WeatherSource.WeatherApi -> weatherLimit
-        WeatherSource.VisualCrossing -> visualLimit
-        WeatherSource.OpenWeather -> openWeatherLimit
-        else -> 0
-    }
-
-    fun resetFor(source: WeatherSource): Long = when (source) {
-        WeatherSource.WeatherApi -> weatherResetSeconds
-        WeatherSource.VisualCrossing -> visualResetSeconds
-        WeatherSource.OpenWeather -> openWeatherResetSeconds
-        else -> 0
-    }
-}
+    val lockoutSeconds: Long = 0
+)
 
 data class CitySummary(
     val kind: Condition,
