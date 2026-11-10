@@ -312,6 +312,43 @@ private object Consensus {
         else -> participants - 1
     }
 
+    private fun physicalLikelihood(humidity: Int, pressure: Double, uv: Double, isDay: Boolean): Int {
+        val humidityScore = when {
+            humidity >= 90 -> 1.0
+            humidity >= 80 -> 0.7
+            humidity >= 70 -> 0.4
+            humidity >= 60 -> 0.15
+            else -> 0.0
+        }
+        val pressureScore = when {
+            pressure < 1000.0 -> 1.0
+            pressure < 1005.0 -> 0.8
+            pressure < 1010.0 -> 0.55
+            pressure < 1015.0 -> 0.3
+            pressure < 1020.0 -> 0.1
+            else -> 0.0
+        }
+        val uvScore = when {
+            uv <= 1.0 -> 1.0
+            uv <= 2.0 -> 0.7
+            uv <= 4.0 -> 0.35
+            uv <= 6.0 -> 0.1
+            else -> 0.0
+        }
+        var total = 0.45 * humidityScore + 0.35 * pressureScore
+        var weight = 0.8
+        if (isDay) {
+            total += 0.2 * uvScore
+            weight += 0.2
+        }
+        return (100.0 * total / weight).roundToInt().coerceIn(0, 100)
+    }
+
+    private fun blend(api: Int, estimate: Int, trusted: Boolean): Int {
+        val weight = if (trusted) 0.8 else 0.65
+        return (api * weight + estimate * (1.0 - weight)).roundToInt()
+    }
+
     private fun trustedVerdict(votes: List<Pair<Provider, Boolean>>): Boolean? {
         val picks = votes.filter { it.first in trusted }
         if (picks.map { it.first }.toSet().size < trusted.size) return null
@@ -348,7 +385,7 @@ private object Consensus {
             r.data.days.forEach { days.getOrPut(it.date) { ArrayList() } += r.provider to it }
         }
         val mergedHours = hours.entries.sortedBy { it.key }.map { hour(it.value) }
-        val mergedDays = days.entries.sortedBy { it.key }.map { day(it.value) }
+        val mergedDays = days.entries.sortedBy { it.key }.map { entry -> day(entry.value, mergedHours.filter { it.time.toLocalDate() == entry.key }) }
         return current(sorted, mergedHours, mergedDays)
     }
 
@@ -364,20 +401,28 @@ private object Consensus {
             rainy -> wet
             else -> dry
         }
-        val prob = mean((if (verdict != null) pair else list).map { it.prob.toDouble() }).roundToInt()
+        val humidity = mean(list.map { it.humidity.toDouble() }).roundToInt()
+        val uv = mean(list.map { it.uv })
+        val pressure = mean(list.map { it.pressure }, 1013.0)
+        val isDay = list.count { it.isDay } * 2 >= list.size
+        val prob = blend(
+            mean((if (verdict != null) pair else list).map { it.prob.toDouble() }).roundToInt(),
+            physicalLikelihood(humidity, pressure, uv, isDay),
+            verdict != null
+        )
         val first = list.first()
         return Hour(
             time = first.time,
             temp = mean(list.map { it.temp }),
             code = mode(voters.map { it.code }, first.code),
-            isDay = list.count { it.isDay } * 2 >= list.size,
+            isDay = isDay,
             precip = if (rainy) max(WET_HOUR_MM, mean(voters.map { it.precip })) else mean(voters.map { it.precip }),
             prob = if (rainy) max(prob, WET_PROB_FLOOR) else min(prob, DRY_PROB_CEILING),
             windKmh = mean(list.map { it.windKmh }),
-            uv = mean(list.map { it.uv }),
-            pressure = mean(list.map { it.pressure }, 1013.0),
+            uv = uv,
+            pressure = pressure,
             visibilityM = mean(list.map { it.visibilityM }, 10000.0),
-            humidity = mean(list.map { it.humidity.toDouble() }).roundToInt(),
+            humidity = humidity,
             cloud = mean(list.map { it.cloud.toDouble() }).roundToInt(),
             windDir = direction(list.map { it.windDir }),
             gust = mean(list.map { it.gust }),
@@ -387,7 +432,7 @@ private object Consensus {
         )
     }
 
-    private fun day(entries: List<Pair<Provider, Day>>): Day {
+    private fun day(entries: List<Pair<Provider, Day>>, dayHours: List<Hour>): Day {
         val list = entries.map { it.second }
         val verdict = trustedVerdict(entries.map { it.first to wetDay(it.second) })
         val pair = entries.filter { it.first in trusted }.map { it.second }
@@ -399,7 +444,13 @@ private object Consensus {
             rainy -> wet
             else -> dry
         }
-        val chance = mean((if (verdict != null) pair else list).map { it.prob.toDouble() }).roundToInt()
+        val apiChance = mean((if (verdict != null) pair else list).map { it.prob.toDouble() }).roundToInt()
+        val chance = if (dayHours.isEmpty()) {
+            apiChance
+        } else {
+            val estimate = dayHours.map { physicalLikelihood(it.humidity, it.pressure, it.uv, it.isDay) }.average().roundToInt()
+            blend(apiChance, estimate, verdict != null)
+        }
         val first = list.first()
         return Day(
             date = first.date,
