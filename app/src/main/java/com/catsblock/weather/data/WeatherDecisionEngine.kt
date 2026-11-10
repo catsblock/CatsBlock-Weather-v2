@@ -34,7 +34,7 @@ object WeatherDecisionEngine {
 
     private class Signal(val weight: Double, val value: Double)
 
-    fun apply(bundle: WeatherBundle, radar: RadarReading? = null): WeatherBundle {
+    fun apply(bundle: WeatherBundle, radar: RadarReading? = null, trusted: Boolean? = null): WeatherBundle {
         val current = bundle.current
         val nowHour = current.now.truncatedTo(ChronoUnit.HOURS)
         val hour = bundle.hours.firstOrNull { it.time == nowHour }
@@ -43,11 +43,11 @@ object WeatherDecisionEngine {
             hour != null && hour.cloud >= 0 -> hour.cloud
             else -> -1
         }
-        val resolved = resolve(current, hour, cloud, bundle, radar)
+        val resolved = resolve(current, hour, cloud, bundle, radar, trusted)
         return bundle.copy(current = current.copy(kind = resolved, cloud = cloud))
     }
 
-    fun resolve(current: Current, hour: Hour?, cloud: Int, bundle: WeatherBundle? = null, radar: RadarReading? = null): Condition {
+    fun resolve(current: Current, hour: Hour?, cloud: Int, bundle: WeatherBundle? = null, radar: RadarReading? = null, trusted: Boolean? = null): Condition {
         val base = current.kind
         val rate = hour?.precip ?: 0.0
         if (base == Condition.Storm) return Condition.Storm
@@ -61,11 +61,11 @@ object WeatherDecisionEngine {
             Condition.Snow -> if (current.temp >= SLEET_TEMP && rate > 0.0) Condition.Sleet else base
             Condition.Sleet -> base
             Condition.Drizzle, Condition.Rain -> {
-                val dryEvidence = score != null && score < DRY_CONSENSUS && radar?.wet != true && rate <= 0.0
+                val dryEvidence = trusted != true && score != null && score < DRY_CONSENSUS && radar?.wet != true && rate <= 0.0
                 if (dryEvidence) dryKind(Condition.MoreClouds, 0.0, cloud, current) else wetKind(base, max(rate, intensity), current, radar)
             }
             else -> {
-                val consensus = score != null && score >= WET_CONSENSUS && hasHardEvidence(rate, nextRate, radar, bundle, current)
+                val consensus = (trusted != false || radar?.wet == true) && score != null && score >= WET_CONSENSUS && hasHardEvidence(rate, nextRate, radar, bundle, current)
                 if (consensus) wetKind(Condition.Rain, intensity, current, radar) else dryKind(base, rate, cloud, current)
             }
         }
