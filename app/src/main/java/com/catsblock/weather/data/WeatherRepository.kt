@@ -28,16 +28,15 @@ import java.time.temporal.ChronoUnit
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
-import kotlin.math.max
 
 internal class WorkerHttpException(val code: Int) : IOException("Worker HTTP $code")
 
-internal class WorkerLimitException(val waitSeconds: Long, val exhausted: Boolean) : IOException("Worker limit reached")
+internal class WorkerLimitException(val waitSeconds: Long) : IOException("Worker limit reached")
 
 class WeatherRepository {
 
     private companion object {
-        val bundles = TtlCache<WeatherBundle>(WeatherAggregator.CACHE_TTL_MS, 32)
+        val bundles = TtlCache<WeatherBundle>(WeatherAggregator.CACHE_TTL_MS, 48)
         val summaries = TtlCache<CitySummary>(WeatherAggregator.CACHE_TTL_MS, 64)
         val locks = ConcurrentHashMap<String, Mutex>()
     }
@@ -59,43 +58,6 @@ class WeatherRepository {
         }
     }
 
-    private fun applyUsage(prev: UsageStatus, path: String, response: okhttp3.Response): UsageStatus {
-        val used = response.header("X-Provider-Used")?.toIntOrNull()
-        val limit = response.header("X-Provider-Limit")?.toIntOrNull()
-        val reset = response.header("X-Provider-Reset-Seconds")?.toLongOrNull() ?: 0L
-        val monthUsed = response.header("X-Monthly-Used")?.toIntOrNull()
-        val monthLimit = response.header("X-Monthly-Limit")?.toIntOrNull()
-        val monthReset = response.header("X-Monthly-Reset-Seconds")?.toLongOrNull() ?: 0L
-        if (used == null || limit == null || monthUsed == null || monthLimit == null) return prev
-        return when {
-            path.endsWith("/v1/weather") -> prev.copy(
-                weatherUsed = used,
-                weatherLimit = limit,
-                weatherResetSeconds = reset,
-                weatherMonthUsed = monthUsed,
-                weatherMonthLimit = monthLimit,
-                weatherMonthResetSeconds = monthReset
-            )
-            path.endsWith("/v1/visual") -> prev.copy(
-                visualUsed = used,
-                visualLimit = limit,
-                visualResetSeconds = reset,
-                visualMonthUsed = monthUsed,
-                visualMonthLimit = monthLimit,
-                visualMonthResetSeconds = monthReset
-            )
-            path.endsWith("/v1/openweather") -> prev.copy(
-                openWeatherUsed = used,
-                openWeatherLimit = limit,
-                openWeatherResetSeconds = reset,
-                openWeatherMonthUsed = monthUsed,
-                openWeatherMonthLimit = monthLimit,
-                openWeatherMonthResetSeconds = monthReset
-            )
-            else -> prev
-        }
-    }
-
     private suspend fun workerGet(url: String): String = withContext(Dispatchers.IO) {
         val builder = Request.Builder().url(url)
         val path = runCatching { java.net.URI(url).path }.getOrNull().orEmpty()
@@ -104,23 +66,10 @@ class WeatherRepository {
         builder.header("X-Device-Id", DeviceFingerprint.id)
         client.newCall(builder.build()).execute().use { response ->
             val lockoutSeconds = response.header("X-Lockout-Seconds")?.toLongOrNull() ?: 0L
-            val exhaustedSeconds = response.header("X-Global-Exhausted-Seconds")?.toLongOrNull() ?: 0L
-            _usageStatus.update { prev ->
-                val base = prev.copy(
-                    shortRemaining = response.header("X-RateLimit-Remaining-10m")?.toIntOrNull() ?: prev.shortRemaining,
-                    shortLimit = response.header("X-RateLimit-Limit-10m")?.toIntOrNull() ?: prev.shortLimit,
-                    longRemaining = response.header("X-RateLimit-Remaining-12h")?.toIntOrNull() ?: prev.longRemaining,
-                    longLimit = response.header("X-RateLimit-Limit-12h")?.toIntOrNull() ?: prev.longLimit,
-                    lockoutSeconds = lockoutSeconds,
-                    exhaustedSeconds = exhaustedSeconds,
-                    usingFallback = lockoutSeconds > 0 || exhaustedSeconds > 0
-                )
-                applyUsage(base, response.request.url.encodedPath, response)
-            }
+            _usageStatus.update { it.copy(lockoutSeconds = lockoutSeconds) }
             if (!response.isSuccessful) {
-                val wait = max(lockoutSeconds, exhaustedSeconds)
-                if (response.code == 429 || response.code == 503 || wait > 0) {
-                    throw WorkerLimitException(wait, exhaustedSeconds > 0)
+                if (response.code == 429 || response.code == 503 || lockoutSeconds > 0) {
+                    throw WorkerLimitException(lockoutSeconds)
                 }
                 throw WorkerHttpException(response.code)
             }
@@ -132,56 +81,6 @@ class WeatherRepository {
         val builder = base.toHttpUrl().newBuilder()
         params.forEach { builder.addQueryParameter(it.first, it.second) }
         return builder.build().toString()
-    }
-
-    suspend fun refreshUsageStatus() {
-        val base = SecretKeys.baseUrl()
-        if (base.isEmpty()) return
-        runCatching {
-            val raw = workerGet("$base/v1/status")
-            val root = JSONObject(raw)
-            val rate = root.getJSONObject("rateLimit")
-            val exhausted = root.getJSONObject("exhausted")
-            val weatherExhausted = exhausted.optLong("weather", 0)
-            val visualExhausted = exhausted.optLong("visual", 0)
-            val openWeatherExhausted = exhausted.optLong("openweather", 0)
-            val usage = root.optJSONObject("usage")
-            val weatherUsage = usage?.optJSONObject("weather")
-            val visualUsage = usage?.optJSONObject("visual")
-            val openWeatherUsage = usage?.optJSONObject("openweather")
-            val monthly = usage?.optJSONObject("monthly")
-            val weatherMonth = monthly?.optJSONObject("weather")
-            val visualMonth = monthly?.optJSONObject("visual")
-            val openWeatherMonth = monthly?.optJSONObject("openweather")
-            val prev = _usageStatus.value
-            _usageStatus.value = prev.copy(
-                shortRemaining = rate.optInt("shortRemaining", 20),
-                shortLimit = rate.optInt("shortLimit", 20),
-                longRemaining = rate.optInt("longRemaining", 150),
-                longLimit = rate.optInt("longLimit", 150),
-                lockoutSeconds = rate.optLong("lockoutSeconds", 0),
-                exhaustedSeconds = max(max(weatherExhausted, visualExhausted), openWeatherExhausted),
-                usingFallback = rate.optLong("lockoutSeconds", 0) > 0 || weatherExhausted > 0 || visualExhausted > 0 || openWeatherExhausted > 0,
-                weatherUsed = weatherUsage?.optInt("used", prev.weatherUsed) ?: prev.weatherUsed,
-                weatherLimit = weatherUsage?.optInt("limit", prev.weatherLimit) ?: prev.weatherLimit,
-                weatherResetSeconds = weatherUsage?.optLong("resetSeconds", 0) ?: 0L,
-                visualUsed = visualUsage?.optInt("used", prev.visualUsed) ?: prev.visualUsed,
-                visualLimit = visualUsage?.optInt("limit", prev.visualLimit) ?: prev.visualLimit,
-                visualResetSeconds = visualUsage?.optLong("resetSeconds", 0) ?: 0L,
-                weatherMonthUsed = weatherMonth?.optInt("used", prev.weatherMonthUsed) ?: prev.weatherMonthUsed,
-                weatherMonthLimit = weatherMonth?.optInt("limit", prev.weatherMonthLimit) ?: prev.weatherMonthLimit,
-                weatherMonthResetSeconds = weatherMonth?.optLong("resetSeconds", 0) ?: 0L,
-                visualMonthUsed = visualMonth?.optInt("used", prev.visualMonthUsed) ?: prev.visualMonthUsed,
-                visualMonthLimit = visualMonth?.optInt("limit", prev.visualMonthLimit) ?: prev.visualMonthLimit,
-                visualMonthResetSeconds = visualMonth?.optLong("resetSeconds", 0) ?: 0L,
-                openWeatherUsed = openWeatherUsage?.optInt("used", prev.openWeatherUsed) ?: prev.openWeatherUsed,
-                openWeatherLimit = openWeatherUsage?.optInt("limit", prev.openWeatherLimit) ?: prev.openWeatherLimit,
-                openWeatherResetSeconds = openWeatherUsage?.optLong("resetSeconds", 0) ?: 0L,
-                openWeatherMonthUsed = openWeatherMonth?.optInt("used", prev.openWeatherMonthUsed) ?: prev.openWeatherMonthUsed,
-                openWeatherMonthLimit = openWeatherMonth?.optInt("limit", prev.openWeatherMonthLimit) ?: prev.openWeatherMonthLimit,
-                openWeatherMonthResetSeconds = openWeatherMonth?.optLong("resetSeconds", 0) ?: 0L
-            )
-        }
     }
 
     suspend fun searchCities(query: String): List<City> {
@@ -238,28 +137,35 @@ class WeatherRepository {
         return result
     }
 
-    suspend fun fetch(city: City): WeatherBundle {
-        val key = locationKey(city)
+    suspend fun fetch(city: City): WeatherBundle = fetchCached(locationKey(city), city, true)
+
+    suspend fun fetchForRoute(city: City): WeatherBundle = fetchCached("route:" + locationKey(city), city, false)
+
+    private suspend fun fetchCached(key: String, city: City, withRadar: Boolean): WeatherBundle {
         bundles.get(key)?.let { return it }
         return locks.getOrPut(key) { Mutex() }.withLock {
             bundles.get(key)?.let { return@withLock it }
-            val loaded = load(city)
+            val loaded = load(city, withRadar)
             bundles.put(key, loaded)
             loaded
         }
     }
 
-    private suspend fun load(city: City): WeatherBundle = coroutineScope {
+    private suspend fun load(city: City, withRadar: Boolean): WeatherBundle = coroutineScope {
         val base = SecretKeys.baseUrl()
         val viaWorker = base.isNotEmpty() && SecretKeys.appToken().isNotEmpty()
-        val radar = async {
-            try {
-                withTimeoutOrNull(5000) { RadarProbe.read(city.lat, city.lon) }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                null
+        val radar = if (withRadar) {
+            async {
+                try {
+                    withTimeoutOrNull(5000) { RadarProbe.read(city.lat, city.lon) }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    null
+                }
             }
+        } else {
+            null
         }
         val jobs = ArrayList<Deferred<ProviderResult?>>()
         jobs += async { attempt(WeatherSource.OpenMeteo) { fetchOpenMeteo(city) } }
@@ -270,9 +176,8 @@ class WeatherRepository {
         }
         val results = jobs.awaitAll().filterNotNull()
         if (results.isEmpty()) throw IOException("No weather provider responded")
-        if (viaWorker && results.size < jobs.size) _usageStatus.update { it.copy(usingFallback = true) }
         val merged = WeatherAggregator.merge(results)
-        val reading = radar.await()
+        val reading = radar?.await()
         AppLog.info("Weather", "Aggregated ${results.size}/${jobs.size} providers: ${merged.hours.size} hours, ${merged.days.size} days, radar=${reading != null}")
         WeatherDecisionEngine.apply(merged, reading)
     }
