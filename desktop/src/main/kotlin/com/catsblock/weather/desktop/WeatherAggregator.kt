@@ -304,7 +304,6 @@ private object Consensus {
     private const val WET_DAY_MM = 1.0
     private const val WET_PROB_FLOOR = 75
     private const val DRY_PROB_CEILING = 49
-    private const val CURRENT_SOURCES = 2
 
     fun required(participants: Int): Int = when {
         participants <= 2 -> max(1, participants)
@@ -341,7 +340,7 @@ private object Consensus {
         }
         val mergedHours = hours.entries.sortedBy { it.key }.map { hour(it.value) }
         val mergedDays = days.entries.sortedBy { it.key }.map { day(it.value) }
-        return current(sorted.take(CURRENT_SOURCES).map { it.data }, mergedHours, mergedDays)
+        return current(sorted.map { it.data }, mergedHours, mergedDays)
     }
 
     private fun hour(list: List<Hour>): Hour {
