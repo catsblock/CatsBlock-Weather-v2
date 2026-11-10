@@ -167,7 +167,6 @@ private fun openNotificationSettings(context: Context) {
 @Composable
 fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
     val settings by vm.settings.collectAsStateWithLifecycle()
-    val usageStatus by vm.usageStatus.collectAsStateWithLifecycle()
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -731,15 +730,7 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
 
             CategoryTitle(tr("Weather data"))
 
-            UsageStatusBar(
-                status = usageStatus,
-                modifier = Modifier.fillMaxWidth().padding(top = 12.dp)
-            )
-
-            MonthlyUsageBar(
-                status = usageStatus,
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
-            )
+            UsageStatusBar(modifier = Modifier.fillMaxWidth().padding(top = 12.dp))
 
             GroupLabel(tr("Personal access keys"))
             Group {
