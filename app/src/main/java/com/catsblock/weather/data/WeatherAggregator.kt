@@ -55,10 +55,22 @@ internal object WeatherAggregator {
         WeatherSource.VisualCrossing
     )
 
+    private val trusted = setOf(WeatherSource.WeatherApi, WeatherSource.VisualCrossing)
+
     fun required(participants: Int): Int = when {
         participants <= 2 -> max(1, participants)
         else -> participants - 1
     }
+
+    fun trustedVerdict(votes: List<Pair<WeatherSource, Boolean>>): Boolean? {
+        val picks = votes.filter { it.first in trusted }
+        if (picks.map { it.first }.toSet().size < trusted.size) return null
+        val first = picks.first().second
+        return if (picks.all { it.second == first }) first else null
+    }
+
+    fun trustedCurrent(results: List<ProviderResult>): Boolean? =
+        trustedVerdict(results.map { it.source to it.bundle.current.kind.isWet })
 
     private fun wetCode(code: Int): Boolean =
         code in 51..67 || code in 71..77 || code in 80..86 || code in 95..99
@@ -107,17 +119,24 @@ internal object WeatherAggregator {
     }
 
     private fun mergeHours(sorted: List<ProviderResult>): List<Hour> {
-        val grouped = LinkedHashMap<LocalDateTime, MutableList<Hour>>()
-        sorted.forEach { result -> result.bundle.hours.forEach { grouped.getOrPut(it.time) { ArrayList() } += it } }
+        val grouped = LinkedHashMap<LocalDateTime, MutableList<Pair<WeatherSource, Hour>>>()
+        sorted.forEach { result -> result.bundle.hours.forEach { grouped.getOrPut(it.time) { ArrayList() } += result.source to it } }
         return grouped.entries.sortedBy { it.key }.map { combineHours(it.value) }
     }
 
-    private fun combineHours(list: List<Hour>): Hour {
+    private fun combineHours(entries: List<Pair<WeatherSource, Hour>>): Hour {
+        val list = entries.map { it.second }
+        val verdict = trustedVerdict(entries.map { it.first to wetHour(it.second) })
+        val pair = entries.filter { it.first in trusted }.map { it.second }
         val wet = list.filter { wetHour(it) }
         val dry = list.filterNot { wetHour(it) }
-        val rainy = wet.size >= required(list.size)
-        val voters = if (rainy) wet else dry
-        val prob = meanPercent(list.map { it.precipProb })
+        val rainy = verdict ?: (wet.size >= required(list.size))
+        val voters = when {
+            verdict != null -> pair
+            rainy -> wet
+            else -> dry
+        }
+        val prob = meanPercent((if (verdict != null) pair else list).map { it.precipProb })
         val first = list.first()
         return Hour(
             time = first.time,
@@ -143,17 +162,24 @@ internal object WeatherAggregator {
     }
 
     private fun mergeDays(sorted: List<ProviderResult>): List<Day> {
-        val grouped = LinkedHashMap<LocalDate, MutableList<Day>>()
-        sorted.forEach { result -> result.bundle.days.forEach { grouped.getOrPut(it.date) { ArrayList() } += it } }
+        val grouped = LinkedHashMap<LocalDate, MutableList<Pair<WeatherSource, Day>>>()
+        sorted.forEach { result -> result.bundle.days.forEach { grouped.getOrPut(it.date) { ArrayList() } += result.source to it } }
         return grouped.entries.sortedBy { it.key }.map { combineDays(it.value) }
     }
 
-    private fun combineDays(list: List<Day>): Day {
+    private fun combineDays(entries: List<Pair<WeatherSource, Day>>): Day {
+        val list = entries.map { it.second }
+        val verdict = trustedVerdict(entries.map { it.first to wetDay(it.second) })
+        val pair = entries.filter { it.first in trusted }.map { it.second }
         val wet = list.filter { wetDay(it) }
         val dry = list.filterNot { wetDay(it) }
-        val rainy = wet.size >= required(list.size)
-        val voters = if (rainy) wet else dry
-        val chance = meanPercent(list.map { it.rainChance }).coerceAtLeast(0)
+        val rainy = verdict ?: (wet.size >= required(list.size))
+        val voters = when {
+            verdict != null -> pair
+            rainy -> wet
+            else -> dry
+        }
+        val chance = meanPercent((if (verdict != null) pair else list).map { it.rainChance }).coerceAtLeast(0)
         val first = list.first()
         return Day(
             date = first.date,
@@ -170,9 +196,12 @@ internal object WeatherAggregator {
 
     private fun mergeCurrent(sorted: List<ProviderResult>, hours: List<Hour>): Current {
         val picks = sorted.map { it.bundle.current }
+        val verdict = trustedCurrent(sorted)
         val wet = picks.filter { it.kind.isWet }
-        val rainy = wet.size >= required(picks.size)
-        val chosen = (if (rainy) wet else picks.filterNot { it.kind.isWet }).firstOrNull() ?: picks.first()
+        val rainy = verdict ?: (wet.size >= required(picks.size))
+        val agreeing = sorted.filter { it.bundle.current.kind.isWet == rainy }
+        val chosen = (if (verdict != null) agreeing.firstOrNull { it.source in trusted } else agreeing.firstOrNull())?.bundle?.current
+            ?: picks.first()
         val hourKey = chosen.now.withMinute(0).withSecond(0).withNano(0)
         val hourAqi = hours.firstOrNull { it.time == hourKey }?.aqi
         return chosen.copy(
