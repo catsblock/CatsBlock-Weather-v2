@@ -229,7 +229,7 @@ private fun SourcesDialog(onClose: () -> Unit) {
                         )
                     }
                     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
-                        Text(source.name, style = MaterialTheme.typography.titleSmall)
+                        Text(tr(source.name), style = MaterialTheme.typography.titleSmall)
                         Spacer(Modifier.height(2.dp))
                         Text(
                             tr(source.purpose),
