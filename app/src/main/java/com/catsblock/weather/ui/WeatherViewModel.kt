@@ -129,7 +129,6 @@ class WeatherViewModel(private val app: Application) : AndroidViewModel(app) {
     init {
         viewModelScope.launch {
             runCatching { store.purgeLegacyKeys() }
-            if (SecretKeys.available(WeatherSource.WeatherApi)) repo.refreshUsageStatus()
         }
         viewModelScope.launch {
             val saved = store.currentCity.first()
@@ -479,12 +478,10 @@ class WeatherViewModel(private val app: Application) : AndroidViewModel(app) {
 
     private fun notifyUsageLimitIfNeeded() {
         val status = usageStatus.value
-        val message = when {
-            status.exhaustedSeconds > 0 ->
-                tr("Provider limit reached. Using the free data source for") + " " + formatWait(status.exhaustedSeconds)
-            status.lockoutSeconds > 0 ->
-                tr("Too many requests. Try again in") + " " + formatWait(status.lockoutSeconds)
-            else -> null
+        val message = if (status.lockoutSeconds > 0) {
+            tr("Too many requests. Try again in") + " " + formatWait(status.lockoutSeconds)
+        } else {
+            null
         }
         if (message != lastLimitNotice) {
             lastLimitNotice = message
