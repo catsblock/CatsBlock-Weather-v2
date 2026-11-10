@@ -99,6 +99,7 @@ fun weatherSeed(kind: Kind?, isDay: Boolean): Color = when (kind) {
     null -> Color(0xFF1565C0)
     Kind.Clear -> if (isDay) Color(0xFF1E88E5) else Color(0xFF3949AB)
     Kind.FewClouds -> if (isDay) Color(0xFF2F8FD8) else Color(0xFF3F51B5)
+    Kind.PartlyCloudy -> Color(0xFF3F86C0)
     Kind.MoreClouds -> Color(0xFF4F7DA3)
     Kind.Cloudy -> Color(0xFF5B7083)
     Kind.Fog -> Color(0xFF7A8C99)
@@ -110,6 +111,19 @@ fun weatherSeed(kind: Kind?, isDay: Boolean): Color = when (kind) {
     Kind.Snow -> Color(0xFF42A5D8)
     Kind.HeavySnow -> Color(0xFF5C9BC4)
     Kind.Blizzard -> Color(0xFF7F9FB5)
+    Kind.Windy -> Color(0xFF607D8B)
+    Kind.Icy -> Color(0xFF5BA3C7)
+    Kind.Flurries -> Color(0xFF6BB3DC)
+    Kind.BlowingSnow -> Color(0xFF7FA8C4)
+    Kind.HeavyRain -> Color(0xFF0D47A1)
+    Kind.ScatteredShowers -> Color(0xFF1976D2)
+    Kind.ScatteredStorms -> Color(0xFF6A4BB8)
+    Kind.IsolatedStorms -> Color(0xFF6040B0)
+    Kind.StrongStorms -> Color(0xFF4527A0)
+    Kind.ScatteredSnow -> Color(0xFF4DAADC)
+    Kind.SnowShowers -> Color(0xFF4A9FCF)
+    Kind.RainSnow -> Color(0xFF4A90B8)
+    Kind.WintryMix -> Color(0xFF4A8BB0)
 }
 
 private fun hueOf(c: Color): Float {
@@ -215,23 +229,29 @@ fun Card(modifier: Modifier = Modifier, title: String? = null, onClick: (() -> U
 
 fun backgroundGradient(kind: Kind, isDay: Boolean): List<Color> {
     if (!isDay) return when (kind) {
-        Kind.Storm -> listOf(Color(0xFF05070D), Color(0xFF0E131C), Color(0xFF1B2430))
-        Kind.Rain, Kind.Drizzle, Kind.Hail, Kind.Sleet -> listOf(Color(0xFF0A0F18), Color(0xFF151D2A), Color(0xFF263344))
-        Kind.Snow, Kind.HeavySnow, Kind.Blizzard -> listOf(Color(0xFF111A27), Color(0xFF223046), Color(0xFF3A4B63))
+        Kind.Storm, Kind.StrongStorms, Kind.ScatteredStorms, Kind.IsolatedStorms ->
+            listOf(Color(0xFF05070D), Color(0xFF0E131C), Color(0xFF1B2430))
+        Kind.Rain, Kind.Drizzle, Kind.Hail, Kind.Sleet, Kind.Icy, Kind.HeavyRain, Kind.ScatteredShowers,
+        Kind.RainSnow, Kind.WintryMix -> listOf(Color(0xFF0A0F18), Color(0xFF151D2A), Color(0xFF263344))
+        Kind.Snow, Kind.HeavySnow, Kind.Blizzard, Kind.Flurries, Kind.BlowingSnow, Kind.ScatteredSnow,
+        Kind.SnowShowers -> listOf(Color(0xFF111A27), Color(0xFF223046), Color(0xFF3A4B63))
         else -> listOf(Color(0xFF050B1F), Color(0xFF0B1B3F), Color(0xFF1B2D5C))
     }
     return when (kind) {
         Kind.Clear -> listOf(Color(0xFF2F80ED), Color(0xFF56CCF2), Color(0xFF9CD8F5))
         Kind.FewClouds -> listOf(Color(0xFF3A7BD5), Color(0xFF6DB3F2), Color(0xFFA6D1F0))
-        Kind.MoreClouds -> listOf(Color(0xFF4A78A8), Color(0xFF7FA3C7), Color(0xFFB4C7D8))
-        Kind.Cloudy -> listOf(Color(0xFF4B5563), Color(0xFF6B7684), Color(0xFF8A95A1))
+        Kind.PartlyCloudy, Kind.MoreClouds -> listOf(Color(0xFF4A78A8), Color(0xFF7FA3C7), Color(0xFFB4C7D8))
+        Kind.Cloudy, Kind.Windy -> listOf(Color(0xFF4B5563), Color(0xFF6B7684), Color(0xFF8A95A1))
         Kind.Fog -> listOf(Color(0xFF5A6B78), Color(0xFF7F909C), Color(0xFFA7B4BD))
         Kind.Drizzle -> listOf(Color(0xFF3B4A5C), Color(0xFF55677B), Color(0xFF75879A))
-        Kind.Rain -> listOf(Color(0xFF232E3B), Color(0xFF364555), Color(0xFF4F6174))
-        Kind.Storm -> listOf(Color(0xFF0F131C), Color(0xFF1E2531), Color(0xFF34404F))
-        Kind.Sleet, Kind.Hail -> listOf(Color(0xFF3F4F60), Color(0xFF5E7184), Color(0xFF8799AA))
-        Kind.Snow -> listOf(Color(0xFF6C8299), Color(0xFF93A9BE), Color(0xFFBFD0DF))
-        Kind.HeavySnow, Kind.Blizzard -> listOf(Color(0xFF55697D), Color(0xFF7D93A9), Color(0xFFA9BCCD))
+        Kind.Rain, Kind.HeavyRain, Kind.ScatteredShowers -> listOf(Color(0xFF232E3B), Color(0xFF364555), Color(0xFF4F6174))
+        Kind.Storm, Kind.StrongStorms, Kind.ScatteredStorms, Kind.IsolatedStorms ->
+            listOf(Color(0xFF0F131C), Color(0xFF1E2531), Color(0xFF34404F))
+        Kind.Sleet, Kind.Hail, Kind.Icy, Kind.RainSnow, Kind.WintryMix ->
+            listOf(Color(0xFF3F4F60), Color(0xFF5E7184), Color(0xFF8799AA))
+        Kind.Snow, Kind.Flurries, Kind.ScatteredSnow, Kind.SnowShowers ->
+            listOf(Color(0xFF6C8299), Color(0xFF93A9BE), Color(0xFFBFD0DF))
+        Kind.HeavySnow, Kind.Blizzard, Kind.BlowingSnow -> listOf(Color(0xFF55697D), Color(0xFF7D93A9), Color(0xFFA9BCCD))
     }
 }
 
@@ -245,13 +265,15 @@ private fun backgroundImage(kind: Kind, isDay: Boolean, time: java.time.LocalTim
         Kind.Clear, Kind.FewClouds -> when {
             sunrise -> "Clean_sunrise.jpg"; sunset -> "Clean_sunset.jpg"; !isDay -> "Clean_night.jpg"; else -> "Sunny.jpg"
         }
-        Kind.MoreClouds -> when {
+        Kind.PartlyCloudy, Kind.MoreClouds -> when {
             sunrise -> "Partly_cloudy_sunrise.jpg"; sunset -> "Partly_cloudy_sunset.jpg"; !isDay -> "Partly_cloudy_night.jpg"; else -> "Partlycloud.jpg"
         }
-        Kind.Cloudy, Kind.Fog -> "cloudy.jpg"
-        Kind.Drizzle, Kind.Rain, Kind.Sleet -> "Rain.jpg"
-        Kind.Storm, Kind.Hail -> "Storm.jpg"
-        Kind.Snow, Kind.HeavySnow, Kind.Blizzard -> "Ssnow.jpg"
+        Kind.Cloudy, Kind.Fog, Kind.Windy -> "cloudy.jpg"
+        Kind.Drizzle, Kind.Rain, Kind.Sleet, Kind.Icy, Kind.HeavyRain, Kind.ScatteredShowers,
+        Kind.RainSnow, Kind.WintryMix -> "Rain.jpg"
+        Kind.Storm, Kind.Hail, Kind.ScatteredStorms, Kind.IsolatedStorms, Kind.StrongStorms -> "Storm.jpg"
+        Kind.Snow, Kind.HeavySnow, Kind.Blizzard, Kind.Flurries, Kind.BlowingSnow, Kind.ScatteredSnow,
+        Kind.SnowShowers -> "Ssnow.jpg"
     }
     return IMAGE_BASE + file
 }
@@ -416,30 +438,132 @@ object IconCache {
     }
 }
 
-private const val ICON_SET_5 = "https://raw.githubusercontent.com/mrdarrengriffin/google-weather-icons/refs/heads/main/sets/set-5/light/"
-private const val ICON_V0 = "https://raw.githubusercontent.com/bignutty/google-weather-icons/refs/heads/main/icons/weather/v0/dark/"
-private const val ICON_SET_6 = "https://raw.githubusercontent.com/mrdarrengriffin/google-weather-icons/refs/heads/main/sets/set-6/light/"
+private const val ICON_BASE = "https://raw.githubusercontent.com/mrdarrengriffin/google-weather-icons/refs/heads/main/sets/set-4/light/"
+private const val ICON_BASE_V0 = "https://raw.githubusercontent.com/bignutty/google-weather-icons/refs/heads/main/icons/weather/v0/dark/"
+private const val PRECIP_CHANCE_MIN = 15
 
-fun iconUrl(kind: Kind, isDay: Boolean): String = when (kind) {
-    Kind.Clear -> ICON_SET_6 + if (isDay) "sunny.svg" else "clear_night.svg"
-    Kind.FewClouds -> if (isDay) ICON_SET_5 + "mostly_sunny.svg" else ICON_SET_6 + "mostly_clear_night.svg"
-    Kind.MoreClouds -> if (isDay) ICON_SET_5 + "partly_cloudy.svg" else ICON_SET_6 + "partly_cloudy_night.svg"
-    Kind.Cloudy -> ICON_SET_5 + "cloudy.svg"
-    Kind.Fog -> ICON_SET_6 + "windy.svg"
-    Kind.Drizzle -> ICON_V0 + "drizzle.svg"
-    Kind.Rain -> ICON_V0 + "heavy_rain.svg"
-    Kind.Storm -> ICON_V0 + "strong_tstorms.svg"
-    Kind.Sleet -> ICON_V0 + "wintry_mix_rain_snow.svg"
-    Kind.Hail -> ICON_V0 + "sleet_hail.svg"
-    Kind.Snow -> ICON_V0 + "flurries.svg"
-    Kind.HeavySnow -> ICON_V0 + "heavy_snow.svg"
-    Kind.Blizzard -> ICON_SET_6 + "blowing_snow.svg"
+private val ICON_V0_FILES: Map<String, String> = mapOf(
+    "drizzle" to "drizzle",
+    "showers_rain" to "showers_rain",
+    "heavy_rain" to "heavy_rain",
+    "flurries" to "flurries",
+    "showers_snow" to "snow_showers_snow",
+    "heavy_snow" to "heavy_snow",
+    "icy" to "icy",
+    "sleet_hail" to "sleet_hail",
+    "mixed_rain_hail_sleet" to "wintry_mix_rain_snow",
+    "scattered_showers_day" to "scattered_showers_day",
+    "scattered_showers_night" to "scattered_showers_night",
+    "scattered_snow_showers_day" to "scattered_snow_showers_day",
+    "scattered_snow_showers_night" to "scattered_snow_showers_night",
+    "isolated_scattered_thunderstorms_day" to "isolated_scattered_tstorms_day",
+    "isolated_scattered_thunderstorms_night" to "isolated_scattered_tstorms_night",
+    "isolated_thunderstorms" to "isolated_tstorms",
+    "strong_thunderstorms" to "strong_tstorms"
+)
+
+class WeatherLook(val file: String, val title: String)
+
+fun weatherLook(
+    kind: Kind,
+    isDay: Boolean,
+    precipMm: Double = -1.0,
+    cloud: Int = -1,
+    windKmh: Double = 0.0,
+    chance: Int = -1
+): WeatherLook {
+    val sfx = if (isDay) "day" else "night"
+    val known = precipMm >= 0.0
+    if (kind.isWet && chance in 0..PRECIP_CHANCE_MIN) {
+        return when {
+            windKmh >= 55.0 -> WeatherLook("windy", "Windy")
+            cloud in 0..39 -> WeatherLook("mostly_clear_$sfx", "Mostly clear")
+            cloud in 40..69 -> WeatherLook("partly_cloudy_$sfx", "Partly cloudy")
+            cloud in 70..84 -> WeatherLook("mostly_cloudy_$sfx", "Mostly cloudy")
+            else -> WeatherLook("cloudy", "Cloudy")
+        }
+    }
+    val scattered = chance in (PRECIP_CHANCE_MIN + 1)..39
+    return when (kind) {
+        Kind.Clear -> when {
+            windKmh >= 55.0 -> WeatherLook("windy", "Windy")
+            isDay -> WeatherLook("clear_day", "Sunny")
+            else -> WeatherLook("clear_night", "Clear")
+        }
+        Kind.FewClouds -> WeatherLook("mostly_clear_$sfx", "Mostly clear")
+        Kind.PartlyCloudy -> WeatherLook("partly_cloudy_$sfx", "Partly cloudy")
+        Kind.MoreClouds -> WeatherLook("mostly_cloudy_$sfx", "Mostly cloudy")
+        Kind.Cloudy -> if (windKmh >= 55.0) WeatherLook("windy", "Windy") else WeatherLook("cloudy", "Cloudy")
+        Kind.Fog -> if (windKmh >= 40.0) WeatherLook("windy", "Windy") else WeatherLook("haze_fog_dust_smoke", "Fog")
+        Kind.Drizzle -> WeatherLook("drizzle", "Drizzle")
+        Kind.Rain -> when {
+            scattered || (known && precipMm < 1.0) -> WeatherLook("scattered_showers_$sfx", "Scattered showers")
+            known && precipMm >= 4.0 -> WeatherLook("heavy_rain", "Heavy rain")
+            else -> WeatherLook("showers_rain", "Rain")
+        }
+        Kind.Storm -> when {
+            scattered || (known && precipMm < 0.5) ->
+                WeatherLook("isolated_scattered_thunderstorms_$sfx", "Scattered thunderstorms")
+            known && precipMm < 2.0 -> WeatherLook("isolated_thunderstorms", "Isolated thunderstorms")
+            else -> WeatherLook("strong_thunderstorms", "Thunderstorm")
+        }
+        Kind.Sleet -> when {
+            known && precipMm >= 2.0 -> WeatherLook("mixed_rain_hail_sleet", "Wintry mix")
+            known && precipMm >= 0.5 -> WeatherLook("mixed_rain_snow", "Rain and snow")
+            else -> WeatherLook("icy", "Icy")
+        }
+        Kind.Hail -> WeatherLook("sleet_hail", "Hail")
+        Kind.Snow -> when {
+            known && precipMm < 0.2 -> WeatherLook("flurries", "Flurries")
+            windKmh >= 25.0 && (scattered || precipMm < 0.8) -> WeatherLook("blowing_snow", "Blowing snow")
+            scattered || (known && precipMm < 0.8) ->
+                WeatherLook("scattered_snow_showers_$sfx", "Scattered snow showers")
+            else -> WeatherLook("showers_snow", "Snow")
+        }
+        Kind.HeavySnow -> WeatherLook("heavy_snow", "Heavy snow")
+        Kind.Blizzard -> WeatherLook("blizzard", "Blizzard")
+        Kind.Windy -> WeatherLook("windy", "Windy")
+        Kind.Icy -> WeatherLook("icy", "Icy")
+        Kind.Flurries -> WeatherLook("flurries", "Flurries")
+        Kind.BlowingSnow -> WeatherLook("blowing_snow", "Blowing snow")
+        Kind.HeavyRain -> WeatherLook("heavy_rain", "Heavy rain")
+        Kind.ScatteredShowers -> WeatherLook("scattered_showers_$sfx", "Scattered showers")
+        Kind.ScatteredStorms -> WeatherLook("isolated_scattered_thunderstorms_$sfx", "Scattered thunderstorms")
+        Kind.IsolatedStorms -> WeatherLook("isolated_thunderstorms", "Isolated thunderstorms")
+        Kind.StrongStorms -> WeatherLook("strong_thunderstorms", "Thunderstorm")
+        Kind.ScatteredSnow -> WeatherLook("scattered_snow_showers_$sfx", "Scattered snow showers")
+        Kind.SnowShowers -> WeatherLook("showers_snow", "Snow")
+        Kind.RainSnow -> WeatherLook("mixed_rain_snow", "Rain and snow")
+        Kind.WintryMix -> WeatherLook("mixed_rain_hail_sleet", "Wintry mix")
+    }
+}
+
+fun iconUrl(
+    kind: Kind,
+    isDay: Boolean,
+    precipMm: Double = -1.0,
+    cloud: Int = -1,
+    windKmh: Double = 0.0,
+    chance: Int = -1
+): String {
+    val file = weatherLook(kind, isDay, precipMm, cloud, windKmh, chance).file
+    val updated = ICON_V0_FILES[file]
+    return if (updated != null) ICON_BASE_V0 + updated + ".svg" else ICON_BASE + file + ".svg"
 }
 
 @Composable
-fun WeatherIcon(kind: Kind, isDay: Boolean, size: Dp, tint: Color = Color.Unspecified) {
+fun WeatherIcon(
+    kind: Kind,
+    isDay: Boolean,
+    size: Dp,
+    tint: Color = Color.Unspecified,
+    precipMm: Double = -1.0,
+    cloud: Int = -1,
+    windKmh: Double = 0.0,
+    chance: Int = -1
+) {
     val density = LocalDensity.current
-    val url = iconUrl(kind, isDay)
+    val url = iconUrl(kind, isDay, precipMm, cloud, windKmh, chance)
     val painter by produceState<Painter?>(null, url) {
         value = withContext(Dispatchers.IO) {
             IconCache.bytes(url)?.let { data -> runCatching { loadSvgPainter(ByteArrayInputStream(data), density) }.getOrNull() }
@@ -447,7 +571,7 @@ fun WeatherIcon(kind: Kind, isDay: Boolean, size: Dp, tint: Color = Color.Unspec
     }
     val loaded = painter
     if (loaded != null) {
-        androidx.compose.foundation.Image(loaded, contentDescription = kind.label(isDay), modifier = Modifier.size(size))
+        androidx.compose.foundation.Image(loaded, contentDescription = t(weatherLook(kind, isDay, precipMm, cloud, windKmh, chance).title), modifier = Modifier.size(size))
     } else {
         val ink = if (tint == Color.Unspecified) MaterialTheme.colorScheme.onSurface else tint
         Canvas(Modifier.size(size)) { drawFallbackGlyph(kind, isDay, ink) }
@@ -471,17 +595,18 @@ private fun DrawScope.drawFallbackGlyph(kind: Kind, isDay: Boolean, ink: Color) 
                 drawLine(sun, Offset((12f + 7.5f * c) * u, (12f + 7.5f * s) * u), Offset((12f + 10f * c) * u, (12f + 10f * s) * u), 2f * u, StrokeCap.Round)
             }
         } else drawCircle(ink, 6f * u, Offset(12f * u, 12f * u))
-        Kind.FewClouds, Kind.MoreClouds -> { drawCircle(sun, 4f * u, Offset(16f * u, 8f * u)); cloud(0f) }
+        Kind.FewClouds, Kind.PartlyCloudy, Kind.MoreClouds -> { drawCircle(sun, 4f * u, Offset(16f * u, 8f * u)); cloud(0f) }
         Kind.Cloudy -> cloud(-1f)
+        Kind.Windy -> for (i in 0 until 3) drawLine(ink, Offset(4f * u, (8f + i * 4f) * u), Offset((20f - i * 3f) * u, (8f + i * 4f) * u), 2f * u, StrokeCap.Round)
         Kind.Fog -> for (i in 0 until 3) drawLine(ink, Offset(4f * u, (8f + i * 4f) * u), Offset(20f * u, (8f + i * 4f) * u), 2f * u, StrokeCap.Round)
-        Kind.Storm -> {
+        Kind.Storm, Kind.StrongStorms, Kind.ScatteredStorms, Kind.IsolatedStorms -> {
             cloud(-3f)
             val bolt = Path().apply { moveTo(13f * u, 14f * u); lineTo(9f * u, 20f * u); lineTo(12f * u, 20f * u); lineTo(10.5f * u, 24f * u); lineTo(16f * u, 17f * u); lineTo(13f * u, 17f * u); close() }
             drawPath(bolt, sun)
         }
         else -> {
             cloud(-3f)
-            val wet = if (kind.isSnow || kind == Kind.Hail || kind == Kind.Sleet) Color(0xFFBFD8F2) else Color(0xFF4F9BE0)
+            val wet = if (kind.isSnow || kind == Kind.Hail || kind == Kind.Sleet || kind == Kind.Icy || kind == Kind.RainSnow || kind == Kind.WintryMix) Color(0xFFBFD8F2) else Color(0xFF4F9BE0)
             for (i in 0 until 3) {
                 val x = (8f + i * 4f) * u
                 if (kind.isSnow) drawCircle(wet, 1.2f * u, Offset(x, 20f * u))
