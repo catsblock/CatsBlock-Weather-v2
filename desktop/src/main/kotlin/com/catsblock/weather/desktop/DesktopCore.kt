@@ -187,33 +187,68 @@ object SettingsStore {
 }
 
 enum class Kind(val key: String) {
-    Clear("Clear"), FewClouds("Mostly clear"), MoreClouds("Partly cloudy"), Cloudy("Cloudy"), Fog("Fog"),
-    Drizzle("Drizzle"), Rain("Rain"), Storm("Thunderstorm"), Sleet("Wintry mix"), Hail("Hail"),
-    Snow("Snow"), HeavySnow("Heavy snow"), Blizzard("Blizzard");
+    Clear("Clear"), FewClouds("Mostly clear"), PartlyCloudy("Partly cloudy"), MoreClouds("Mostly cloudy"),
+    Cloudy("Cloudy"), Fog("Fog"), Drizzle("Drizzle"), Rain("Rain"), Storm("Thunderstorm"),
+    Sleet("Wintry mix"), Hail("Hail"), Snow("Snow"), HeavySnow("Heavy snow"), Blizzard("Blizzard"),
+    Windy("Windy"), Icy("Icy"), Flurries("Flurries"), BlowingSnow("Blowing snow"), HeavyRain("Heavy rain"),
+    ScatteredShowers("Scattered showers"), ScatteredStorms("Scattered thunderstorms"),
+    IsolatedStorms("Isolated thunderstorms"), StrongStorms("Thunderstorm"),
+    ScatteredSnow("Scattered snow showers"), SnowShowers("Snow"), RainSnow("Rain and snow"), WintryMix("Wintry mix");
 
-    val isSnow: Boolean get() = this == Snow || this == HeavySnow || this == Blizzard
-    val isWet: Boolean get() = ordinal >= Drizzle.ordinal
+    val isSnow: Boolean
+        get() = when (this) {
+            Snow, HeavySnow, Blizzard, Flurries, BlowingSnow, ScatteredSnow, SnowShowers -> true
+            else -> false
+        }
+
+    val isWet: Boolean
+        get() = when (this) {
+            Clear, FewClouds, PartlyCloudy, MoreClouds, Cloudy, Fog, Windy -> false
+            else -> true
+        }
+
     fun label(isDay: Boolean): String = if (this == Clear && isDay) t("Sunny") else t(key)
 }
 
+private const val WINDY_KMH = 55.0
+
 fun kindOf(code: Int, windKmh: Double = 0.0): Kind {
     val snow = when (code) {
-        71, 73, 85 -> Kind.Snow
-        75, 86 -> Kind.HeavySnow
+        71 -> Kind.Flurries
+        73 -> Kind.Snow
+        85 -> Kind.ScatteredSnow
+        86 -> Kind.SnowShowers
+        75 -> Kind.HeavySnow
         77 -> Kind.Hail
         else -> null
     }
-    if (snow != null) return if (windKmh >= 45.0 && snow != Kind.Hail) Kind.Blizzard else snow
+    if (snow != null) {
+        return when {
+            snow == Kind.Hail -> snow
+            windKmh >= 45.0 && snow != Kind.ScatteredSnow -> Kind.Blizzard
+            windKmh >= 25.0 && snow == Kind.Flurries -> Kind.BlowingSnow
+            else -> snow
+        }
+    }
     return when (code) {
-        0 -> Kind.Clear
-        1 -> Kind.FewClouds
-        2 -> Kind.MoreClouds
-        3 -> Kind.Cloudy
+        in 0..3 -> if (windKmh >= WINDY_KMH) Kind.Windy else when (code) {
+            0 -> Kind.Clear
+            1 -> Kind.FewClouds
+            2 -> Kind.PartlyCloudy
+            else -> Kind.Cloudy
+        }
         45, 48 -> Kind.Fog
-        51, 53, 55, 61, 80 -> Kind.Drizzle
-        56, 57, 66, 67 -> Kind.Sleet
-        63, 65, 81, 82 -> Kind.Rain
-        in 95..99 -> Kind.Storm
+        51, 53, 55, 61 -> Kind.Drizzle
+        80 -> Kind.ScatteredShowers
+        56, 67 -> Kind.Icy
+        57 -> Kind.WintryMix
+        66 -> Kind.RainSnow
+        63, 81 -> Kind.Rain
+        65, 82 -> Kind.HeavyRain
+        95 -> Kind.IsolatedStorms
+        96 -> Kind.ScatteredStorms
+        99 -> Kind.StrongStorms
+        in 97..98 -> Kind.Storm
         else -> Kind.Cloudy
     }
 }
@@ -409,12 +444,15 @@ val FIXED_COLORS = listOf(
 
 fun weatherColor(kind: Kind, day: Boolean): Color = when (kind) {
     Kind.Clear, Kind.FewClouds -> if (day) Color(0xFFE0A100) else Color(0xFF26335F)
-    Kind.MoreClouds -> if (day) Color(0xFF5B8DB8) else Color(0xFF2F4058)
+    Kind.PartlyCloudy, Kind.MoreClouds -> if (day) Color(0xFF5B8DB8) else Color(0xFF2F4058)
     Kind.Cloudy -> Color(0xFF6B7683)
+    Kind.Windy -> Color(0xFF607D8B)
     Kind.Fog -> Color(0xFF8A9199)
     Kind.Drizzle -> Color(0xFF4F86A6)
-    Kind.Rain -> Color(0xFF2F6F9F)
-    Kind.Storm -> Color(0xFF4B3F72)
+    Kind.Rain, Kind.ScatteredShowers -> Color(0xFF2F6F9F)
+    Kind.HeavyRain -> Color(0xFF1F5A8A)
+    Kind.Storm, Kind.StrongStorms -> Color(0xFF4B3F72)
+    Kind.ScatteredStorms, Kind.IsolatedStorms -> Color(0xFF5A4B86)
     else -> Color(0xFF7F9BB3)
 }
 
