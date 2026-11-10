@@ -30,10 +30,8 @@ object WeatherDecisionEngine {
     private const val HIGH_UV = 8.0
     private const val SLEET_TEMP = 4.0
     private const val SNOW_TEMP = 0.5
-    private const val WET_CONSENSUS = 0.58
-    private const val DRY_CONSENSUS = 0.2
     private const val HISTORY_HOURS = 3L
-    private const val RADAR_FILTER_SCORE = 0.35
+    private const val PAST_RAIN_MM = 0.5
     private const val FORECAST_HOURS = 36L
     private const val RADAR_HORIZON_HOURS = 6L
     private const val RADAR_MIN_WINDOW = 15
@@ -45,8 +43,6 @@ object WeatherDecisionEngine {
     private const val WET_PROB_FLOOR = 75
     private const val DRY_PROB_CEILING = 49
     private const val MIN_WET_HOURS_FOR_DAY = 2
-
-    private class Signal(val weight: Double, val value: Double)
 
     fun apply(bundle: WeatherBundle, radar: RadarReading? = null, trusted: Boolean? = null): WeatherBundle {
         val current = bundle.current
@@ -86,7 +82,7 @@ object WeatherDecisionEngine {
                         cloud = hour.cloud
                     )
                     val view = radar?.let { radarView(it, bundle.current.now, hour.time) }
-                    align(hour, resolve(pseudo, hour, hour.cloud, bundle, view))
+                    align(hour, resolve(pseudo, hour, hour.cloud, bundle, view, true))
                 }
             }
         }
@@ -201,8 +197,8 @@ object WeatherDecisionEngine {
         if (base == Condition.Storm) return Condition.Storm
         if (base.isFixed) return base
         if (base == Condition.HeavySnow || base == Condition.Blizzard || base == Condition.Hail || base == Condition.Fog) return base
-        val score = bundle?.let { rainScore(current, hour, cloud, it, radar) }
         val nextRate = bundle?.let { nextHourRate(current, it) } ?: 0.0
+        val past = bundle?.let { pastRain(current, it) } ?: 0.0
         val radarRate = radar?.takeIf { it.wet }?.let { if (it.cityDbz >= 15.0) reflectivityToRate(it.cityDbz) else it.strength * 6.0 } ?: 0.0
         val radarClear = radar != null && !radar.wet && radar.track == null
         val intensity = max(rate, max(nextRate, radarRate))
@@ -210,79 +206,19 @@ object WeatherDecisionEngine {
             Condition.Snow -> if (current.temp >= SLEET_TEMP && rate > 0.0) Condition.Sleet else base
             Condition.Sleet -> base
             Condition.Drizzle, Condition.Rain -> {
-                val dryEvidence = (trusted != true && score != null && score < DRY_CONSENSUS && radar?.wet != true && rate <= 0.0) ||
-                    (radarClear && score != null && score < RADAR_FILTER_SCORE)
+                val noPrecipitation = rate < TRACE_RATE && nextRate < DRIZZLE_RATE
+                val dryEvidence = radar?.wet != true && noPrecipitation && (trusted != true || radarClear)
                 if (dryEvidence) dryKind(Condition.MoreClouds, 0.0, cloud, current) else wetKind(base, max(rate, intensity), current, radar)
             }
             else -> {
-                val consensus = radar?.wet == true || (trusted != false && score != null && score >= WET_CONSENSUS && hasHardEvidence(rate, nextRate, radar, bundle, current))
-                if (consensus) wetKind(Condition.Rain, intensity, current, radar) else dryKind(base, rate, cloud, current)
+                val wet = radar?.wet == true || (trusted != false && precipitationEvidence(rate, nextRate, past))
+                if (wet) wetKind(Condition.Rain, intensity, current, radar) else dryKind(base, rate, cloud, current)
             }
         }
     }
 
-    private fun hasHardEvidence(rate: Double, nextRate: Double, radar: RadarReading?, bundle: WeatherBundle?, current: Current): Boolean =
-        rate >= TRACE_RATE || nextRate >= DRIZZLE_RATE || radar?.wet == true || (bundle != null && pastRain(current, bundle) >= 0.5)
-
-    private fun rainScore(current: Current, hour: Hour?, cloud: Int, bundle: WeatherBundle, radar: RadarReading?): Double {
-        val signals = ArrayList<Signal>(10)
-        val rate = hour?.precip ?: 0.0
-        signals += Signal(3.0, rateLevel(rate))
-        signals += Signal(1.5, rateLevel(nextHourRate(current, bundle)))
-        val past = pastRain(current, bundle)
-        signals += Signal(1.0, if (past >= 1.0) 1.0 else if (past >= 0.2) 0.5 else 0.0)
-        if (radar != null) {
-            val level = if (radar.wet) (0.6 + radar.strength).coerceAtMost(1.0) else 0.0
-            signals += Signal(3.0, level)
-        }
-        if (cloud >= 0) {
-            signals += Signal(1.5, when {
-                cloud >= 85 -> 1.0
-                cloud >= 70 -> 0.6
-                cloud >= 50 -> 0.2
-                else -> 0.0
-            })
-        }
-        signals += Signal(1.0, when {
-            current.humidity >= 90 -> 1.0
-            current.humidity >= 80 -> 0.6
-            current.humidity >= 70 -> 0.2
-            else -> 0.0
-        })
-        signals += Signal(1.0, when {
-            current.pressure < LOW_PRESSURE -> 1.0
-            current.pressure < 1010.0 -> 0.5
-            else -> 0.0
-        })
-        pressureTrend(current, bundle)?.let { drop ->
-            signals += Signal(1.0, when {
-                drop <= -2.0 -> 1.0
-                drop <= -1.0 -> 0.5
-                else -> 0.0
-            })
-        }
-        if (current.isDay) {
-            signals += Signal(0.7, when {
-                current.uv <= 1.5 -> 1.0
-                current.uv <= 3.0 -> 0.4
-                else -> 0.0
-            })
-        }
-        signals += Signal(0.5, when {
-            current.windSpeed >= 25.0 -> 1.0
-            current.windSpeed >= 15.0 -> 0.5
-            else -> 0.0
-        })
-        val total = signals.sumOf { it.weight }
-        return signals.sumOf { it.weight * it.value } / total
-    }
-
-    private fun rateLevel(rate: Double): Double = when {
-        rate >= RAIN_RATE -> 1.0
-        rate >= DRIZZLE_RATE -> 0.8
-        rate >= TRACE_RATE -> 0.5
-        else -> 0.0
-    }
+    private fun precipitationEvidence(rate: Double, nextRate: Double, past: Double): Boolean =
+        rate >= DRIZZLE_RATE || (rate >= TRACE_RATE && (nextRate >= TRACE_RATE || past >= PAST_RAIN_MM))
 
     private fun nextHourRate(current: Current, bundle: WeatherBundle): Double {
         val next = current.now.truncatedTo(ChronoUnit.HOURS).plusHours(1)
@@ -293,12 +229,6 @@ object WeatherDecisionEngine {
         val nowHour = current.now.truncatedTo(ChronoUnit.HOURS)
         val from = nowHour.minusHours(HISTORY_HOURS)
         return bundle.hours.filter { !it.time.isBefore(from) && it.time.isBefore(nowHour) }.sumOf { it.precip }
-    }
-
-    private fun pressureTrend(current: Current, bundle: WeatherBundle): Double? {
-        val ago = current.now.truncatedTo(ChronoUnit.HOURS).minusHours(HISTORY_HOURS)
-        val past = bundle.hours.firstOrNull { it.time == ago } ?: return null
-        return current.pressure - past.pressure
     }
 
     private fun wetKind(base: Condition, rate: Double, current: Current, radar: RadarReading?): Condition {
