@@ -69,7 +69,7 @@ fun HeroCard(s: DesktopSettings, c: Conditions, modifier: Modifier = Modifier) {
                 color = ink.copy(alpha = 0.92f), style = MaterialTheme.typography.titleMedium.copy(shadow = shadow)
             )
         }
-        WeatherIcon(c.kind, c.isDay, if (compact) 96.dp else 148.dp, ink)
+        WeatherIcon(c.kind, c.isDay, if (compact) 96.dp else 148.dp, ink, windKmh = c.windKmh, cloud = c.cloud)
     }
 }
 
@@ -83,7 +83,7 @@ fun AlertCard(c: Conditions, onClick: (() -> Unit)? = null, modifier: Modifier =
             val hours = maxOf(0L, Duration.between(c.now, wet.time).toHours()).toInt().coerceAtLeast(1)
             val text = if (wet.kind.isSnow) t("Snow") + " · $hours h" else t("Rain expected within %d h").format(hours)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                WeatherIcon(wet.kind, wet.isDay, 40.dp)
+                WeatherIcon(wet.kind, wet.isDay, 40.dp, precipMm = wet.precip, cloud = wet.cloud, windKmh = wet.windKmh, chance = wet.prob)
                 Column {
                     Text(text, style = MaterialTheme.typography.titleMedium)
                     Text(wet.prob.toString() + "%", color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -99,7 +99,7 @@ fun HourRow(s: DesktopSettings, hours: List<Hour>) {
         hours.forEach { h ->
             Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(h.time.format(clock), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                WeatherIcon(h.kind, h.isDay, 36.dp)
+                WeatherIcon(h.kind, h.isDay, 36.dp, precipMm = h.precip, cloud = h.cloud, windKmh = h.windKmh, chance = h.prob)
                 Text(formatTemp(h.temp, s.fahrenheit), style = MaterialTheme.typography.titleMedium)
                 Text(if (h.prob >= 20) "${h.prob}%" else " ", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
             }
@@ -119,7 +119,7 @@ fun DailyCard(s: DesktopSettings, c: Conditions, onDay: (Day) -> Unit, modifier:
             if (i > 0) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             Row(Modifier.fillMaxWidth().clickable { onDay(d) }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(dayLabel(c, d), Modifier.width(72.dp), style = MaterialTheme.typography.bodyLarge)
-                WeatherIcon(d.kind, true, 32.dp)
+                WeatherIcon(d.kind, true, 32.dp, precipMm = d.precipSum, chance = d.prob)
                 Spacer(Modifier.width(16.dp))
                 Text(d.kind.label(true), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
                 Text(if (d.prob >= 20) "${d.prob}%" else "", Modifier.width(48.dp), color = MaterialTheme.colorScheme.secondary)
