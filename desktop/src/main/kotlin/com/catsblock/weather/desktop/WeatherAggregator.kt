@@ -305,9 +305,18 @@ private object Consensus {
     private const val WET_PROB_FLOOR = 75
     private const val DRY_PROB_CEILING = 49
 
+    private val trusted = setOf(Provider.WeatherApi, Provider.VisualCrossing)
+
     fun required(participants: Int): Int = when {
         participants <= 2 -> max(1, participants)
         else -> participants - 1
+    }
+
+    private fun trustedVerdict(votes: List<Pair<Provider, Boolean>>): Boolean? {
+        val picks = votes.filter { it.first in trusted }
+        if (picks.map { it.first }.toSet().size < trusted.size) return null
+        val first = picks.first().second
+        return if (picks.all { it.second == first }) first else null
     }
 
     private fun wetCode(code: Int): Boolean = code in 51..67 || code in 71..77 || code in 80..86 || code in 95..99
@@ -332,23 +341,30 @@ private object Consensus {
 
     fun merge(results: List<Contribution>): Conditions {
         val sorted = results.sortedBy { it.provider.ordinal }
-        val hours = LinkedHashMap<LocalDateTime, MutableList<Hour>>()
-        val days = LinkedHashMap<LocalDate, MutableList<Day>>()
+        val hours = LinkedHashMap<LocalDateTime, MutableList<Pair<Provider, Hour>>>()
+        val days = LinkedHashMap<LocalDate, MutableList<Pair<Provider, Day>>>()
         sorted.forEach { r ->
-            r.data.hours.forEach { hours.getOrPut(it.time) { ArrayList() } += it }
-            r.data.days.forEach { days.getOrPut(it.date) { ArrayList() } += it }
+            r.data.hours.forEach { hours.getOrPut(it.time) { ArrayList() } += r.provider to it }
+            r.data.days.forEach { days.getOrPut(it.date) { ArrayList() } += r.provider to it }
         }
         val mergedHours = hours.entries.sortedBy { it.key }.map { hour(it.value) }
         val mergedDays = days.entries.sortedBy { it.key }.map { day(it.value) }
-        return current(sorted.map { it.data }, mergedHours, mergedDays)
+        return current(sorted, mergedHours, mergedDays)
     }
 
-    private fun hour(list: List<Hour>): Hour {
+    private fun hour(entries: List<Pair<Provider, Hour>>): Hour {
+        val list = entries.map { it.second }
+        val verdict = trustedVerdict(entries.map { it.first to wetHour(it.second) })
+        val pair = entries.filter { it.first in trusted }.map { it.second }
         val wet = list.filter { wetHour(it) }
         val dry = list.filterNot { wetHour(it) }
-        val rainy = wet.size >= required(list.size)
-        val voters = if (rainy) wet else dry
-        val prob = mean(list.map { it.prob.toDouble() }).roundToInt()
+        val rainy = verdict ?: (wet.size >= required(list.size))
+        val voters = when {
+            verdict != null -> pair
+            rainy -> wet
+            else -> dry
+        }
+        val prob = mean((if (verdict != null) pair else list).map { it.prob.toDouble() }).roundToInt()
         val first = list.first()
         return Hour(
             time = first.time,
@@ -371,12 +387,19 @@ private object Consensus {
         )
     }
 
-    private fun day(list: List<Day>): Day {
+    private fun day(entries: List<Pair<Provider, Day>>): Day {
+        val list = entries.map { it.second }
+        val verdict = trustedVerdict(entries.map { it.first to wetDay(it.second) })
+        val pair = entries.filter { it.first in trusted }.map { it.second }
         val wet = list.filter { wetDay(it) }
         val dry = list.filterNot { wetDay(it) }
-        val rainy = wet.size >= required(list.size)
-        val voters = if (rainy) wet else dry
-        val chance = mean(list.map { it.prob.toDouble() }).roundToInt()
+        val rainy = verdict ?: (wet.size >= required(list.size))
+        val voters = when {
+            verdict != null -> pair
+            rainy -> wet
+            else -> dry
+        }
+        val chance = mean((if (verdict != null) pair else list).map { it.prob.toDouble() }).roundToInt()
         val first = list.first()
         return Day(
             date = first.date,
@@ -391,10 +414,14 @@ private object Consensus {
         )
     }
 
-    private fun current(picks: List<Conditions>, hours: List<Hour>, days: List<Day>): Conditions {
+    private fun current(sorted: List<Contribution>, hours: List<Hour>, days: List<Day>): Conditions {
+        val picks = sorted.map { it.data }
+        val verdict = trustedVerdict(sorted.map { it.provider to it.data.kind.isWet })
         val wet = picks.filter { it.kind.isWet }
-        val rainy = wet.size >= required(picks.size)
-        val chosen = (if (rainy) wet else picks.filterNot { it.kind.isWet }).firstOrNull() ?: picks.first()
+        val rainy = verdict ?: (wet.size >= required(picks.size))
+        val agreeing = sorted.filter { it.data.kind.isWet == rainy }
+        val chosen = (if (verdict != null) agreeing.firstOrNull { it.provider in trusted } else agreeing.firstOrNull())?.data
+            ?: picks.first()
         val key = chosen.now.withMinute(0).withSecond(0).withNano(0)
         val hourAqi = hours.firstOrNull { it.time == key }?.aqi
         return Conditions(
