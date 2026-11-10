@@ -47,7 +47,6 @@ internal object WeatherAggregator {
     private const val WET_DAY_MM = 1.0
     private const val WET_PROB_FLOOR = 75
     private const val DRY_PROB_CEILING = 49
-    private const val CURRENT_SOURCES = 2
 
     private val order = listOf(
         WeatherSource.OpenMeteo,
@@ -170,7 +169,7 @@ internal object WeatherAggregator {
     }
 
     private fun mergeCurrent(sorted: List<ProviderResult>, hours: List<Hour>): Current {
-        val picks = sorted.take(CURRENT_SOURCES).map { it.bundle.current }
+        val picks = sorted.map { it.bundle.current }
         val wet = picks.filter { it.kind.isWet }
         val rainy = wet.size >= required(picks.size)
         val chosen = (if (rainy) wet else picks.filterNot { it.kind.isWet }).firstOrNull() ?: picks.first()
