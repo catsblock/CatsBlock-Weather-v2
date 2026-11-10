@@ -417,6 +417,7 @@ object IconCache {
 }
 
 private const val ICON_SET_5 = "https://raw.githubusercontent.com/mrdarrengriffin/google-weather-icons/refs/heads/main/sets/set-5/light/"
+private const val ICON_V0 = "https://raw.githubusercontent.com/bignutty/google-weather-icons/refs/heads/main/icons/weather/v0/dark/"
 private const val ICON_SET_6 = "https://raw.githubusercontent.com/mrdarrengriffin/google-weather-icons/refs/heads/main/sets/set-6/light/"
 
 fun iconUrl(kind: Kind, isDay: Boolean): String = when (kind) {
@@ -425,13 +426,13 @@ fun iconUrl(kind: Kind, isDay: Boolean): String = when (kind) {
     Kind.MoreClouds -> if (isDay) ICON_SET_5 + "partly_cloudy.svg" else ICON_SET_6 + "partly_cloudy_night.svg"
     Kind.Cloudy -> ICON_SET_5 + "cloudy.svg"
     Kind.Fog -> ICON_SET_6 + "windy.svg"
-    Kind.Drizzle -> ICON_SET_6 + "drizzle.svg"
-    Kind.Rain -> ICON_SET_6 + "heavy_rain.svg"
-    Kind.Storm -> ICON_SET_6 + "strong_thunderstorms.svg"
-    Kind.Sleet -> ICON_SET_6 + "wintry_mix.svg"
-    Kind.Hail -> ICON_SET_6 + "sleet_hail.svg"
-    Kind.Snow -> ICON_SET_6 + "flurries.svg"
-    Kind.HeavySnow -> ICON_SET_6 + "heavy_snow.svg"
+    Kind.Drizzle -> ICON_V0 + "drizzle.svg"
+    Kind.Rain -> ICON_V0 + "heavy_rain.svg"
+    Kind.Storm -> ICON_V0 + "strong_tstorms.svg"
+    Kind.Sleet -> ICON_V0 + "wintry_mix_rain_snow.svg"
+    Kind.Hail -> ICON_V0 + "sleet_hail.svg"
+    Kind.Snow -> ICON_V0 + "flurries.svg"
+    Kind.HeavySnow -> ICON_V0 + "heavy_snow.svg"
     Kind.Blizzard -> ICON_SET_6 + "blowing_snow.svg"
 }
 
