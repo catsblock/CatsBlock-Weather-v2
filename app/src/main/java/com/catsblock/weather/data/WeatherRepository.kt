@@ -176,8 +176,8 @@ class WeatherRepository {
         }
         val results = jobs.awaitAll().filterNotNull()
         if (results.isEmpty()) throw IOException("No weather provider responded")
-        val merged = WeatherAggregator.merge(results)
         val reading = radar?.await()
+        val merged = WeatherAggregator.merge(results, reading)
         AppLog.info("Weather", "Aggregated ${results.size}/${jobs.size} providers: ${merged.hours.size} hours, ${merged.days.size} days, radar=${reading != null}")
         WeatherDecisionEngine.apply(merged, reading, WeatherAggregator.trustedCurrent(results))
     }
