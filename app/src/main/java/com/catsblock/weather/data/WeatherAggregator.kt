@@ -7,7 +7,6 @@ import java.time.temporal.ChronoUnit
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.atan2
 import kotlin.math.cos
-import kotlin.math.ln
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -51,11 +50,7 @@ internal object WeatherAggregator {
     private const val DRY_PROB_CEILING = 49
     private const val RADAR_PROB = 92
     private const val RADAR_HORIZON_MINUTES = 360L
-    private const val ARBITRATE_WET = 60
-    private const val ARBITRATE_DRY = 35
-    private const val ARBITRATE_WET_DAY = 50
-    private const val ARBITRATE_DRY_DAY = 30
-    private const val FILTER_BELOW = 45
+    private const val RADAR_CLEAR_MAX_MM = 0.3
 
     private val order = listOf(
         WeatherSource.OpenMeteo,
@@ -75,96 +70,12 @@ internal object WeatherAggregator {
     private class Frame(
         val now: LocalDateTime,
         val radar: RadarReading?,
-        val pressures: Map<LocalDateTime, Double>,
         val forced: MutableSet<LocalDate>
     )
 
     fun required(participants: Int): Int = when {
         participants <= 2 -> max(1, participants)
         else -> participants - 1
-    }
-
-    fun physicalLikelihood(
-        humidity: Int,
-        pressure: Double,
-        uv: Double,
-        isDay: Boolean,
-        cloud: Int,
-        visibility: Double,
-        temp: Double,
-        drop: Double?
-    ): Int {
-        var total = 0.0
-        var weight = 0.0
-        fun add(w: Double, score: Double) {
-            total += w * score
-            weight += w
-        }
-        add(0.22, when {
-            humidity >= 90 -> 1.0
-            humidity >= 80 -> 0.7
-            humidity >= 70 -> 0.4
-            humidity >= 60 -> 0.15
-            else -> 0.0
-        })
-        if (cloud >= 0) {
-            add(0.22, when {
-                cloud >= 95 -> 1.0
-                cloud >= 85 -> 0.8
-                cloud >= 70 -> 0.5
-                cloud >= 50 -> 0.2
-                else -> 0.0
-            })
-        }
-        add(0.14, when {
-            pressure < 1000.0 -> 1.0
-            pressure < 1005.0 -> 0.8
-            pressure < 1010.0 -> 0.55
-            pressure < 1015.0 -> 0.3
-            pressure < 1020.0 -> 0.1
-            else -> 0.0
-        })
-        if (drop != null) {
-            add(0.12, when {
-                drop <= -3.0 -> 1.0
-                drop <= -2.0 -> 0.75
-                drop <= -1.0 -> 0.4
-                drop < 0.0 -> 0.1
-                else -> 0.0
-            })
-        }
-        val gamma = ln(humidity.coerceIn(1, 100) / 100.0) + 17.62 * temp / (243.12 + temp)
-        val spread = temp - 243.12 * gamma / (17.62 - gamma)
-        add(0.12, when {
-            spread <= 1.0 -> 1.0
-            spread <= 2.0 -> 0.75
-            spread <= 3.5 -> 0.45
-            spread <= 5.0 -> 0.2
-            spread <= 7.0 -> 0.05
-            else -> 0.0
-        })
-        add(0.06, when {
-            visibility <= 2000.0 -> 1.0
-            visibility <= 5000.0 -> 0.6
-            visibility <= 8000.0 -> 0.25
-            else -> 0.0
-        })
-        if (isDay) {
-            add(0.12, when {
-                uv <= 1.0 -> 1.0
-                uv <= 2.0 -> 0.7
-                uv <= 4.0 -> 0.35
-                uv <= 6.0 -> 0.1
-                else -> 0.0
-            })
-        }
-        return (100.0 * total / weight).roundToInt().coerceIn(0, 100)
-    }
-
-    private fun blend(api: Int, estimate: Int, agreed: Boolean): Int {
-        if (api < 0) return estimate
-        val weight = if (agreed) 0.8 else 0.65
-        return (api * weight + estimate * (1.0 - weight)).roundToInt()
     }
 
     private fun trustedGroup(votes: List<Pair<WeatherSource, Boolean>>): Group? {
@@ -230,18 +141,6 @@ internal object WeatherAggregator {
         return (degrees + 360.0) % 360.0
     }
 
-    private fun estimateOf(hour: Hour, pressures: Map<LocalDateTime, Double>): Int =
-        physicalLikelihood(
-            hour.humidity,
-            hour.pressure,
-            hour.uv,
-            hour.isDay,
-            hour.cloud,
-            hour.visibility,
-            hour.temp,
-            pressures[hour.time.minusHours(3)]?.let { hour.pressure - it }
-        )
-
     private fun radarOverlap(radar: RadarReading, now: LocalDateTime, hourStart: LocalDateTime): Int {
         val start = ChronoUnit.MINUTES.between(now, hourStart).toDouble()
         val end = start + 60.0
@@ -292,8 +191,7 @@ internal object WeatherAggregator {
     ): List<Hour> {
         val grouped = LinkedHashMap<LocalDateTime, MutableList<Pair<WeatherSource, Hour>>>()
         sorted.forEach { result -> result.bundle.hours.forEach { grouped.getOrPut(it.time) { ArrayList() } += result.source to it } }
-        val pressures = grouped.mapValues { entry -> mean(entry.value.map { it.second.pressure }, 1013.0) }
-        val frame = Frame(now, radar, pressures, forced)
+        val frame = Frame(now, radar, forced)
         return grouped.entries.sortedBy { it.key }.map { combineHours(it.value, frame) }
     }
 
@@ -310,17 +208,9 @@ internal object WeatherAggregator {
         val cloud = meanPercent(list.map { it.cloud })
         val visibility = mean(list.map { it.visibility }, 10000.0)
         val temp = mean(list.map { it.temp })
-        val drop = frame.pressures[first.time.minusHours(3)]?.let { pressure - it }
-        val estimate = physicalLikelihood(humidity, pressure, uv, isDay, cloud, visibility, temp, drop)
 
-        val trustedCount = entries.count { it.first in trusted }
         val voted = wet.size >= required(list.size)
-        var rainy = when {
-            group != null -> group.rainy
-            trustedCount >= 2 && estimate >= ARBITRATE_WET -> true
-            trustedCount >= 2 && estimate <= ARBITRATE_DRY -> false
-            else -> voted
-        }
+        var rainy = group?.rainy ?: voted
 
         val radar = frame.radar
         val minutesAhead = ChronoUnit.MINUTES.between(frame.now, first.time)
@@ -335,7 +225,7 @@ internal object WeatherAggregator {
                 radarRate = if (nowWet) reflectivityToRate(radar.cityDbz) else radar.track?.rateMmh ?: reflectivityToRate(radar.cityDbz)
                 radarIntensity = stormIntensityOf(radarRate)
                 frame.forced.add(first.time.toLocalDate())
-            } else if (rainy && !radar.wet && radar.track == null && estimate < FILTER_BELOW) {
+            } else if (rainy && !radar.wet && radar.track == null && list.maxOf { it.precip } < RADAR_CLEAR_MAX_MM) {
                 rainy = false
             }
         }
@@ -368,11 +258,11 @@ internal object WeatherAggregator {
         }
 
         val sourceHours = members?.let { m -> entries.filter { it.first in m }.map { it.second } } ?: list
-        val blended = blend(meanPercent(sourceHours.map { it.precipProb }), estimate, group != null)
+        val apiProb = meanPercent(sourceHours.map { it.precipProb })
         val prob = when {
-            radarMinutes > 0 -> max(blended, RADAR_PROB)
-            rainy -> max(blended, WET_PROB_FLOOR)
-            else -> min(blended, DRY_PROB_CEILING)
+            radarMinutes > 0 -> max(apiProb, RADAR_PROB)
+            rainy -> max(apiProb, WET_PROB_FLOOR)
+            else -> min(apiProb.coerceAtLeast(0), DRY_PROB_CEILING)
         }
 
         return Hour(
@@ -397,12 +287,10 @@ internal object WeatherAggregator {
     private fun mergeDays(sorted: List<ProviderResult>, hours: List<Hour>, forced: Set<LocalDate>): List<Day> {
         val grouped = LinkedHashMap<LocalDate, MutableList<Pair<WeatherSource, Day>>>()
         sorted.forEach { result -> result.bundle.days.forEach { grouped.getOrPut(it.date) { ArrayList() } += result.source to it } }
-        val pressures = hours.associate { it.time to it.pressure }
         return grouped.entries.sortedBy { it.key }.map { entry ->
             combineDays(
                 entry.value,
                 hours.filter { it.time.toLocalDate() == entry.key },
-                pressures,
                 entry.key in forced
             )
         }
@@ -411,7 +299,6 @@ internal object WeatherAggregator {
     private fun combineDays(
         entries: List<Pair<WeatherSource, Day>>,
         dayHours: List<Hour>,
-        pressures: Map<LocalDateTime, Double>,
         radarForced: Boolean
     ): Day {
         val list = entries.map { it.second }
@@ -419,15 +306,8 @@ internal object WeatherAggregator {
         val group = trustedGroup(entries.map { it.first to wetDay(it.second) })
         val wet = list.filter { wetDay(it) }
         val dry = list.filterNot { wetDay(it) }
-        val estimate = if (dayHours.isEmpty()) -1 else dayHours.map { estimateOf(it, pressures) }.average().roundToInt()
-        val trustedCount = entries.count { it.first in trusted }
         val voted = wet.size >= required(list.size)
-        var rainy = when {
-            group != null -> group.rainy
-            trustedCount >= 2 && estimate >= ARBITRATE_WET_DAY -> true
-            trustedCount >= 2 && estimate in 0..ARBITRATE_DRY_DAY -> false
-            else -> voted
-        }
+        var rainy = group?.rainy ?: voted
         if (radarForced) rainy = true
 
         val members = group?.takeIf { it.rainy == rainy }?.members
@@ -459,7 +339,7 @@ internal object WeatherAggregator {
 
         val sourceDays = members?.let { m -> entries.filter { it.first in m }.map { it.second } } ?: list
         val apiChance = meanPercent(sourceDays.map { it.rainChance })
-        val chance = if (estimate < 0) apiChance.coerceAtLeast(0) else blend(apiChance, estimate, group != null)
+        val chance = apiChance.coerceAtLeast(0)
 
         return Day(
             date = first.date,
