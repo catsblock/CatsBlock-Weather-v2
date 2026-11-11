@@ -47,7 +47,7 @@ The APK will be generated in:
 
 ## Weather Providers
 
-Open-Meteo is the default weather provider. Other supported providers include WeatherAPI, Visual Crossing, and OpenWeather. Some providers require API keys.
+Open-Meteo is the default weather provider. Other supported providers include WeatherAPI, Visual Crossing, and OpenWeather. Some providers require API keys. (That's not how it works anymore, I'm too lazy to update)
 
 ## License
 
