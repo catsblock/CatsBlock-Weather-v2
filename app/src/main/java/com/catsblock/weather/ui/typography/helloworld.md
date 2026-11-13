@@ -1,0 +1,1 @@
+Why check this? This is only to maintain the streak, that's all. Don't come here to check. Are you still reading this? You wanted to know why the app is harmful, and the answer is simple: I don't know.
