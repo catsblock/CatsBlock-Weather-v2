@@ -39,4 +39,3 @@ object GoogleSansFlex {
         return FontWeight(snapped)
     }
 }
-// Just to keep up the Github streak, don't even try to read this.
