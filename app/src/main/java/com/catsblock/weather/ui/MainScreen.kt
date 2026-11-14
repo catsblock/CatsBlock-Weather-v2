@@ -332,7 +332,13 @@ fun MainScreen(vm: WeatherViewModel) {
                     bundle?.current?.now?.dayOfYear ?: 0,
                     bundle?.current?.windDir ?: 0.0,
                     bundle?.current?.pressure ?: Double.NaN,
-                    bundle?.let { b -> b.hours.firstOrNull { it.time == b.current.now.truncatedTo(ChronoUnit.HOURS) }?.precip } ?: -1.0
+                    bundle?.let { b -> b.hours.firstOrNull { it.time == b.current.now.truncatedTo(ChronoUnit.HOURS) }?.precip } ?: -1.0,
+                    city?.lat ?: Double.NaN,
+                    city?.lon ?: Double.NaN,
+                    bundle?.let { b ->
+                        b.current.now.toEpochSecond(java.time.ZoneOffset.ofTotalSeconds(b.utcOffsetSeconds)) * 1000L
+                    } ?: Long.MIN_VALUE,
+                    bundle?.current?.visibility ?: 10000.0
                 )
             }
             Box(Modifier.fillMaxSize().background(sky.base.copy(alpha = progress)))
@@ -350,7 +356,10 @@ fun MainScreen(vm: WeatherViewModel) {
                 },
                 windSpeedKmh = bundle?.current?.windSpeed ?: 0.0,
                 windDirDeg = bundle?.current?.windDir ?: 0.0,
-                alpha = 1f - progress
+                alpha = 1f - progress,
+                screenFlash = !skyHandlesLightning(
+                    androidx.compose.ui.platform.LocalContext.current, kind, isDay, city != null && bundle != null
+                )
             )
 
 
