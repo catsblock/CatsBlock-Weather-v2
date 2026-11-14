@@ -1,13 +1,24 @@
 package com.catsblock.weather.ui
 
+import android.os.Build
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.compositionLocalOf
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
@@ -16,8 +27,28 @@ import androidx.compose.ui.platform.LocalContext
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.catsblock.weather.data.Condition
+import com.catsblock.weather.ui.sky.SkyLightning
+import com.catsblock.weather.ui.sky.LightningState
+import com.catsblock.weather.ui.sky.SkyShaderLayer
+import com.catsblock.weather.ui.sky.SkyWeather
+import com.catsblock.weather.ui.sky.skyDarkness
+import com.catsblock.weather.ui.sky.skyFog
+import com.catsblock.weather.ui.sky.skyStorm
+import com.catsblock.weather.ui.sky.skyWeather
+import com.catsblock.weather.ui.sky.buildSkyScene
+import com.catsblock.weather.ui.sky.detectSkyTier
+import com.catsblock.weather.ui.sky.skyCover
+import com.catsblock.weather.ui.sky.skyThickness
+import com.catsblock.weather.ui.sky.usesAtmosphere
 import com.catsblock.weather.kit.BackgroundKit
 import java.time.LocalTime
+import kotlinx.coroutines.delay
+import kotlin.math.abs
+
+private const val LIVE_WINDOW_MS = 30 * 60_000L
+private const val CLOCK_TICK_MS = 5_000L
+private const val SNAP_MS = 120_000L
+private const val CAMERA_LAG_MS = 45 * 60_000L
 
 private const val ASSET_BASE = "file:///android_asset/backgrounds/"
 
@@ -114,12 +145,64 @@ fun WeatherBackground(
     dayOfYear: Int = 0,
     windDirDeg: Double = 0.0,
     pressureHpa: Double = Double.NaN,
-    precipMm: Double = -1.0
+    precipMm: Double = -1.0,
+    latitude: Double = Double.NaN,
+    longitude: Double = Double.NaN,
+    epochMs: Long = Long.MIN_VALUE,
+    visibilityM: Double = 10000.0
 ) {
     val context = LocalContext.current
     val version by BackgroundKit.version.collectAsState()
     val custom = remember(kind, isDay, version) { BackgroundKit.visual(context, kind, isDay) }
     val phase = skyPhase(time, isDay)
+    val powerSave = rememberPowerSaveMode()
+    var tier by remember(powerSave) { mutableStateOf(detectSkyTier(context, powerSave)) }
+    val atmospheric = custom == null && tier.usesShader && usesAtmosphere(kind) &&
+        !latitude.isNaN() && !longitude.isNaN() && epochMs != Long.MIN_VALUE &&
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+
+    val cover by animateFloatAsState(skyCover(kind, cloud), tween(900), label = "skyCover")
+    val thickness by animateFloatAsState(skyThickness(kind, skyCover(kind, cloud)), tween(900), label = "skyThickness")
+    val dark by animateFloatAsState(skyDarkness(kind), tween(900), label = "skyDark")
+    val fog by animateFloatAsState(skyFog(kind, visibilityM), tween(900), label = "skyFog")
+    val storm by animateFloatAsState(skyStorm(kind), tween(900), label = "skyStorm")
+    val lightning = remember { LightningState() }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var clock by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    val live = atmospheric && abs(epochMs - clock) <= LIVE_WINDOW_MS
+    LaunchedEffect(live, lifecycleOwner) {
+        if (!live) return@LaunchedEffect
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            while (true) {
+                clock = System.currentTimeMillis()
+                delay(CLOCK_TICK_MS)
+            }
+        }
+    }
+    val targetEpoch = if (live) clock else epochMs
+    var shown by remember { mutableLongStateOf(targetEpoch) }
+    LaunchedEffect(targetEpoch, atmospheric) {
+        val start = shown
+        val delta = targetEpoch - start
+        if (!atmospheric || start == Long.MIN_VALUE || targetEpoch == Long.MIN_VALUE || abs(delta) < SNAP_MS) {
+            shown = targetEpoch
+            return@LaunchedEffect
+        }
+        Animatable(0f).animateTo(1f, tween(700)) {
+            shown = start + (delta * value.toDouble()).toLong()
+        }
+        shown = targetEpoch
+    }
+    val anchor = remember { longArrayOf(shown) }
+    val cameraEpoch = remember(shown) {
+        val next = if (shown == Long.MIN_VALUE) shown else anchor[0].coerceIn(shown - CAMERA_LAG_MS, shown + CAMERA_LAG_MS)
+        anchor[0] = next
+        next
+    }
+    val scene = remember(atmospheric, shown, cameraEpoch, latitude, longitude, cover, thickness, dark, fog, storm, tier) {
+        if (atmospheric) buildSkyScene(shown, cameraEpoch, latitude, longitude, cover, thickness, dark, fog, storm, tier) else null
+    }
+
     val model = remember(custom, kind, phase) {
         ImageRequest.Builder(context)
             .data(custom ?: backgroundAsset(kind, phase))
@@ -128,14 +211,35 @@ fun WeatherBackground(
     }
     Box(modifier) {
         Box(Modifier.fillMaxSize().background(Color(0xFF0B1220)))
-        AsyncImage(
-            model = model,
-            contentDescription = null,
-            modifier = Modifier.fillMaxSize(),
-            contentScale = ContentScale.Crop
-        )
-        if (!isDay && custom == null && !(hasPhaseImage(kind) && phase != SkyPhase.Day)) {
-            Box(Modifier.fillMaxSize().background(Color(0xFF050B1F).copy(alpha = 0.55f)))
+        if (!atmospheric) {
+            AsyncImage(
+                model = model,
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop
+            )
+            if (!isDay && custom == null && !(hasPhaseImage(kind) && phase != SkyPhase.Day)) {
+                Box(Modifier.fillMaxSize().background(Color(0xFF050B1F).copy(alpha = 0.55f)))
+            }
+        }
+        if (scene != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            SkyShaderLayer(
+                scene = scene,
+                tier = tier,
+                fade = 1f,
+                windKmh = windKmh,
+                windFromDeg = windDirDeg,
+                lightning = lightning,
+                onJank = { tier = tier.lowered() },
+                modifier = Modifier.fillMaxSize()
+            )
+            if (skyWeather(kind) == SkyWeather.Storm) {
+                SkyLightning(lightning, scene, kind, Modifier.fillMaxSize())
+            }
         }
     }
 }
+
+fun skyHandlesLightning(context: android.content.Context, kind: Condition, isDay: Boolean, hasLocation: Boolean): Boolean =
+    hasLocation && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+        skyWeather(kind) == SkyWeather.Storm && BackgroundKit.visual(context, kind, isDay) == null
