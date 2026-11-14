@@ -2,28 +2,27 @@ package com.catsblock.weather.ui.particles
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.ClipOp
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
@@ -41,8 +40,7 @@ internal const val KIND_BEAD = 0
 internal const val KIND_SLIDER = 1
 internal const val KIND_SNOW = 2
 internal const val KIND_CHIP = 3
-internal const val KIND_SHARD = 4
-internal const val KIND_FROZEN = 5
+internal const val KIND_FROZEN = 4
 
 private const val CAP = 112
 private const val TWO_PI = 6.2831855f
@@ -53,7 +51,6 @@ private val IceBody = Color(0xFFEAF4FA)
 private val IceEdge = Color(0xFFA9BCCB)
 private val SnowBody = Color(0xFFF6F9FF)
 private val GlazeColor = Color(0xFFD9EEFF)
-private val RimColor = Color(0xFFCFE0FF)
 private val DarkRefraction = Color(0xFF07131F)
 
 private val strokes = Array(12) { Stroke(0.5f * (it + 1)) }
@@ -81,10 +78,6 @@ internal fun polyPath(path: Path, cx: Float, cy: Float, r: Float, rot: Float, se
     path.close()
 }
 
-internal interface DripSink {
-    fun drip(rootX: Float, rootY: Float, r: Float, vy: Float)
-}
-
 internal class CardSurface {
     var coords: LayoutCoordinates? = null
     var left = 0f
@@ -92,7 +85,6 @@ internal class CardSurface {
     var width = 0f
     var height = 0f
     var radius = 0f
-    var color = 0
     var active = false
     var glaze = 0f
     var count = 0
@@ -105,16 +97,6 @@ internal class CardSurface {
     val iv = FloatArray(CAP)
     val iu = FloatArray(CAP)
     val iseed = IntArray(CAP)
-    val ipoly = FloatArray(CAP * 8)
-    var holeVersion by mutableIntStateOf(0)
-    var holeTick by mutableIntStateOf(0)
-    var holeActive = false
-    var holeAge = 0f
-    var holeCount = 0
-    val holePath = Path()
-    private var holeX = 0f
-    private var holeY = 0f
-    private val holeV = FloatArray(32)
 
     fun refresh() {
         val c = coords
@@ -143,18 +125,9 @@ internal class CardSurface {
 
     fun containsRoot(px: Float, py: Float, margin: Float): Boolean = insideLocal(px - left, py - top, margin)
 
-    fun holeVx(k: Int): Float = holeV[2 * k]
-
-    fun holeVy(k: Int): Float = holeV[2 * k + 1]
-
     fun clear() {
         count = 0
         glaze = 0f
-        if (holeActive) {
-            holeActive = false
-            holePath.reset()
-            holeVersion++
-        }
     }
 
     fun add(kind: Int, x: Float, y: Float, r: Float, life: Float, seed: Int, aux: Float): Int {
@@ -201,7 +174,6 @@ internal class CardSurface {
             iv[i] = iv[last]
             iu[i] = iu[last]
             iseed[i] = iseed[last]
-            System.arraycopy(ipoly, last * 8, ipoly, i * 8, 8)
         }
         count = last
     }
@@ -270,38 +242,7 @@ internal class CardSurface {
         add(KIND_CHIP, lx, ly, r, life, seed, 0f)
     }
 
-    fun shardLand(lx: Float, ly: Float, life: Float, rot: Float, poly: FloatArray, off: Int, seed: Int) {
-        val i = add(KIND_SHARD, lx, ly, 0f, life, seed, rot)
-        if (i >= 0) System.arraycopy(poly, off, ipoly, i * 8, 8)
-    }
-
-    fun beginHole(lx: Float, ly: Float, rr: Float, seed: Int) {
-        holeX = lx
-        holeY = ly
-        holeCount = 14
-        for (k in 0 until holeCount) {
-            val a = (k + (hash01(seed, k) - 0.5f) * 0.7f) * (TWO_PI / holeCount)
-            val rad = rr * (if (k % 2 == 0) 0.78f + 0.42f * hash01(seed, k + 31) else 0.5f + 0.35f * hash01(seed, k + 31))
-            holeV[2 * k] = cos(a) * rad
-            holeV[2 * k + 1] = sin(a) * rad
-        }
-        holeAge = 0f
-        holeActive = true
-        rebuildHole(1f)
-        holeVersion++
-    }
-
-    private fun rebuildHole(scale: Float) {
-        holePath.reset()
-        for (k in 0 until holeCount) {
-            val px = holeX + holeV[2 * k] * scale
-            val py = holeY + holeV[2 * k + 1] * scale
-            if (k == 0) holePath.moveTo(px, py) else holePath.lineTo(px, py)
-        }
-        holePath.close()
-    }
-
-    fun step(dt: Float, d: Float, freezeActive: Boolean, warm: Boolean, windX: Float, random: Random, sink: DripSink) {
+    fun step(dt: Float, d: Float, freezeActive: Boolean, warm: Boolean, windX: Float, random: Random) {
         var i = 0
         while (i < count) {
             val k = ik[i]
@@ -312,7 +253,7 @@ internal class CardSurface {
             ia[i] += dt
             var gone = false
             when (k) {
-                KIND_SLIDER -> gone = stepSlider(i, dt, d, windX, random, sink)
+                KIND_SLIDER -> gone = stepSlider(i, dt, d, windX, random)
                 KIND_BEAD -> if (ia[i] > il[i]) {
                     ir[i] -= ir[i] * dt * 0.7f
                     if (ir[i] < 0.28f * d) gone = true
@@ -326,26 +267,14 @@ internal class CardSurface {
                         if (ir[i] < 0.3f * d) gone = true
                     }
                 }
-                KIND_SNOW, KIND_CHIP, KIND_SHARD -> if (ia[i] >= il[i]) gone = true
+                KIND_SNOW, KIND_CHIP -> if (ia[i] >= il[i]) gone = true
             }
             if (gone) remove(i) else i++
         }
         if (!freezeActive && glaze > 0f) glaze = max(0f, glaze - dt * (if (warm) 0.02f else 0.004f))
-        if (holeActive) {
-            holeAge += dt
-            val t = ((holeAge - 0.7f) / 1.9f).coerceIn(0f, 1f)
-            if (t >= 1f) {
-                holeActive = false
-                holePath.reset()
-                holeVersion++
-            } else {
-                rebuildHole(1f - t * t * (3f - 2f * t))
-                holeTick++
-            }
-        }
     }
 
-    private fun stepSlider(i: Int, dt: Float, d: Float, windX: Float, random: Random, sink: DripSink): Boolean {
+    private fun stepSlider(i: Int, dt: Float, d: Float, windX: Float, random: Random): Boolean {
         val seed = iseed[i]
         val phase = ia[i]
         val critical = iu[i]
@@ -401,10 +330,7 @@ internal class CardSurface {
             il[i] = ia[i] + 6f + random.nextFloat() * 12f
             return false
         }
-        if (!insideLocal(ix[i], iy[i], ir[i] * 0.5f)) {
-            if (iy[i] > height * 0.5f) sink.drip(left + ix[i], top + iy[i], ir[i], iv[i] + 40f * d)
-            return true
-        }
+        if (!insideLocal(ix[i], iy[i], ir[i] * 0.5f)) return true
         return false
     }
 }
@@ -412,39 +338,35 @@ internal class CardSurface {
 internal object WeatherSurfaces {
     val surfaces = ArrayList<CardSurface>(32)
     val frame = mutableLongStateOf(0L)
+    val effectAlpha = mutableFloatStateOf(1f)
+    var renderer by mutableStateOf<WeatherSim?>(null)
+    var mix by mutableStateOf(PrecipMix.None)
 
     fun obtain(): CardSurface {
-        val s = CardSurface()
-        surfaces.add(s)
-        return s
+        val surface = CardSurface()
+        surfaces.add(surface)
+        return surface
     }
 
-    fun release(s: CardSurface) {
-        surfaces.remove(s)
-        s.coords = null
+    fun release(surface: CardSurface) {
+        surfaces.remove(surface)
+        surface.clear()
+        surface.coords = null
+        surface.active = false
     }
 
     fun clearItems() {
-        for (k in surfaces.indices) surfaces[k].clear()
+        for (surface in surfaces) surface.clear()
     }
 
     fun hit(x: Float, y: Float, margin: Float): CardSurface? {
-        var i = surfaces.size - 1
-        while (i >= 0) {
-            val s = surfaces[i]
-            if (s.active && s.containsRoot(x, y, margin)) return s
-            i--
+        var index = surfaces.lastIndex
+        while (index >= 0) {
+            val surface = surfaces[index]
+            if (surface.active && surface.containsRoot(x, y, margin)) return surface
+            index--
         }
         return null
-    }
-}
-
-internal fun Modifier.cardHoleCut(s: CardSurface): Modifier = drawWithContent {
-    val version = s.holeVersion
-    if (version >= 0 && s.holeActive && s.holeTick >= 0) {
-        clipPath(s.holePath, ClipOp.Difference) { this@drawWithContent.drawContent() }
-    } else {
-        drawContent()
     }
 }
 
@@ -485,7 +407,7 @@ private fun DrawScope.drawWater(x: Float, y: Float, r: Float, stretch: Float, fa
 }
 
 internal fun DrawScope.drawSurface(s: CardSurface, d: Float) {
-    if (s.count == 0 && s.glaze < 0.01f && !s.holeActive) return
+    if (s.count == 0 && s.glaze < 0.01f) return
     if (s.glaze >= 0.01f) {
         val g = s.glaze
         drawRoundRect(GlazeColor.copy(alpha = g * 0.16f), Offset.Zero, Size(s.width, s.height), CornerRadius(s.radius))
@@ -542,29 +464,7 @@ internal fun DrawScope.drawSurface(s: CardSurface, d: Float) {
                 drawPath(shapePath, IceEdge.copy(alpha = 0.6f * f), style = strokeFor(max(0.5f, r * 0.12f)))
                 drawCircle(Color.White.copy(alpha = 0.8f * f), r * 0.2f, Offset(x - r * 0.25f, y - r * 0.28f))
             }
-            KIND_SHARD -> {
-                val f = ((s.il[i] - s.ia[i]) / 1.2f).coerceIn(0f, 1f)
-                val rot = s.iu[i]
-                val c = cos(rot)
-                val sn = sin(rot)
-                shapePath.reset()
-                for (k in 0 until 4) {
-                    val px = s.ipoly[i * 8 + 2 * k]
-                    val py = s.ipoly[i * 8 + 2 * k + 1]
-                    val rx = x + px * c - py * sn
-                    val ry = y + px * sn + py * c
-                    if (k == 0) shapePath.moveTo(rx, ry) else shapePath.lineTo(rx, ry)
-                }
-                shapePath.close()
-                drawPath(shapePath, Color(s.color).copy(alpha = 0.92f * f))
-                drawPath(shapePath, Color.White.copy(alpha = 0.07f * f))
-                drawPath(shapePath, Color.White.copy(alpha = 0.4f * f), style = strokeFor(1.1f * d))
-            }
         }
-    }
-    if (s.holeActive) {
-        val rim = (1f - s.holeAge / 1.5f).coerceIn(0f, 1f)
-        if (rim > 0f) drawPath(s.holePath, RimColor.copy(alpha = 0.55f * rim), style = strokeFor(1.6f * d))
     }
 }
 
@@ -572,28 +472,32 @@ internal fun DrawScope.drawSurface(s: CardSurface, d: Float) {
 fun WeatherSurfaceHost(
     modifier: Modifier,
     cornerRadius: Dp,
-    color: Color,
     content: @Composable (Modifier) -> Unit
 ) {
     val density = LocalDensity.current
-    val d = density.density
+    val particleScale = density.density
     val surface = remember { WeatherSurfaces.obtain() }
     surface.radius = with(density) { cornerRadius.toPx() }
-    surface.color = color.toArgb()
     DisposableEffect(surface) {
         onDispose { WeatherSurfaces.release(surface) }
     }
     Box(
-        modifier.onGloballyPositioned { surface.coords = it },
+        modifier
+            .clip(RoundedCornerShape(cornerRadius))
+            .onGloballyPositioned { surface.coords = it },
         propagateMinConstraints = true
     ) {
-        content(Modifier.cardHoleCut(surface))
+        content(Modifier)
         Spacer(
             Modifier
                 .matchParentSize()
-                .graphicsLayer { }
+                .graphicsLayer { alpha = WeatherSurfaces.effectAlpha.floatValue }
                 .drawBehind {
-                    if (WeatherSurfaces.frame.longValue >= 0L) drawSurface(surface, d)
+                    val currentFrame = WeatherSurfaces.frame.longValue
+                    if (currentFrame >= 0L) {
+                        drawSurface(surface, particleScale)
+                        WeatherSurfaces.renderer?.drawCard(this, surface, WeatherSurfaces.mix)
+                    }
                 }
         )
     }
