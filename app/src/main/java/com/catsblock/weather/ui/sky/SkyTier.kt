@@ -9,29 +9,40 @@ enum class SkyTier(
     val shadowSamples: Int,
     val atmosphereSteps: Int,
     val renderScale: Float,
-    val maxFps: Int
+    val maxFps: Int,
+    val reachKm: Float,
+    val liteShadows: Boolean,
+    val opaqueCut: Float,
+    val cirrus: Boolean
 ) {
-    Minimal(0, 0, 0, 1f, 0),
-    Low(2, 0, 5, 0.35f, 12),
-    Medium(3, 1, 6, 0.5f, 20),
-    High(4, 2, 8, 0.65f, 30),
-    Ultra(5, 3, 10, 0.8f, 45);
+    Minimal(0, 0, 0, 1f, 0, 0f, true, 0.9f, false),
+    VeryLow(2, 0, 4, 0.3f, 8, 1.8f, true, 0.9f, false),
+    Low(2, 0, 5, 0.4f, 12, 2.2f, true, 0.95f, true),
+    Medium(3, 1, 6, 0.55f, 20, 5f, true, 0.99f, true),
+    High(4, 2, 8, 0.8f, 30, 8f, false, 0.995f, true),
+    Ultra(5, 3, 10, 1f, 60, 0f, false, 0.999f, true);
 
     val usesShader: Boolean get() = this != Minimal
 
-    fun lowered(): SkyTier = if (ordinal <= Low.ordinal) this else entries[ordinal - 1]
+    fun lowered(): SkyTier = if (ordinal <= VeryLow.ordinal) this else entries[ordinal - 1]
 }
+
+private const val BYTES_PER_GB = 1024.0 * 1024.0 * 1024.0
 
 fun detectSkyTier(context: Context, powerSave: Boolean): SkyTier {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return SkyTier.Minimal
     val manager = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
         ?: return SkyTier.Low
-    val base = when {
-        manager.isLowRamDevice -> SkyTier.Low
-        manager.memoryClass < 128 -> SkyTier.Low
-        manager.memoryClass < 192 -> SkyTier.Medium
-        manager.memoryClass < 320 -> SkyTier.High
+    val info = ActivityManager.MemoryInfo().also { manager.getMemoryInfo(it) }
+    val ramGb = info.totalMem / BYTES_PER_GB
+    val heap = manager.memoryClass
+    var base = when {
+        manager.isLowRamDevice || ramGb < 2.8 || heap < 128 -> SkyTier.VeryLow
+        ramGb < 3.8 || heap < 192 -> SkyTier.Low
+        ramGb < 5.8 -> SkyTier.Medium
+        ramGb < 9.0 -> SkyTier.High
         else -> SkyTier.Ultra
     }
+    if (Runtime.getRuntime().availableProcessors() <= 4) base = base.lowered()
     return if (powerSave && base.ordinal > SkyTier.Low.ordinal) SkyTier.Low else base
 }
