@@ -158,6 +158,13 @@ object Moon {
         return MoonPosition(az, alt)
     }
 
+    fun distanceKm(ms: Long): Double = moon(days(ms)).dist
+
+    fun equatorial(ms: Long): DoubleArray {
+        val c = moon(days(ms))
+        return doubleArrayOf(c.ra, c.dec)
+    }
+
     private fun at(ms: Long, offset: ZoneOffset): LocalTime =
         Instant.ofEpochMilli(ms).atOffset(offset).toLocalTime()
 
