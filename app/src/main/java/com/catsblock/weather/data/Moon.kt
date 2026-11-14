@@ -68,16 +68,23 @@ object Moon {
         return Coords(rightAscension(lon, lat), declination(lon, lat), 385001.0 - 20905.0 * cos(m))
     }
 
+    private fun limbAngle(s: Coords, m: Coords): Double = atan2(
+        cos(s.dec) * sin(s.ra - m.ra),
+        sin(s.dec) * cos(m.dec) - cos(s.dec) * sin(m.dec) * cos(s.ra - m.ra)
+    )
+
+    fun brightLimbAngle(ms: Long): Double {
+        val d = days(ms)
+        return limbAngle(sun(d), moon(d))
+    }
+
     fun phase(ms: Long): MoonPhase {
         val d = days(ms)
         val s = sun(d)
         val m = moon(d)
         val phi = acos(sin(s.dec) * sin(m.dec) + cos(s.dec) * cos(m.dec) * cos(s.ra - m.ra))
         val inc = atan2(s.dist * sin(phi), m.dist - s.dist * cos(phi))
-        val angle = atan2(
-            cos(s.dec) * sin(s.ra - m.ra),
-            sin(s.dec) * cos(m.dec) - cos(s.dec) * sin(m.dec) * cos(s.ra - m.ra)
-        )
+        val angle = limbAngle(s, m)
         val sign = if (angle < 0) -1.0 else 1.0
         return MoonPhase((0.5 + 0.5 * inc * sign / PI).coerceIn(0.0, 1.0), (1 + cos(inc)) / 2)
     }
