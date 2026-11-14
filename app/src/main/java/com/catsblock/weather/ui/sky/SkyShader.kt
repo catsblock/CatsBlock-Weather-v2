@@ -129,14 +129,14 @@ float fbm(float2 p, float oct) {
   return s / max(norm, 0.0001);
 }
 
-float cloudField(float2 q, float detail) {
+float cloudField(float2 q, float detail, float oct) {
   float2 across = float2(-uWindDir.y, uWindDir.x);
   float2 a = float2(dot(q, uWindDir) * uStyle.x, dot(q, across) * uStyle.y);
   float2 p = a * 1.15;
   float wx = fbm(p * 0.5 + float2(3.1, 7.7), 2.0) - 0.5;
   float wy = fbm(p * 0.5 + float2(11.5, 2.3), 2.0) - 0.5;
   p += float2(wx, wy) * 1.4;
-  float base = fbm(p, uOct);
+  float base = fbm(p, oct);
   float cov = fbm(p * 0.2 + float2(5.0, 1.0), 3.0);
   float f = (cov * 0.55 + base * 0.45 - 0.5) * 2.4 + 0.5;
   if (detail > 0.0) {
@@ -249,7 +249,10 @@ half4 main(float2 fc) {
   }
 
   float vis = 1.0 - smoothstep(0.004, 0.03, dot(sky + halo, LUMA));
-  float3 stars = float3(0.85, 0.92, 1.0) * starField(rd, pixelAngle) * 0.5 * vis * horizon;
+  float3 stars = float3(0.0);
+  if (vis > 0.001 && rd.y > -0.015) {
+    stars = float3(0.85, 0.92, 1.0) * starField(rd, pixelAngle) * 0.5 * vis * horizon;
+  }
   float fl = uFlash.w * (0.10 + 0.90 * exp(-(1.0 - dot(rd, uFlash.xyz)) * 18.0));
   float3 skyFull = sky + halo * horizon + moonCol + stars + float3(0.7, 0.78, 1.0) * fl * 0.3;
 
@@ -261,10 +264,10 @@ half4 main(float2 fc) {
 
   float3 base = skyFull;
   float tHigh = 1.0;
-  if (uCirrus > 0.001 && ry > 0.02) {
+  if (uCirrus > 0.001 && ry > 0.05) {
     float hh = 8.0 / max(ry, 0.05);
     float2 qh = float2(rd.x * hh, rd.z * hh) - uOffHigh;
-    float dh = cirrusField(qh) * smoothstep(0.02, 0.2, ry);
+    float dh = cirrusField(qh) * smoothstep(0.05, 0.2, ry);
     float tauH = 2.2 * uCirrus * dh / max(ry, 0.3);
     float aH = 1.0 - exp(-tauH);
     float sunIH = clamp(uSun.y * 8.0 + 0.5, 0.0, 1.0);
@@ -277,17 +280,24 @@ half4 main(float2 fc) {
   float2 q2 = float2(rd.x * th, rd.z * th) - uOff;
   float t = 0.90 - 0.83 * uCover;
   float dfade = smoothstep(0.05, 0.45, ry) * clamp((uOct - 2.0) / 2.0, 0.0, 1.0);
-  float f = cloudField(q2, dfade);
-  float dens = pow(clamp((f - t) / uStyle.z, 0.0, 1.0), 1.4) * mix(smoothstep(0.03, 0.2, ry), 1.0, smoothstep(0.7, 0.95, uCover));
-  float thk = clamp((f - t) / 0.55, 0.0, 1.0);
+  float f = -1.0;
+  float dens = 0.0;
+  float thk = 0.0;
   float occ = 0.0;
-  if (dens > 0.002 && uShadow > 0.5) {
-    float2 sh = uSun.xz / max(length(uSun.xz), 1e-3);
-    for (int k = 0; k < 3; k++) {
-      if (float(k) >= uShadow) break;
-      float s = 0.2 + 0.3 * float(k);
-      float fs = cloudField(q2 + sh * s, dfade);
-      occ += clamp((fs - t) / 0.3, 0.0, 1.0) / uShadow;
+  if (ry > 0.035) {
+    float cOct = mix(2.0, uOct, smoothstep(0.06, 0.3, ry));
+    f = cloudField(q2, dfade, cOct);
+    float farFade = smoothstep(0.035, 0.1, ry);
+    dens = pow(clamp((f - t) / uStyle.z, 0.0, 1.0), 1.4) * mix(smoothstep(0.03, 0.2, ry), 1.0, smoothstep(0.7, 0.95, uCover)) * farFade;
+    thk = clamp((f - t) / 0.55, 0.0, 1.0);
+    if (dens > 0.002 && uShadow > 0.5 && ry > 0.08) {
+      float2 sh = uSun.xz / max(length(uSun.xz), 1e-3);
+      for (int k = 0; k < 3; k++) {
+        if (float(k) >= uShadow) break;
+        float s = 0.2 + 0.3 * float(k);
+        float fs = cloudField(q2 + sh * s, dfade, cOct);
+        occ += clamp((fs - t) / 0.3, 0.0, 1.0) / uShadow;
+      }
     }
   }
   float k = uThick * uCover;
