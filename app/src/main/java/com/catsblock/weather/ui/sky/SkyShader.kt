@@ -13,7 +13,12 @@ uniform float2 uOffHigh;
 uniform float2 uWindDir;
 uniform float4 uStyle;
 uniform float uCirrus;
-uniform float uDark;
+uniform float uShade;
+uniform float uGrade;
+uniform float uContrast;
+uniform float uVeil;
+uniform float uGlow;
+uniform float3 uTint;
 uniform float uFog;
 uniform float4 uFlash;
 uniform float3 uSunTHigh;
@@ -225,11 +230,12 @@ half4 main(float2 fc) {
   float dens = 0.0;
   float thk = 0.0;
   float occ = 0.0;
+  float farFade = 0.0;
   float lim = uReach > 0.0 ? uReach : 100000.0;
   if (ry > 0.035 && reach < lim) {
     float cOct = mix(2.0, uOct, smoothstep(0.06, 0.3, ry));
     f = cloudField(q2, dfade, cOct);
-    float farFade = smoothstep(0.035, 0.1, ry) * (1.0 - smoothstep(0.7 * lim, lim, reach));
+    farFade = smoothstep(0.035, 0.1, ry) * (1.0 - smoothstep(0.7 * lim, lim, reach));
     dens = pow(clamp((f - t) / uStyle.z, 0.0, 1.0), 1.4) * mix(smoothstep(0.03, 0.2, ry), 1.0, smoothstep(0.7, 0.95, uCover)) * farFade;
     thk = clamp((f - t) / 0.55, 0.0, 1.0);
     if (dens > 0.02 && uShadow > 0.5 && ry > 0.08) {
@@ -257,8 +263,6 @@ half4 main(float2 fc) {
   float tauL = (1.0 + 3.0 * uThick) * dens * 1.3 * slant;
   float alpha = 1.0 - exp(-tauL);
   cl *= mix(1.1, 0.78, clamp((f - t) / 0.8, 0.0, 1.0));
-  cl *= 1.0 - 0.55 * uDark;
-  cl += float3(0.75, 0.82, 1.0) * fl * 1.6 * (1.0 - 0.4 * thk);
 
   float3 base = float3(0.0);
   float tHigh = 1.0;
@@ -309,7 +313,7 @@ half4 main(float2 fc) {
     if (vis > 0.001 && rd.y > -0.015) {
       stars = float3(0.85, 0.92, 1.0) * starField(rd, pixelAngle) * 0.5 * vis * horizon;
     }
-    base = sky + halo * horizon + moonCol + stars + float3(0.7, 0.78, 1.0) * fl * 0.3;
+    base = sky + halo * horizon + moonCol + stars;
     if (uCirrus > 0.001 && ry > 0.05) {
       float hh = 8.0 / max(ry, 0.05);
       float2 qh = float2(rd.x * hh, rd.z * hh) - uOffHigh;
@@ -325,6 +329,32 @@ half4 main(float2 fc) {
   float3 col = mix(base, cl, alpha);
   float transmit = tHigh * (1.0 - alpha);
 
+  float cvar = 0.15;
+  if (f > -0.5) {
+    cvar = mix(0.15, clamp((f - 0.15) / 0.7, 0.0, 1.0), farFade);
+  }
+  float oc = clamp(uGrade, 0.0, 1.0);
+  float ocLocal = oc * mix(0.35 + 0.65 * alpha, 1.0, smoothstep(0.82, 0.95, uCover));
+  float dayK = smoothstep(-0.16, 0.35, uSun.y);
+  float twi = smoothstep(-0.14, 0.0, uSun.y) * (1.0 - smoothstep(0.0, 0.22, uSun.y));
+  float shadeL = clamp(uShade * mix(0.86, 1.0, smoothstep(0.08, 0.6, ry)), 0.0, 0.985);
+  float nightLum = 0.004 + min(dot(uMoonLight, LUMA) * 0.9, 0.01);
+  float litK = pow(1.0 - shadeL, 3.0);
+  float targetLum = (0.95 * dayK + nightLum * (1.0 - dayK)) * litK;
+  float texK = clamp(1.0 + uContrast * (0.45 - cvar) * 1.6, 0.25, 1.8);
+  float3 gtint = mix(uTint, uTint * float3(1.10, 0.95, 0.84), twi * 0.6);
+  gtint = mix(gtint, gtint * float3(0.88, 0.95, 1.12), 1.0 - dayK);
+  float lumOld = dot(col, LUMA);
+  float lumNew = mix(lumOld, targetLum * texK, ocLocal);
+  float3 kept = col * clamp(lumNew / max(lumOld, 0.0002), 0.0, 6.0);
+  col = mix(kept, gtint * lumNew, ocLocal * 0.94);
+  float horizonBand = pow(1.0 - clamp(ry, 0.0, 1.0), 2.0);
+  float veilAmt = clamp(uVeil, 0.0, 1.0) * (0.3 + 0.7 * horizonBand);
+  col = mix(col, gtint * targetLum * 1.5, veilAmt * oc);
+  float sunSide = pow(clamp(cosg * 0.5 + 0.5, 0.0, 1.0), 3.0);
+  float horizonEdge = pow(1.0 - clamp(ry, 0.0, 1.0), 5.0);
+  col += float3(1.0, 0.5, 0.22) * uGlow * oc * twi * horizonEdge * sunSide * 0.28 * (1.0 - 0.6 * shadeL);
+
   float ang = acos(clamp(cosg, -1.0, 1.0));
   float r = 0.070;
   float disc = smoothstep(r * 1.06, r * 0.92, ang) * step(-0.02, rd.y);
@@ -332,15 +362,18 @@ half4 main(float2 fc) {
   float glow = 4.0 / (1.0 + pow(ang / 0.085, 2.4)) + 0.35 * exp(-ang / 0.18);
   float lining = 0.5 * pow(clamp(cosg, 0.0, 1.0), 12.0) * alpha * (1.0 - 0.6 * thk);
   col += uSunT * sunI * (limb * 30.0 * disc * pow(transmit, 3.0) + glow * transmit + lining);
-  col *= 1.0 - 0.3 * uDark;
+  float behind = oc * pow(1.0 - shadeL, 2.0) * sunI * (0.4 * exp(-ang / 0.30) + 0.10 * exp(-ang / 1.0));
+  col += uSunT * behind * (1.0 - transmit) * (1.0 - 0.6 * shadeL);
   if (uFog > 0.001) {
     float fv = fbm(q2 * 0.35 + float2(4.0, 9.0), 2.0);
     float dFog = uFog * (0.75 + 0.5 * fv);
     float fogT = exp(-dFog * 3.2 * mix(1.0, 1.0 / max(ry, 0.25), 0.5));
     float fl0 = dot(uAmb, LUMA);
-    float3 fogc = float3(fl0) * float3(1.0, 1.02, 1.08) * 2.4 + uSunT * sunI * 0.10 * (1.0 + 2.0 * pow(clamp(cosg, 0.0, 1.0), 6.0)) + float3(0.0045, 0.0058, 0.0110) * 3.0 + uMoonLight * 2.0;
+    float3 fogBase = float3(fl0) * float3(1.0, 1.02, 1.08) * 2.4 + float3(0.0045, 0.0058, 0.0110) * 3.0 + uMoonLight * 2.0;
+    float3 fogc = mix(fogBase * mix(float3(1.0), uTint, 0.8), gtint * targetLum * 1.2, oc) + uSunT * sunI * 0.10 * (1.0 + 2.0 * pow(clamp(cosg, 0.0, 1.0), 6.0));
     col = mix(fogc, col, fogT);
   }
+  col += float3(0.75, 0.82, 1.0) * fl * 1.6 * (1.0 - 0.4 * thk) * alpha + float3(0.7, 0.78, 1.0) * fl * 0.3 * (1.0 - alpha);
   col = pow(aces(col * uGain), float3(1.0 / 2.2));
   col += (hash12(fc) - 0.5) / 255.0;
   col = clamp(col, 0.0, 1.0);
