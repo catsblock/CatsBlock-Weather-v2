@@ -78,17 +78,18 @@ half4 main(float2 fc) {
     float mu0 = dot(float3(q.x, q.y, nz), uL);
     float lit = mu0 > 0.0 ? mix(mu0, 2.0 * mu0 / (mu0 + nz + 0.0001), 0.7) : 0.0;
     float shade = 1.0;
-    float3 tint = float3(1.0);
+    float3 redLight = float3(0.0);
     if (uEcl.w > 0.0) {
       float dd = length(q - uEcl.xy);
       float inPen = smoothstep(uEcl.w, uEcl.z, dd);
-      float inUmb = 1.0 - smoothstep(uEcl.z - 0.10, uEcl.z + 0.10, dd);
-      float umbra = 0.22 + 0.45 * pow(clamp(dd / max(uEcl.z, 0.001), 0.0, 1.0), 2.0);
-      shade = mix(1.0 - 0.45 * inPen, umbra, inUmb);
-      tint = mix(float3(1.0), float3(1.0, 0.33, 0.10), inUmb);
+      float inUmb = 1.0 - smoothstep(uEcl.z - 0.05, uEcl.z + 0.05, dd);
+      float r01 = clamp(dd / max(uEcl.z, 0.001), 0.0, 1.0);
+      float3 redCol = mix(float3(0.22, 0.025, 0.010), float3(0.85, 0.20, 0.05), pow(r01, 2.5));
+      shade = (1.0 - 0.35 * inPen) * (1.0 - inUmb);
+      redLight = redCol * inUmb * 0.5 * sqrt(nz);
     }
     float3 earth = float3(0.85, 0.95, 1.1) * uEarth * nz;
-    float3 lin = albedo * (lit * shade * tint + earth) * 2.4;
+    float3 lin = albedo * (lit * shade + redLight + earth) * 2.4;
     col = pow(aces(lin), float3(1.0 / 2.2));
   }
   float a = coverage + glowA * (1.0 - coverage);
