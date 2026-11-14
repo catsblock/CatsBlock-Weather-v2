@@ -21,6 +21,9 @@ uniform float uCover;
 uniform float uThick;
 uniform float uOct;
 uniform float uShadow;
+uniform float uReach;
+uniform float uLite;
+uniform float uOpaque;
 uniform float uSteps;
 uniform float uMie;
 uniform float uFade;
@@ -205,10 +208,62 @@ half4 main(float2 fc) {
   float3 radial = (uRight * uv.x + uUp * uv.y) / max(ur, 0.00001);
   float3 rd = normalize(uFwd * cos(theta) + radial * sin(theta));
   float pixelAngle = (1.0 / uRes.y) / 0.5361;
-  float3 sky = skyColor(rd, uSun) + float3(0.0030, 0.0040, 0.0085) * (0.5 + 1.5 * pow(1.0 - clamp(rd.y, 0.0, 1.0), 3.0));
-  float skyLum = dot(sky, LUMA);
-  float horizon = smoothstep(-0.015, 0.01, rd.y);
+  float ry = rd.y;
+  float horizon = smoothstep(-0.015, 0.01, ry);
+  float sunI = clamp(uSun.y * 8.0 + 0.05, 0.0, 1.0);
+  float cosg = dot(rd, uSun);
+  float3 amb = uAmb + float3(0.0045, 0.0058, 0.0110) * (1.0 + 2.5 * uThick * uCover);
+  float moonPhase = 0.7 + 0.6 * pow(clamp(dot(rd, uMoonDir), 0.0, 1.0), 8.0);
+  float fl = uFlash.w * (0.10 + 0.90 * exp(-(1.0 - dot(rd, uFlash.xyz)) * 18.0));
 
+  float th = 1.6 / max(ry, 0.03);
+  float2 q2 = float2(rd.x * th, rd.z * th) - uOff;
+  float reach = th * length(float2(rd.x, rd.z));
+  float t = 0.90 - 0.83 * uCover;
+  float dfade = smoothstep(0.05, 0.45, ry) * clamp((uOct - 2.0) / 2.0, 0.0, 1.0);
+  float f = -1.0;
+  float dens = 0.0;
+  float thk = 0.0;
+  float occ = 0.0;
+  float lim = uReach > 0.0 ? uReach : 100000.0;
+  if (ry > 0.035 && reach < lim) {
+    float cOct = mix(2.0, uOct, smoothstep(0.06, 0.3, ry));
+    f = cloudField(q2, dfade, cOct);
+    float farFade = smoothstep(0.035, 0.1, ry) * (1.0 - smoothstep(0.7 * lim, lim, reach));
+    dens = pow(clamp((f - t) / uStyle.z, 0.0, 1.0), 1.4) * mix(smoothstep(0.03, 0.2, ry), 1.0, smoothstep(0.7, 0.95, uCover)) * farFade;
+    thk = clamp((f - t) / 0.55, 0.0, 1.0);
+    if (dens > 0.02 && uShadow > 0.5 && ry > 0.08) {
+      float2 sh = uSun.xz / max(length(uSun.xz), 1e-3);
+      float sOct = mix(cOct, min(cOct, 2.0), uLite);
+      float sDetail = dfade * (1.0 - uLite);
+      for (int k = 0; k < 3; k++) {
+        if (float(k) >= uShadow) break;
+        float s = 0.2 + 0.3 * float(k);
+        float fs = cloudField(q2 + sh * s, sDetail, sOct);
+        occ += clamp((fs - t) / 0.3, 0.0, 1.0) / uShadow;
+      }
+    }
+  }
+  float k = uThick * uCover;
+  float3 ambc = amb * (1.0 - 0.8 * k) + dot(amb, LUMA) * 0.8 * k * float3(0.92, 0.97, 1.12);
+  float phase = 0.6 + 1.4 * pow(clamp(cosg, 0.0, 1.0), 6.0);
+  float silver = 1.0 + 3.0 * pow(clamp(cosg, 0.0, 1.0), 24.0) * (1.0 - thk);
+  float direct = exp(-occ * (1.4 + 2.2 * uThick)) * (0.3 + 0.7 * exp(-thk * (1.2 + 1.6 * uThick)));
+  float3 sunl = uSunT * sunI * direct * phase * silver * 2.0 * (1.0 - 0.6 * k) * (1.0 - 0.5 * exp(-3.0 * dens));
+  float3 moonl = uMoonLight * moonPhase * (1.0 - 0.5 * thk);
+  float3 diffuse = uSunT * sunI * 0.5 * k * exp(-thk * 1.5) * (0.6 + 0.4 * (1.0 - occ));
+  float3 cl = ambc * 1.15 * (1.0 - (0.25 + 0.4 * uThick) * thk) + sunl + moonl + diffuse;
+  float slant = mix(1.0, 1.0 / max(ry, 0.2), 0.5);
+  float tauL = (1.0 + 3.0 * uThick) * dens * 1.3 * slant;
+  float alpha = 1.0 - exp(-tauL);
+  cl *= mix(1.1, 0.78, clamp((f - t) / 0.8, 0.0, 1.0));
+  cl *= 1.0 - 0.55 * uDark;
+  cl += float3(0.75, 0.82, 1.0) * fl * 1.6 * (1.0 - 0.4 * thk);
+
+  float3 base = float3(0.0);
+  float tHigh = 1.0;
+  if (alpha < uOpaque) {
+    float3 sky = skyColor(rd, uSun) + float3(0.0030, 0.0040, 0.0085) * (0.5 + 1.5 * pow(1.0 - clamp(rd.y, 0.0, 1.0), 3.0));
   float3 moonCol = float3(0.0);
   float3 halo = float3(0.0);
   if (uMoonA.w > 0.5) {
@@ -233,88 +288,40 @@ half4 main(float2 fc) {
         float mu0 = dot(float3(q.x, q.y, nz), uMoonL);
         float lit = mu0 > 0.0 ? mix(mu0, 2.0 * mu0 / (mu0 + nz + 0.0001), 0.7) : 0.0;
         float shade = 1.0;
-        float3 tint = float3(1.0);
+        float3 redLight = float3(0.0);
         if (uEcl.w > 0.0) {
           float dd = length(q - uEcl.xy);
           float inPen = smoothstep(uEcl.w, uEcl.z, dd);
-          float inUmb = 1.0 - smoothstep(uEcl.z - 0.10, uEcl.z + 0.10, dd);
-          float umbra = 0.22 + 0.45 * pow(clamp(dd / max(uEcl.z, 0.001), 0.0, 1.0), 2.0);
-          shade = mix(1.0 - 0.45 * inPen, umbra, inUmb);
-          tint = mix(float3(1.0), float3(1.0, 0.33, 0.10), inUmb);
+          float inUmb = 1.0 - smoothstep(uEcl.z - 0.05, uEcl.z + 0.05, dd);
+          float r01 = clamp(dd / max(uEcl.z, 0.001), 0.0, 1.0);
+          float3 redCol = mix(float3(0.22, 0.025, 0.010), float3(0.85, 0.20, 0.05), pow(r01, 2.5));
+          shade = (1.0 - 0.35 * inPen) * (1.0 - inUmb);
+          redLight = redCol * inUmb * 0.5 * sqrt(nz);
         }
         float3 earth = float3(0.85, 0.95, 1.1) * uMoonB.x * nz;
-        moonCol = albedo * (lit * shade * tint + earth) * 0.22 * uMoonT * coverage * horizon;
+        moonCol = albedo * (lit * shade + redLight + earth) * 0.22 * uMoonT * coverage * horizon;
       }
     }
   }
 
-  float vis = 1.0 - smoothstep(0.004, 0.03, dot(sky + halo, LUMA));
-  float3 stars = float3(0.0);
-  if (vis > 0.001 && rd.y > -0.015) {
-    stars = float3(0.85, 0.92, 1.0) * starField(rd, pixelAngle) * 0.5 * vis * horizon;
-  }
-  float fl = uFlash.w * (0.10 + 0.90 * exp(-(1.0 - dot(rd, uFlash.xyz)) * 18.0));
-  float3 skyFull = sky + halo * horizon + moonCol + stars + float3(0.7, 0.78, 1.0) * fl * 0.3;
-
-  float sunI = clamp(uSun.y * 8.0 + 0.05, 0.0, 1.0);
-  float cosg = dot(rd, uSun);
-  float ry = rd.y;
-  float3 amb = uAmb + float3(0.0045, 0.0058, 0.0110) * (1.0 + 2.5 * uThick * uCover);
-  float moonPhase = 0.7 + 0.6 * pow(clamp(dot(rd, uMoonDir), 0.0, 1.0), 8.0);
-
-  float3 base = skyFull;
-  float tHigh = 1.0;
-  if (uCirrus > 0.001 && ry > 0.05) {
-    float hh = 8.0 / max(ry, 0.05);
-    float2 qh = float2(rd.x * hh, rd.z * hh) - uOffHigh;
-    float dh = cirrusField(qh) * smoothstep(0.05, 0.2, ry);
-    float tauH = 2.2 * uCirrus * dh / max(ry, 0.3);
-    float aH = 1.0 - exp(-tauH);
-    float sunIH = clamp(uSun.y * 8.0 + 0.5, 0.0, 1.0);
-    float3 cH = uSunTHigh * sunIH * (0.8 + 1.6 * pow(clamp(cosg, 0.0, 1.0), 8.0)) + amb * 0.9 + uMoonLight * moonPhase;
-    base = mix(base, cH, aH);
-    tHigh = 1.0 - aH;
-  }
-
-  float th = 1.6 / max(ry, 0.03);
-  float2 q2 = float2(rd.x * th, rd.z * th) - uOff;
-  float t = 0.90 - 0.83 * uCover;
-  float dfade = smoothstep(0.05, 0.45, ry) * clamp((uOct - 2.0) / 2.0, 0.0, 1.0);
-  float f = -1.0;
-  float dens = 0.0;
-  float thk = 0.0;
-  float occ = 0.0;
-  if (ry > 0.035) {
-    float cOct = mix(2.0, uOct, smoothstep(0.06, 0.3, ry));
-    f = cloudField(q2, dfade, cOct);
-    float farFade = smoothstep(0.035, 0.1, ry);
-    dens = pow(clamp((f - t) / uStyle.z, 0.0, 1.0), 1.4) * mix(smoothstep(0.03, 0.2, ry), 1.0, smoothstep(0.7, 0.95, uCover)) * farFade;
-    thk = clamp((f - t) / 0.55, 0.0, 1.0);
-    if (dens > 0.002 && uShadow > 0.5 && ry > 0.08) {
-      float2 sh = uSun.xz / max(length(uSun.xz), 1e-3);
-      for (int k = 0; k < 3; k++) {
-        if (float(k) >= uShadow) break;
-        float s = 0.2 + 0.3 * float(k);
-        float fs = cloudField(q2 + sh * s, dfade, cOct);
-        occ += clamp((fs - t) / 0.3, 0.0, 1.0) / uShadow;
-      }
+    float vis = 1.0 - smoothstep(0.004, 0.03, dot(sky + halo, LUMA));
+    float3 stars = float3(0.0);
+    if (vis > 0.001 && rd.y > -0.015) {
+      stars = float3(0.85, 0.92, 1.0) * starField(rd, pixelAngle) * 0.5 * vis * horizon;
+    }
+    base = sky + halo * horizon + moonCol + stars + float3(0.7, 0.78, 1.0) * fl * 0.3;
+    if (uCirrus > 0.001 && ry > 0.05) {
+      float hh = 8.0 / max(ry, 0.05);
+      float2 qh = float2(rd.x * hh, rd.z * hh) - uOffHigh;
+      float dh = cirrusField(qh) * smoothstep(0.05, 0.2, ry);
+      float tauH = 2.2 * uCirrus * dh / max(ry, 0.3);
+      float aH = 1.0 - exp(-tauH);
+      float sunIH = clamp(uSun.y * 8.0 + 0.5, 0.0, 1.0);
+      float3 cH = uSunTHigh * sunIH * (0.8 + 1.6 * pow(clamp(cosg, 0.0, 1.0), 8.0)) + amb * 0.9 + uMoonLight * moonPhase;
+      base = mix(base, cH, aH);
+      tHigh = 1.0 - aH;
     }
   }
-  float k = uThick * uCover;
-  float3 ambc = amb * (1.0 - 0.8 * k) + dot(amb, LUMA) * 0.8 * k * float3(0.92, 0.97, 1.12);
-  float phase = 0.6 + 1.4 * pow(clamp(cosg, 0.0, 1.0), 6.0);
-  float silver = 1.0 + 3.0 * pow(clamp(cosg, 0.0, 1.0), 24.0) * (1.0 - thk);
-  float direct = exp(-occ * (1.4 + 2.2 * uThick)) * (0.3 + 0.7 * exp(-thk * (1.2 + 1.6 * uThick)));
-  float3 sunl = uSunT * sunI * direct * phase * silver * 2.0 * (1.0 - 0.6 * k) * (1.0 - 0.5 * exp(-3.0 * dens));
-  float3 moonl = uMoonLight * moonPhase * (1.0 - 0.5 * thk);
-  float3 diffuse = uSunT * sunI * 0.5 * k * exp(-thk * 1.5) * (0.6 + 0.4 * (1.0 - occ));
-  float3 cl = ambc * 1.15 * (1.0 - (0.25 + 0.4 * uThick) * thk) + sunl + moonl + diffuse;
-  float slant = mix(1.0, 1.0 / max(ry, 0.2), 0.5);
-  float tauL = (1.0 + 3.0 * uThick) * dens * 1.3 * slant;
-  float alpha = 1.0 - exp(-tauL);
-  cl *= mix(1.1, 0.78, clamp((f - t) / 0.8, 0.0, 1.0));
-  cl *= 1.0 - 0.55 * uDark;
-  cl += float3(0.75, 0.82, 1.0) * fl * 1.6 * (1.0 - 0.4 * thk);
   float3 col = mix(base, cl, alpha);
   float transmit = tHigh * (1.0 - alpha);
 
