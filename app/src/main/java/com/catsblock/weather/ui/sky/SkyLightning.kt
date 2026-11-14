@@ -72,7 +72,7 @@ internal fun generateBolt(random: Random, aspect: Float): FloatArray {
     val out = ArrayList<Float>()
     val startX = 0.2f + random.nextFloat() * 0.6f
     val endX = (startX + (random.nextFloat() - 0.5f) * 0.3f).coerceIn(0.1f, 0.9f)
-    val endY = 0.45f + random.nextFloat() * 0.3f
+    val endY = 0.26f + random.nextFloat() * 0.2f
     addBolt(out, random, startX, 0.02f, endX, endY, 0.09f * max(aspect, 0.3f) * 2.2f, 6, 1f)
     return out.toFloatArray()
 }
@@ -112,7 +112,7 @@ internal fun SkyLightning(
                 state.bolt = generateBolt(random, aspect)
                 val target = currentScene.directionAt(
                     (random.nextFloat() - 0.5f) * aspect,
-                    (random.nextFloat() - 0.4f) * 0.7f
+                    0.04f + random.nextFloat() * 0.4f
                 )
                 state.dirX = target[0]
                 state.dirY = target[1]
