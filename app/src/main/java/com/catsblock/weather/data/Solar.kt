@@ -6,6 +6,7 @@ import kotlin.math.PI
 import kotlin.math.acos
 import kotlin.math.abs
 import kotlin.math.asin
+import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.pow
 import kotlin.math.roundToInt
@@ -24,6 +25,8 @@ class SolarDay(
     val sunsetAzimuth: Double?,
     val daylightMinutes: Int
 )
+
+class SunPosition(val azimuth: Double, val altitude: Double)
 
 object Solar {
 
@@ -92,5 +95,23 @@ object Solar {
             sunsetAzimuth = azimuth,
             daylightMinutes = daylight
         )
+    }
+
+    fun position(epochMs: Long, lat: Double, lon: Double): SunPosition {
+        val jd = epochMs / 86400000.0 + 2440587.5
+        val t = terms(jd)
+        val utcMinutes = (epochMs.mod(86400000L)) / 60000.0
+        val solarMinutes = (utcMinutes + t.equationOfTime + 4.0 * lon).mod(1440.0)
+        val hour = (solarMinutes / 4.0 - 180.0) * RAD
+        val phi = lat * RAD
+        val sinAlt = sin(phi) * sin(t.declination) + cos(phi) * cos(t.declination) * cos(hour)
+        val geometric = asin(sinAlt.coerceIn(-1.0, 1.0)) / RAD
+        val refraction = if (geometric > -1.0) {
+            1.02 / tan((geometric + 10.3 / (geometric + 5.11)) * RAD) / 60.0
+        } else {
+            0.0
+        }
+        val azimuth = atan2(sin(hour), cos(hour) * sin(phi) - tan(t.declination) * cos(phi)) + PI
+        return SunPosition(azimuth, (geometric + refraction) * RAD)
     }
 }
