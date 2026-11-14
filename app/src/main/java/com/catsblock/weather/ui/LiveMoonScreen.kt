@@ -63,6 +63,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
@@ -92,6 +94,62 @@ import kotlin.math.roundToInt
 import kotlin.math.sin
 
 private fun normalize(deg: Double): Double = (deg % 360.0 + 360.0) % 360.0
+
+private const val TRACK_STEP_MS = 600_000L
+private const val TRACK_HALF_SPAN = 72
+private const val CAMERA_TAN_X = 0.466
+private const val CAMERA_TAN_Y = 0.625
+
+private val TrackVisible = Color(0xFFFFD54F)
+private val TrackHidden = Color(0xFF9AA0A6)
+private val TrackEclipse = Color(0xFFFF4D4D)
+
+private class TrackPoint(val x: Double, val y: Double, val z: Double, val altitude: Double, val eclipse: Boolean)
+
+private fun buildMoonTrack(centerMs: Long, lat: Double, lon: Double, declination: Double): List<TrackPoint> {
+    val base = centerMs / TRACK_STEP_MS * TRACK_STEP_MS
+    val magnetic = Math.toRadians(declination)
+    return (-TRACK_HALF_SPAN..TRACK_HALF_SPAN).map { i ->
+        val ms = base + i * TRACK_STEP_MS
+        val position = Moon.position(ms, lat, lon)
+        val ca = cos(position.altitude)
+        val az = position.azimuth - magnetic
+        TrackPoint(ca * sin(az), ca * cos(az), sin(position.altitude), position.altitude, Moon.eclipse(ms) != null)
+    }
+}
+
+private fun DrawScope.drawMoonTrack(track: List<TrackPoint>, m: FloatArray) {
+    val w = size.width
+    val h = size.height
+    val stroke = 2.5.dp.toPx()
+    var previous: Offset? = null
+    var previousPoint: TrackPoint? = null
+    for (point in track) {
+        val xc = point.x * m[0] + point.y * m[3] + point.z * m[6]
+        val yc = point.x * m[1] + point.y * m[4] + point.z * m[7]
+        val zc = -(point.x * m[2] + point.y * m[5] + point.z * m[8])
+        val current = if (zc > 0.05) {
+            Offset(
+                w / 2f + (xc / zc / CAMERA_TAN_X * w / 2f).toFloat(),
+                h / 2f - (yc / zc / CAMERA_TAN_Y * h / 2f).toFloat()
+            )
+        } else {
+            null
+        }
+        if (current != null && previous != null && previousPoint != null &&
+            abs(current.x - w / 2f) < w * 4f && abs(current.y - h / 2f) < h * 4f
+        ) {
+            val color = when {
+                point.eclipse || previousPoint.eclipse -> TrackEclipse
+                point.altitude >= 0.0 && previousPoint.altitude >= 0.0 -> TrackVisible
+                else -> TrackHidden.copy(alpha = 0.75f)
+            }
+            drawLine(color, previous, current, stroke, StrokeCap.Round)
+        }
+        previous = current
+        previousPoint = point
+    }
+}
 
 private val LiveGlass = Color(0x14101826)
 private val LiveSoft = Color(0xCCFFFFFF)
@@ -164,6 +222,8 @@ fun LiveMoonScreen(vm: WeatherViewModel) {
     val declination = remember(lat, lon) {
         GeomagneticField(lat.toFloat(), lon.toFloat(), 0f, System.currentTimeMillis()).declination.toDouble()
     }
+    val eclipse = remember(nowMs / 60_000L) { Moon.eclipse(nowMs) }
+    val track = remember(nowMs / TRACK_STEP_MS, lat, lon, declination) { buildMoonTrack(nowMs, lat, lon, declination) }
     val altDeg = Math.toDegrees(pos.altitude)
     val azDeg = normalize(Math.toDegrees(pos.azimuth))
     val azMag = pos.azimuth - Math.toRadians(declination)
@@ -224,13 +284,17 @@ fun LiveMoonScreen(vm: WeatherViewModel) {
         BoxWithConstraints(Modifier.fillMaxSize()) {
             val w = constraints.maxWidth.toFloat()
             val h = constraints.maxHeight.toFloat()
-            val tanX = 0.466
-            val tanY = 0.625
+            val tanX = CAMERA_TAN_X
+            val tanY = CAMERA_TAN_Y
             val inFront = m != null && zc > 0.05
             val sx = if (inFront) w / 2f + (xc / zc / tanX * w / 2f).toFloat() else 0f
             val sy = if (inFront) h / 2f - (yc / zc / tanY * h / 2f).toFloat() else 0f
             val visible = inFront && abs(sx - w / 2f) < w / 2f && abs(sy - h / 2f) < h / 2f
             val half = with(androidx.compose.ui.platform.LocalDensity.current) { 40.dp.toPx() }
+
+            if (m != null) {
+                Canvas(Modifier.fillMaxSize()) { drawMoonTrack(track, m) }
+            }
 
             if (m != null && !visible) {
                 val arrowAngle = Math.toDegrees(atan2(xc, yc)).toFloat()
@@ -272,13 +336,7 @@ fun LiveMoonScreen(vm: WeatherViewModel) {
                             }
                             .border(1.5.dp, Color.White, CircleShape)
                     )
-                    MoonImage(
-                        nowMs,
-                        phase.cycle,
-                        Modifier
-                            .fillMaxSize()
-                            .border(1.5.dp, Color.White.copy(alpha = 0.85f), CircleShape)
-                    )
+                    MoonOrb(phase.cycle, Modifier.fillMaxSize(), eclipse, nowMs)
                 }
             }
         }
@@ -363,7 +421,7 @@ fun LiveMoonScreen(vm: WeatherViewModel) {
                         color = LiveSoft
                     )
                 }
-                MoonOrb(phase.cycle, Modifier.size(60.dp))
+                MoonOrb(phase.cycle, Modifier.size(60.dp), eclipse, nowMs)
             }
             Spacer(Modifier.height(14.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
