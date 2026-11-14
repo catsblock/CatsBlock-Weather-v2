@@ -1,5 +1,6 @@
 package com.catsblock.weather.ui
 
+import android.os.Build
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
@@ -72,6 +73,7 @@ import com.catsblock.weather.data.Moon
 import com.catsblock.weather.data.MoonPhase
 import com.catsblock.weather.i18n.I18n
 import com.catsblock.weather.i18n.tr
+import com.catsblock.weather.ui.sky.MoonShaderOrb
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -129,7 +131,11 @@ fun DrawScope.drawEclipse(eclipse: Eclipse, c: Offset, r: Float) {
 }
 
 @Composable
-fun MoonOrb(cycle: Double, modifier: Modifier = Modifier, eclipse: Eclipse? = null) {
+fun MoonOrb(cycle: Double, modifier: Modifier = Modifier, eclipse: Eclipse? = null, epochMs: Long = Long.MIN_VALUE) {
+    if (epochMs != Long.MIN_VALUE && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        MoonShaderOrb(epochMs, eclipse, modifier)
+        return
+    }
     Canvas(modifier.graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)) {
         val r = min(size.width, size.height) / 2f * 0.88f
         val c = Offset(size.width / 2f, size.height / 2f)
@@ -309,7 +315,7 @@ fun MoonCard(city: City, offsetSeconds: Int, now: LocalDateTime, onClick: () -> 
                 }
             }
             Spacer(Modifier.width(20.dp))
-            MoonOrb(phase.cycle, Modifier.size(104.dp), eclipse)
+            MoonOrb(phase.cycle, Modifier.size(104.dp), eclipse, ms)
         }
         Spacer(Modifier.height(16.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
