@@ -1,6 +1,6 @@
 package com.catsblock.weather.ui.particles
 
-import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -8,6 +8,7 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
@@ -18,7 +19,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
-import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
@@ -29,16 +30,13 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import com.catsblock.weather.data.Condition
 import com.catsblock.weather.ui.rememberPowerSaveMode
-import com.catsblock.weather.ui.sky.LightningState
 import com.catsblock.weather.ui.sky.SkyTier
 import com.catsblock.weather.ui.sky.boltReach
 import com.catsblock.weather.ui.sky.buildBolt
-import com.catsblock.weather.ui.sky.detectSkyTier
 import com.catsblock.weather.ui.sky.drawBolt
 import com.catsblock.weather.ui.sky.lightningEnvelope
 import kotlinx.coroutines.delay
 import kotlin.math.abs
-import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.max
 import kotlin.math.min
@@ -51,18 +49,11 @@ private const val NEVER = 3.0e38f
 private const val F_FAR = 1
 private const val F_FROZEN = 2
 private const val F_BLUR = 4
-private const val D_SPLASH = 0
-private const val D_ICE = 1
-private const val D_SHARD = 2
-private const val D_DRIP = 3
 
-private val RainColor = Color(0xFFD6E8FF)
-private val FrostRainColor = Color(0xFFE4F2FF)
 private val SnowColor = Color(0xFFF8FBFF)
 private val HailBody = Color(0xFFE9F1F6)
 private val HailShade = Color(0xFFB9C9D6)
 private val HailEdge = Color(0xFFAFC0CC)
-private val SplashColor = Color(0xFFE8F3FF)
 private val MistColor = Color(0xFFC9D8E6)
 private val FlashColor = Color(0xFFB8C8FF)
 private val GlowColor = Color(0xFFEAF0FF)
@@ -183,30 +174,11 @@ private class Air(val cap: Int) {
     val sd = IntArray(cap)
 }
 
-private class Debris(val cap: Int) {
-    var n = 0
-    val kind = IntArray(cap)
-    val x = FloatArray(cap)
-    val y = FloatArray(cap)
-    val vx = FloatArray(cap)
-    val vy = FloatArray(cap)
-    val rot = FloatArray(cap)
-    val om = FloatArray(cap)
-    val sz = FloatArray(cap)
-    val age = FloatArray(cap)
-    val life = FloatArray(cap)
-    val land = FloatArray(cap)
-    val seed = IntArray(cap)
-    val col = IntArray(cap)
-    val poly = FloatArray(cap * 8)
-}
-
-internal class WeatherSim(private val d: Float) : DripSink {
+internal class WeatherSim(private val d: Float) {
     private val random = Random(System.nanoTime())
     private val rain = Air(260)
     private val snow = Air(520)
     private val hail = Air(70)
-    private val debris = Debris(300)
     private val path = Path()
     private var windNow = 0f
     private var time = 0f
@@ -225,10 +197,12 @@ internal class WeatherSim(private val d: Float) : DripSink {
     private var strikeLx = 0f
     private var strikeLy = 0f
     private var strikeX0 = 0f
+    private var strikeY0 = 0f
     private var glowX = 0f
     private var glowY = 0f
     private var glowAge = 9f
     private var glowRadius = 0f
+    private var glowSurface: CardSurface? = null
     private var mist = 0f
     var coords: LayoutCoordinates? = null
 
@@ -236,14 +210,15 @@ internal class WeatherSim(private val d: Float) : DripSink {
         rain.n = 0
         snow.n = 0
         hail.n = 0
+        mist = 0f
     }
 
     fun busy(active: Boolean): Boolean {
-        if (active || boltActive || debris.n > 0 || glowAge < 0.45f) return true
+        if (active || boltActive || glowAge < 0.45f) return true
         val surfaces = WeatherSurfaces.surfaces
         for (k in surfaces.indices) {
             val s = surfaces[k]
-            if (s.count > 0 || s.holeActive) return true
+            if (s.count > 0) return true
         }
         return false
     }
@@ -294,9 +269,9 @@ internal class WeatherSim(private val d: Float) : DripSink {
             stepSnow(dt)
             stepHail(dt)
         }
-        for (k in surfaces.indices) surfaces[k].step(dt, d, freezeActive, lastWarm, windNow, random, this)
-        stepDebris(dt)
+        for (k in surfaces.indices) surfaces[k].step(dt, d, freezeActive, lastWarm, windNow, random)
         glowAge += dt
+        if (glowAge >= 0.4f) glowSurface = null
     }
 
     private fun fill(a: Air, target: Int, type: Int) {
@@ -441,11 +416,10 @@ internal class WeatherSim(private val d: Float) : DripSink {
         val ry = a.y[i] + originY
         val s = WeatherSurfaces.hit(rx, ry, a.s[i])
         if (s == null) {
-            a.tp[i] = NEVER
+            spawnRain(i, false)
             return
         }
         val frozen = (a.fl[i] and F_FROZEN) != 0
-        splash(a.x[i], a.y[i], a.s[i], frozen)
         s.rainImpact(rx - s.left, ry - s.top, a.s[i], d, random, frozen)
         if (frozen) s.addGlaze(0.004f * (a.s[i] / d), glazeLimit)
         spawnRain(i, false)
@@ -457,7 +431,7 @@ internal class WeatherSim(private val d: Float) : DripSink {
         val ry = a.y[i] + originY
         val s = WeatherSurfaces.hit(rx, ry, a.s[i])
         if (s == null) {
-            a.tp[i] = NEVER
+            spawnSnow(i, false)
             return
         }
         if (random.nextFloat() < 0.85f) s.snowLand(rx - s.left, ry - s.top, a.s[i] * 0.9f, d, random)
@@ -468,253 +442,50 @@ internal class WeatherSim(private val d: Float) : DripSink {
         val a = hail
         val rx = a.x[i] + originX
         val ry = a.y[i] + originY
-        val s = WeatherSurfaces.hit(rx, ry, a.s[i])
-        if (s == null) {
-            a.tp[i] = NEVER
-            return
-        }
-        val sz = a.s[i]
-        s.chipLand(rx - s.left, ry - s.top, sz * 0.7f, 15f, a.sd[i])
-        val pieces = 3 + random.nextInt(3) + (if (sz > 2.6f * d) 1 else 0)
-        for (k in 0 until pieces) {
-            val j = newDebris()
-            if (j < 0) break
-            val ang = -(0.2f + random.nextFloat() * 2.74f)
-            val sp = (60f + random.nextFloat() * 220f) * d
-            debris.kind[j] = D_ICE
-            debris.x[j] = a.x[i]
-            debris.y[j] = a.y[i]
-            debris.vx[j] = cos(ang) * sp + windNow * 60f * d
-            debris.vy[j] = sin(ang) * sp
-            debris.rot[j] = random.nextFloat() * TWO_PI
-            debris.om[j] = (random.nextFloat() - 0.5f) * 2f * (5f + 11f * random.nextFloat())
-            debris.sz[j] = sz * (0.2f + 0.28f * random.nextFloat())
-            debris.age[j] = 0f
-            debris.life[j] = 15f
-            debris.land[j] = 0.3f + random.nextFloat() * 0.7f
-            debris.seed[j] = random.nextInt()
+        val surface = WeatherSurfaces.hit(rx, ry, a.s[i])
+        if (surface != null) {
+            surface.chipLand(rx - surface.left, ry - surface.top, a.s[i] * 0.7f, 15f, a.sd[i])
         }
         spawnHail(i, false)
     }
 
-    private fun splash(x: Float, y: Float, r: Float, frozen: Boolean) {
-        if (r < 0.85f * d && random.nextFloat() < 0.6f) return
-        val pieces = if (frozen) 1 + random.nextInt(2) else 2 + random.nextInt(3)
-        for (k in 0 until pieces) {
-            val j = newDebris()
-            if (j < 0) return
-            val ang = -(0.25f + random.nextFloat() * 2.6f)
-            val sp = (35f + random.nextFloat() * 110f) * d * (0.6f + r / (4f * d))
-            debris.kind[j] = D_SPLASH
-            debris.x[j] = x
-            debris.y[j] = y
-            debris.vx[j] = cos(ang) * sp
-            debris.vy[j] = sin(ang) * sp
-            debris.rot[j] = 0f
-            debris.om[j] = 0f
-            debris.sz[j] = (0.28f + 0.4f * random.nextFloat()) * d
-            debris.age[j] = 0f
-            debris.life[j] = 0.28f + random.nextFloat() * 0.3f
-            debris.land[j] = NEVER
-        }
+    private fun strikeable(surface: CardSurface): Boolean {
+        val left = surface.left - originX
+        val top = surface.top - originY
+        return surface.active && surface.width > 60f * d &&
+            left + surface.width > 0f && left < width &&
+            top + surface.height > 0f && top < height
     }
 
-    override fun drip(rootX: Float, rootY: Float, r: Float, vy: Float) {
-        val j = newDebris()
-        if (j < 0) return
-        debris.kind[j] = D_DRIP
-        debris.x[j] = rootX - originX
-        debris.y[j] = rootY - originY
-        debris.vx[j] = 0f
-        debris.vy[j] = vy
-        debris.rot[j] = 0f
-        debris.om[j] = 0f
-        debris.sz[j] = r
-        debris.age[j] = 0f
-        debris.life[j] = 0.9f
-        debris.land[j] = NEVER
+    private fun planStrike(): Boolean {
+        val candidates = WeatherSurfaces.surfaces.filter(::strikeable)
+        if (candidates.isEmpty()) {
+            strikeSurface = null
+            return false
+        }
+        val surface = candidates[random.nextInt(candidates.size)]
+        strikeSurface = surface
+        strikeLx = surface.width * (0.2f + 0.6f * random.nextFloat())
+        strikeLy = surface.height * (0.12f + 0.3f * random.nextFloat())
+        strikeX0 = surface.width * (0.2f + 0.6f * random.nextFloat())
+        strikeY0 = -0.02f * surface.height
+        bolt = buildBolt(random, strikeX0, strikeY0, strikeLx, strikeLy)
+        return true
     }
 
-    private fun newDebris(): Int {
-        if (debris.n >= debris.cap) return -1
-        val i = debris.n
-        debris.n++
-        return i
-    }
-
-    private fun removeDebris(i: Int) {
-        val last = debris.n - 1
-        if (i != last) {
-            debris.kind[i] = debris.kind[last]
-            debris.x[i] = debris.x[last]
-            debris.y[i] = debris.y[last]
-            debris.vx[i] = debris.vx[last]
-            debris.vy[i] = debris.vy[last]
-            debris.rot[i] = debris.rot[last]
-            debris.om[i] = debris.om[last]
-            debris.sz[i] = debris.sz[last]
-            debris.age[i] = debris.age[last]
-            debris.life[i] = debris.life[last]
-            debris.land[i] = debris.land[last]
-            debris.seed[i] = debris.seed[last]
-            debris.col[i] = debris.col[last]
-            System.arraycopy(debris.poly, last * 8, debris.poly, i * 8, 8)
-        }
-        debris.n = last
-    }
-
-    private fun stepDebris(dt: Float) {
-        var i = 0
-        while (i < debris.n) {
-            val kind = debris.kind[i]
-            val g = when (kind) {
-                D_SPLASH -> 900f
-                D_DRIP -> 1500f
-                else -> 1700f
-            } * d
-            debris.vy[i] += g * dt
-            debris.vx[i] *= 1f - min(0.9f, dt * 1.1f)
-            debris.vy[i] *= 1f - dt * 0.35f
-            debris.x[i] += debris.vx[i] * dt
-            debris.y[i] += debris.vy[i] * dt
-            debris.rot[i] += debris.om[i] * dt
-            debris.age[i] += dt
-            var gone = debris.age[i] >= debris.life[i] || debris.y[i] > height + 60f * d
-            if (!gone && (kind == D_ICE || kind == D_SHARD) && debris.age[i] >= debris.land[i]) {
-                val rx = debris.x[i] + originX
-                val ry = debris.y[i] + originY
-                val s = WeatherSurfaces.hit(rx, ry, debris.sz[i] * 0.5f)
-                if (s != null) {
-                    val remaining = max(2f, debris.life[i] - debris.age[i])
-                    if (kind == D_ICE) {
-                        s.chipLand(rx - s.left, ry - s.top, debris.sz[i], remaining, debris.seed[i])
-                    } else {
-                        s.shardLand(rx - s.left, ry - s.top, remaining, debris.rot[i], debris.poly, i * 8, debris.seed[i])
-                    }
-                    gone = true
-                } else {
-                    debris.land[i] = NEVER
-                }
-            }
-            if (gone) removeDebris(i) else i++
-        }
-    }
-
-    private fun strikeable(s: CardSurface): Boolean {
-        val top = s.top - originY
-        return s.active && s.width > 60f * d && top > height * 0.1f && top < height * 0.66f &&
-            s.left - originX > -width * 0.2f
-    }
-
-    private fun planStrike(lightning: LightningState?) {
-        val w = width
-        val h = height
-        val surfaces = WeatherSurfaces.surfaces
-        var count = 0
-        var highest = h
-        for (k in surfaces.indices) {
-            val s = surfaces[k]
-            if (strikeable(s)) {
-                count++
-                highest = min(highest, s.top - originY)
-            }
-        }
-        strikeSurface = null
-        var sx = w * (0.15f + 0.7f * random.nextFloat())
-        var ex = sx
-        var ey = h * 0.4f
-        var chosen: CardSurface? = null
-        if (count > 0 && random.nextFloat() < 0.5f) {
-            var pick = random.nextInt(count)
-            for (k in surfaces.indices) {
-                val s = surfaces[k]
-                if (strikeable(s)) {
-                    if (pick == 0) {
-                        chosen = s
-                        break
-                    }
-                    pick--
-                }
-            }
-        }
-        val card = chosen
-        if (card != null) {
-            strikeSurface = card
-            strikeLx = card.width * (0.2f + 0.6f * random.nextFloat())
-            strikeLy = card.height * (0.05f + 0.15f * random.nextFloat()) + 4f * d
-            ex = card.left - originX + strikeLx
-            ey = card.top - originY + strikeLy
-            sx = (ex + (random.nextFloat() - 0.5f) * w * 0.5f).coerceIn(w * 0.05f, w * 0.95f)
-        } else {
-            val floorY = (if (count > 0) highest else h * 0.6f).coerceAtLeast(h * 0.25f)
-            ey = floorY * (0.5f + 0.4f * random.nextFloat())
-            ex = (sx + (random.nextFloat() - 0.5f) * w * 0.3f).coerceIn(w * 0.1f, w * 0.9f)
-        }
-        strikeX0 = sx
-        bolt = buildBolt(random, sx, -0.02f * h, ex, ey)
-        val locate = lightning?.directionAt
-        if (lightning != null && locate != null) {
-            val v = locate((sx / w - 0.5f) * (w / h), ((((-0.02f * h) + ey) * 0.5f) / h - 0.4f) * 0.7f)
-            lightning.dirX = v[0]
-            lightning.dirY = v[1]
-            lightning.dirZ = v[2]
-        }
-    }
-
-    private fun strikeCard(s: CardSurface) {
-        if (!s.active) return
-        val rr = (min(s.width, s.height * 1.8f) * 0.22f).coerceIn(26f * d, 70f * d)
-        val seed = random.nextInt()
-        s.beginHole(strikeLx, strikeLy, rr, seed)
-        glowX = s.left - originX + strikeLx
-        glowY = s.top - originY + strikeLy
-        glowRadius = min(s.width, 260f * d) * 0.7f
+    private fun strikeCard(surface: CardSurface) {
+        if (!surface.active) return
+        glowSurface = surface
+        glowX = strikeLx
+        glowY = strikeLy
+        glowRadius = min(surface.width, 260f * d) * 0.7f
         glowAge = 0f
-        val n = s.holeCount
-        for (k in 0 until n) {
-            val i = newDebris()
-            if (i < 0) break
-            val k2 = (k + 1) % n
-            val ax = s.holeVx(k)
-            val ay = s.holeVy(k)
-            val bx = s.holeVx(k2)
-            val by = s.holeVy(k2)
-            val mx = (ax + bx) * 0.5f * (1.08f + 0.2f * random.nextFloat())
-            val my = (ay + by) * 0.5f * (1.08f + 0.2f * random.nextFloat())
-            val ix = (random.nextFloat() - 0.5f) * rr * 0.3f
-            val iy = (random.nextFloat() - 0.5f) * rr * 0.3f
-            val cx = (ix + ax + mx + bx) * 0.25f
-            val cy = (iy + ay + my + by) * 0.25f
-            val o = i * 8
-            debris.poly[o] = ix - cx
-            debris.poly[o + 1] = iy - cy
-            debris.poly[o + 2] = ax - cx
-            debris.poly[o + 3] = ay - cy
-            debris.poly[o + 4] = mx - cx
-            debris.poly[o + 5] = my - cy
-            debris.poly[o + 6] = bx - cx
-            debris.poly[o + 7] = by - cy
-            val ang = atan2(cy, cx) + (random.nextFloat() - 0.5f) * 0.9f
-            val sp = (150f + 420f * random.nextFloat()) * d
-            debris.kind[i] = D_SHARD
-            debris.x[i] = glowX + cx
-            debris.y[i] = glowY + cy
-            debris.vx[i] = cos(ang) * sp
-            debris.vy[i] = sin(ang) * sp - 90f * d
-            debris.rot[i] = random.nextFloat() * TWO_PI
-            debris.om[i] = (random.nextFloat() - 0.5f) * 2f * (2f + 7f * random.nextFloat())
-            debris.sz[i] = 6f * d
-            debris.age[i] = 0f
-            debris.life[i] = 15f
-            debris.land[i] = 0.45f + 0.8f * random.nextFloat()
-            debris.seed[i] = random.nextInt()
-            debris.col[i] = s.color
-        }
     }
 
-    private suspend fun playStrike(lightning: LightningState?) {
+    private suspend fun playStrike() {
         val reach = boltReach(bolt)
-        val speed = max(height, 800f) * 10f
+        val surface = strikeSurface ?: return
+        val speed = max(min(surface.width, surface.height), 200f) * 10f
         val tReach = reach / speed
         val strength = 0.7f + random.nextFloat() * 0.3f
         boltActive = true
@@ -726,67 +497,69 @@ internal class WeatherSim(private val d: Float) : DripSink {
             val now = withFrameNanos { it }
             val sec = (now - start) / 1_000_000_000f
             boltReveal = sec * speed
-            val e = if (sec < tReach) 0.3f else lightningEnvelope(sec - tReach)
-            boltFade = e
-            if (lightning != null) lightning.intensity = (if (sec < tReach) 0.1f else e) * strength
+            boltFade = (if (sec < tReach) 0.3f else lightningEnvelope(sec - tReach)) * strength
             if (!struck && sec >= tReach) {
                 struck = true
-                val s = strikeSurface
-                if (s != null) strikeCard(s)
+                strikeCard(surface)
             }
             WeatherSurfaces.frame.longValue = now
             if (sec > tReach + 0.65f) break
         }
     }
 
-    private fun endStrike(lightning: LightningState?) {
+    private fun endStrike() {
         boltActive = false
         boltFade = 0f
         bolt = EmptyBolt
         strikeSurface = null
-        if (lightning != null) lightning.intensity = 0f
     }
 
-    suspend fun lightningLoop(thunder: Float, lightning: LightningState?) {
+    suspend fun lightningLoop(thunder: Float) {
         val period = thunderPeriod(thunder)
         while (true) {
             delay(random.nextLong(period.first, period.last))
             if (!syncOrigin()) continue
-            val surfaces = WeatherSurfaces.surfaces
-            for (k in surfaces.indices) surfaces[k].refresh()
-            planStrike(lightning)
+            for (surface in WeatherSurfaces.surfaces) surface.refresh()
+            if (!planStrike()) continue
             try {
-                playStrike(lightning)
+                playStrike()
             } finally {
-                endStrike(lightning)
+                endStrike()
             }
         }
     }
 
-    fun draw(scope: DrawScope, mix: PrecipMix, skyHandles: Boolean) {
+    fun drawCard(scope: DrawScope, surface: CardSurface, mix: PrecipMix) {
+        if (!surface.active) return
         with(scope) {
-            if (mist > 0.002f) drawRect(MistColor.copy(alpha = mist))
-            if (!skyHandles && boltActive && boltFade > 0.02f) {
+            if (mist > 0.002f && mix.rain + mix.freezing > 0.01f) {
+                drawRect(MistColor.copy(alpha = mist), size = Size(size.width, size.height))
+            }
+            translate(
+                left = originX - surface.left,
+                top = originY - surface.top
+            ) {
+                if (mix.active) {
+                    drawSnow(surface)
+                    drawHail(surface)
+                }
+            }
+            if (boltActive && strikeSurface === surface && boltFade > 0.02f) {
                 drawRect(
                     brush = Brush.radialGradient(
                         listOf(FlashColor.copy(alpha = 0.16f * boltFade), Color.Transparent),
-                        center = Offset(strikeX0, 0f),
-                        radius = width * 0.9f
+                        center = Offset(strikeX0, strikeY0),
+                        radius = max(surface.width, surface.height) * 0.9f
                     )
                 )
+                drawBolt(bolt, boltReveal, boltFade, d)
             }
-            if (mix.active) {
-                drawRain()
-                drawSnow()
-                drawHail()
-            }
-            drawDebris()
-            if (glowAge < 0.4f) {
-                val f = 1f - glowAge / 0.4f
+            if (glowSurface === surface && glowAge < 0.4f) {
+                val fade = 1f - glowAge / 0.4f
                 val center = Offset(glowX, glowY)
                 drawCircle(
                     brush = Brush.radialGradient(
-                        listOf(GlowColor.copy(alpha = f * f * 0.5f), Color.Transparent),
+                        listOf(GlowColor.copy(alpha = fade * fade * 0.5f), Color.Transparent),
                         center = center,
                         radius = glowRadius
                     ),
@@ -794,44 +567,17 @@ internal class WeatherSim(private val d: Float) : DripSink {
                     center = center
                 )
             }
-            if (boltActive) drawBolt(bolt, boltReveal, boltFade, d)
         }
     }
 
-    private fun DrawScope.drawRain() {
-        val a = rain
-        for (i in 0 until a.n) {
-            val wr = windNow * (0.85f + 0.3f * a.q[i])
-            val norm = sqrt(1f + wr * wr)
-            val ux = wr / norm
-            val uy = 1f / norm
-            val flag = a.fl[i]
-            val px = a.x[i]
-            val py = a.y[i]
-            val head = Offset(px, py)
-            if ((flag and F_FAR) != 0) {
-                val len = a.v[i] * 0.008f + 2f * d
-                drawLine(RainColor.copy(alpha = 0.11f), Offset(px - ux * len, py - uy * len), head, 0.6f * d, StrokeCap.Round)
-            } else {
-                val c = if ((flag and F_FROZEN) != 0) FrostRainColor else RainColor
-                val r = a.s[i]
-                val len = a.v[i] * 0.011f + 2.5f * d
-                val w = r * 0.9f
-                drawLine(c.copy(alpha = 0.10f), Offset(px - ux * len, py - uy * len), head, w * 1.7f, StrokeCap.Round)
-                drawLine(c.copy(alpha = 0.3f), Offset(px - ux * len * 0.45f, py - uy * len * 0.45f), head, w, StrokeCap.Round)
-                if (r > 1.1f * d) {
-                    drawOval(Color.White.copy(alpha = 0.16f), Offset(px - r * 0.6f, py - r * 1.1f), Size(r * 1.2f, r * 1.9f))
-                }
-                drawCircle(Color.White.copy(alpha = 0.5f), w * 0.45f, Offset(px - r * 0.2f, py - r * 0.3f))
-            }
-        }
-    }
-
-    private fun DrawScope.drawSnow() {
+    private fun DrawScope.drawSnow(surface: CardSurface) {
         val a = snow
         for (i in 0 until a.n) {
             val r = a.s[i]
-            val c = Offset(a.x[i], a.y[i])
+            val x = a.x[i]
+            val y = a.y[i]
+            if (!intersects(surface, x, y, r * 1.8f)) continue
+            val c = Offset(x, y)
             val flag = a.fl[i]
             val q = a.q[i]
             when {
@@ -848,12 +594,13 @@ internal class WeatherSim(private val d: Float) : DripSink {
         }
     }
 
-    private fun DrawScope.drawHail() {
+    private fun DrawScope.drawHail(surface: CardSurface) {
         val a = hail
         for (i in 0 until a.n) {
             val s = a.s[i]
             val x = a.x[i]
             val y = a.y[i]
+            if (!intersects(surface, x, y, s * 1.5f)) continue
             val rot = a.q[i] * TWO_PI + a.t[i] * (2.5f + 5f * a.q[i])
             val len = a.v[i] * 0.008f
             val norm = sqrt(1f + windNow * windNow * 0.49f)
@@ -869,45 +616,13 @@ internal class WeatherSim(private val d: Float) : DripSink {
         }
     }
 
-    private fun DrawScope.drawDebris() {
-        for (i in 0 until debris.n) {
-            val x = debris.x[i]
-            val y = debris.y[i]
-            val age = debris.age[i]
-            val life = debris.life[i]
-            val r = debris.sz[i]
-            val fade = ((life - age) / 1.2f).coerceIn(0f, 1f)
-            when (debris.kind[i]) {
-                D_SPLASH -> drawCircle(SplashColor.copy(alpha = 0.55f * (1f - age / life)), r, Offset(x, y))
-                D_DRIP -> {
-                    val f = 1f - age / life
-                    drawOval(RainColor.copy(alpha = 0.45f * f), Offset(x - r * 0.7f, y - r * 1.5f), Size(r * 1.4f, r * 3f))
-                    drawCircle(Color.White.copy(alpha = 0.6f * f), r * 0.25f, Offset(x - r * 0.2f, y - r * 0.6f))
-                }
-                D_ICE -> {
-                    polyPath(path, x, y, r, debris.rot[i], debris.seed[i], 5)
-                    drawPath(path, HailBody.copy(alpha = 0.9f * fade))
-                    drawPath(path, HailEdge.copy(alpha = 0.5f * fade), style = strokeFor(max(0.5f, r * 0.14f)))
-                }
-                D_SHARD -> {
-                    val c = cos(debris.rot[i])
-                    val sn = sin(debris.rot[i])
-                    path.reset()
-                    for (k in 0 until 4) {
-                        val px = debris.poly[i * 8 + 2 * k]
-                        val py = debris.poly[i * 8 + 2 * k + 1]
-                        val rx = x + px * c - py * sn
-                        val ry = y + px * sn + py * c
-                        if (k == 0) path.moveTo(rx, ry) else path.lineTo(rx, ry)
-                    }
-                    path.close()
-                    drawPath(path, Color(debris.col[i]).copy(alpha = 0.94f * fade))
-                    drawPath(path, Color.White.copy(alpha = 0.07f * fade))
-                    drawPath(path, Color.White.copy(alpha = 0.45f * fade), style = strokeFor(1.1f * d))
-                }
-            }
-        }
+    private fun intersects(surface: CardSurface, x: Float, y: Float, radius: Float): Boolean {
+        val localX = x + originX - surface.left
+        val localY = y + originY - surface.top
+        return localX + radius >= 0f && localY + radius >= 0f &&
+            localX - radius <= surface.width && localY - radius <= surface.height
     }
+
 }
 
 @Composable
@@ -916,8 +631,6 @@ fun ParticleOverlay(
     windSpeedKmh: Double = 0.0,
     windDirDeg: Double = 0.0,
     alpha: Float = 1f,
-    lightning: LightningState? = null,
-    skyLightning: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val density = LocalDensity.current.density
@@ -930,8 +643,18 @@ fun ParticleOverlay(
     val windRatio = (-sin(Math.toRadians(windDirDeg)) * (windSpeedKmh / 45.0).coerceIn(0.0, 1.0) * 0.55).toFloat()
     val currentWind by rememberUpdatedState(windRatio)
 
+    SideEffect {
+        WeatherSurfaces.renderer = sim
+        WeatherSurfaces.mix = mix
+        WeatherSurfaces.effectAlpha.floatValue = alpha.coerceIn(0f, 1f)
+    }
+
     DisposableEffect(sim) {
-        onDispose { WeatherSurfaces.clearItems() }
+        onDispose {
+            WeatherSurfaces.clearItems()
+            if (WeatherSurfaces.renderer === sim) WeatherSurfaces.renderer = null
+            WeatherSurfaces.mix = PrecipMix.None
+        }
     }
 
     LaunchedEffect(mix.active) {
@@ -957,15 +680,12 @@ fun ParticleOverlay(
         }
     }
 
-    LaunchedEffect(sim, lifecycleOwner, mix.thunder, lightning) {
+    LaunchedEffect(sim, lifecycleOwner, mix.thunder) {
         if (mix.thunder <= 0f) return@LaunchedEffect
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-            sim.lightningLoop(mix.thunder, lightning)
+            sim.lightningLoop(mix.thunder)
         }
     }
 
-    val layered = if (alpha < 0.99f) modifier.graphicsLayer { this.alpha = alpha } else modifier
-    Canvas(layered.fillMaxSize().onGloballyPositioned { sim.coords = it }) {
-        if (WeatherSurfaces.frame.longValue >= 0L) sim.draw(this, currentMix, skyLightning)
-    }
+    Box(modifier.fillMaxSize().onGloballyPositioned { sim.coords = it })
 }
