@@ -85,7 +85,7 @@ private val TrackColor = Color(0xFF262848)
 private val ElapsedColor = Color(0xFF5B6076)
 private val PanelShape = RoundedCornerShape(32.dp)
 
-private class MoonCell(val date: LocalDate, val phase: MoonPhase, val eclipse: Eclipse?)
+private class MoonCell(val date: LocalDate, val ms: Long, val phase: MoonPhase, val eclipse: Eclipse?)
 
 private class StarDot(val x: Float, val y: Float, val r: Float, val phase: Float)
 
@@ -175,7 +175,7 @@ private fun MoonContent(
         (1..month.lengthOfMonth()).map { d ->
             val date = month.atDay(d)
             val noon = date.atTime(12, 0).toInstant(offset).toEpochMilli()
-            MoonCell(date, Moon.phase(noon), Moon.dayEclipse(date, offset)?.second)
+            MoonCell(date, noon, Moon.phase(noon), Moon.dayEclipse(date, offset)?.second)
         }
     }
     val selectedMonth = YearMonth.from(selected)
@@ -197,7 +197,7 @@ private fun MoonContent(
                 .navigationBarsPadding()
         ) {
             Box(Modifier.fillMaxWidth().height(420.dp)) {
-                MoonOrb(phase.cycle, Modifier.align(Alignment.Center).size(310.dp), eclipse)
+                MoonOrb(phase.cycle, Modifier.align(Alignment.Center).size(310.dp), eclipse, ms)
                 CloudLayer(activeCloud, Modifier.fillMaxSize())
             }
             Column(
@@ -503,7 +503,7 @@ private fun CalendarCard(
                                 color = if (isToday || isSelected) Color.White else SoftWhite
                             )
                             Spacer(Modifier.height(4.dp))
-                            MoonOrb(cell.phase.cycle, Modifier.size(34.dp), cell.eclipse)
+                            MoonOrb(cell.phase.cycle, Modifier.size(34.dp), cell.eclipse, cell.ms)
                         }
                     }
                 }
