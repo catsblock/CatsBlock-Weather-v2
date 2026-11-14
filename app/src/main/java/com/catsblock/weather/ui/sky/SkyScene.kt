@@ -25,7 +25,12 @@ class SkyScene(
     val ambient: FloatArray,
     val cover: Float,
     val thickness: Float,
-    val dark: Float,
+    val shade: Float,
+    val grade: Float,
+    val contrast: Float,
+    val veil: Float,
+    val glow: Float,
+    val tint: FloatArray,
     val fog: Float
 )
 
@@ -71,20 +76,6 @@ fun skyCover(kind: Condition, cloudPercent: Int): Float {
     }
     val measured = if (cloudPercent in 0..100) cloudPercent / 100f else fallback
     return measured.coerceIn(range.start, range.endInclusive)
-}
-
-fun skyDarkness(kind: Condition): Float = when (kind) {
-    Condition.Drizzle -> 0.25f
-    Condition.Rain, Condition.ScatteredShowers -> 0.45f
-    Condition.HeavyRain, Condition.Hail -> 0.6f
-    Condition.Sleet, Condition.RainSnow, Condition.WintryMix, Condition.Icy -> 0.4f
-    Condition.Storm, Condition.ScatteredStorms, Condition.IsolatedStorms -> 0.75f
-    Condition.StrongStorms -> 0.85f
-    Condition.Blizzard -> 0.2f
-    Condition.HeavySnow -> -0.05f
-    Condition.Snow, Condition.Flurries, Condition.BlowingSnow, Condition.ScatteredSnow, Condition.SnowShowers -> -0.2f
-    Condition.Fog -> 0.1f
-    else -> 0f
 }
 
 fun skyFog(kind: Condition, visibilityM: Double): Float {
@@ -136,7 +127,7 @@ fun buildSkyScene(
     longitude: Double,
     cover: Float,
     thickness: Float,
-    dark: Float,
+    atmosphere: SkyAtmosphere,
     fog: Float,
     storm: Float,
     tier: SkyTier
@@ -179,7 +170,12 @@ fun buildSkyScene(
         ambient = SkyPhysics.zenithAmbient(doubleArrayOf(sx, sy, sz), max(tier.atmosphereSteps, 4)),
         cover = cover,
         thickness = thickness,
-        dark = dark,
+        shade = atmosphere.shade,
+        grade = atmosphere.grade,
+        contrast = atmosphere.contrast,
+        veil = atmosphere.veil,
+        glow = atmosphere.glow,
+        tint = atmosphere.tint,
         fog = fog
     )
 }
