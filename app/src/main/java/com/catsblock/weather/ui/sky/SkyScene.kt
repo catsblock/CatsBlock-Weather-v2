@@ -3,7 +3,6 @@ package com.catsblock.weather.ui.sky
 import androidx.compose.runtime.Stable
 import com.catsblock.weather.data.Condition
 import com.catsblock.weather.data.Solar
-import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.max
 import kotlin.math.pow
@@ -29,6 +28,8 @@ class SkyScene(
     val dark: Float,
     val fog: Float
 )
+
+private const val CAMERA_PITCH_DEG = 58.0
 
 private val STORM_STYLE = floatArrayOf(0.8f, 1.3f, 0.35f, 1.1f)
 
@@ -131,7 +132,6 @@ fun skyCirrus(cover: Float): Float =
 
 fun buildSkyScene(
     epochMs: Long,
-    cameraEpochMs: Long,
     latitude: Double,
     longitude: Double,
     cover: Float,
@@ -146,41 +146,21 @@ fun buildSkyScene(
     val sx = sunVector[0].toDouble()
     val sy = sunVector[1].toDouble()
     val sz = sunVector[2].toDouble()
-    val cameraSun = Solar.position(cameraEpochMs, latitude, longitude)
-    val cameraSunVector = sunDirection(cameraSun.azimuth, cameraSun.altitude)
-    val cameraMoon = SkyAstro.moonView(cameraEpochMs, latitude, longitude, cameraSunVector)
-    val sunAltitudeDeg = Math.toDegrees(cameraSun.altitude)
     val moon = SkyAstro.moonView(epochMs, latitude, longitude, sunVector)
     val moonAltitudeDeg = Math.toDegrees(moon.altitude)
-    val cameraMoonAltitudeDeg = Math.toDegrees(cameraMoon.altitude)
-
-    val moonWeight = smoothstep(0.0, 8.0, cameraMoonAltitudeDeg) * smoothstep(4.0, -6.0, sunAltitudeDeg)
-    val separation = Math.toDegrees(
-        kotlin.math.acos(
-            (cameraSunVector[0] * cameraMoon.direction[0] + cameraSunVector[1] * cameraMoon.direction[1] +
-                cameraSunVector[2] * cameraMoon.direction[2]).toDouble().coerceIn(-1.0, 1.0)
-        )
+    val yaw = if (latitude >= 0.0) Math.PI else 0.0
+    val pitch = Math.toRadians(CAMERA_PITCH_DEG)
+    val forward = floatArrayOf(
+        (sin(yaw) * cos(pitch)).toFloat(),
+        sin(pitch).toFloat(),
+        (cos(yaw) * cos(pitch)).toFloat()
     )
-    val dayMoon = smoothstep(60.0, 48.0, separation) * smoothstep(2.0, 8.0, cameraMoonAltitudeDeg) *
-        (1.0 - moonWeight) * smoothstep(-2.0, 6.0, sunAltitudeDeg)
-    val referenceAltitude = (sunAltitudeDeg * (1.0 - moonWeight) + cameraMoonAltitudeDeg * moonWeight) * (1.0 - 0.5 * dayMoon) +
-        cameraMoonAltitudeDeg * 0.5 * dayMoon
-    val noonYaw = if (latitude >= 0.0) Math.PI else 0.0
-    val follow = smoothstep(80.0, 65.0, referenceAltitude)
-    val sunTarget = cameraSun.azimuth + Math.toRadians(10.0)
-    val moonTarget = cameraMoon.azimuth - Math.toRadians(10.0)
-    val moonShare = moonWeight + 0.5 * dayMoon
-    val targetAzimuth = atan2(
-        sin(sunTarget) * (1.0 - moonShare) + sin(moonTarget) * moonShare,
-        cos(sunTarget) * (1.0 - moonShare) + cos(moonTarget) * moonShare
-    )
-    val yaw = atan2(
-        sin(noonYaw) * (1.0 - follow) + sin(targetAzimuth) * follow,
-        cos(noonYaw) * (1.0 - follow) + cos(targetAzimuth) * follow
-    )
-    val forward = floatArrayOf(sin(yaw).toFloat(), 0f, cos(yaw).toFloat())
     val right = floatArrayOf(cos(yaw).toFloat(), 0f, (-sin(yaw)).toFloat())
-    val up = floatArrayOf(0f, 1f, 0f)
+    val up = floatArrayOf(
+        (-sin(yaw) * sin(pitch)).toFloat(),
+        cos(pitch).toFloat(),
+        (-cos(yaw) * sin(pitch)).toFloat()
+    )
     val sidereal = SkyAstro.siderealRadians(epochMs, longitude)
     val phi = Math.toRadians(latitude)
     return SkyScene(
