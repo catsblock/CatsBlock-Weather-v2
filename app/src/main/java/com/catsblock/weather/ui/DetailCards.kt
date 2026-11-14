@@ -114,25 +114,15 @@ fun GlassCard(
     )
     val surface = if (expressive) modifier.scrollEdgeFade().cardEntrance() else modifier
     val elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-    if (expressive) {
-        WeatherSurfaceHost(surface, 32.dp, sky.card) { cardModifier ->
-            if (onClick != null) {
-                Card(onClick = onClick, modifier = cardModifier, shape = shape, colors = colors, elevation = elevation, border = null) {
-                    Column(contentModifier.padding(20.dp), content = content)
-                }
-            } else {
-                Card(modifier = cardModifier, shape = shape, colors = colors, elevation = elevation, border = null) {
-                    Column(contentModifier.padding(20.dp), content = content)
-                }
+    WeatherSurfaceHost(surface, 32.dp) { cardModifier ->
+        if (onClick != null) {
+            Card(onClick = onClick, modifier = cardModifier, shape = shape, colors = colors, elevation = elevation, border = null) {
+                Column(contentModifier.padding(20.dp), content = content)
             }
-        }
-    } else if (onClick != null) {
-        Card(onClick = onClick, modifier = surface, shape = shape, colors = colors, elevation = elevation, border = null) {
-            Column(contentModifier.padding(20.dp), content = content)
-        }
-    } else {
-        Card(modifier = surface, shape = shape, colors = colors, elevation = elevation, border = null) {
-            Column(contentModifier.padding(20.dp), content = content)
+        } else {
+            Card(modifier = cardModifier, shape = shape, colors = colors, elevation = elevation, border = null) {
+                Column(contentModifier.padding(20.dp), content = content)
+            }
         }
     }
 }
