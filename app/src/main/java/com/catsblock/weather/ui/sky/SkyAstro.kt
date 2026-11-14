@@ -1,5 +1,6 @@
 package com.catsblock.weather.ui.sky
 
+import com.catsblock.weather.data.Eclipse
 import com.catsblock.weather.data.Moon
 import kotlin.math.asin
 import kotlin.math.atan2
@@ -29,7 +30,45 @@ class MoonView(
     val eclipse: FloatArray
 )
 
+class MoonDisk(
+    val cosTheta: Float,
+    val sinTheta: Float,
+    val light: FloatArray,
+    val earthshine: Float,
+    val eclipse: FloatArray
+)
+
 internal object SkyAstro {
+
+    private fun positionAngle(ra: Double, dec: Double): Double {
+        val poleRa = Math.toRadians(270.0)
+        val poleDec = Math.toRadians(90.0 - OBLIQUITY_DEG)
+        val dRa = poleRa - ra
+        return atan2(
+            cos(poleDec) * sin(dRa),
+            sin(poleDec) * cos(dec) - cos(poleDec) * sin(dec) * cos(dRa)
+        )
+    }
+
+    fun moonDisk(epochMs: Long, eclipse: Eclipse?): MoonDisk {
+        val equatorial = Moon.equatorial(epochMs)
+        val theta = -positionAngle(equatorial[0], equatorial[1])
+        val illuminated = Moon.phase(epochMs).illumination.coerceIn(0.0, 1.0)
+        val cosPhase = 2.0 * illuminated - 1.0
+        val sinPhase = sqrt((1.0 - cosPhase * cosPhase).coerceAtLeast(0.0))
+        val limb = Moon.brightLimbAngle(epochMs)
+        return MoonDisk(
+            cosTheta = cos(theta).toFloat(),
+            sinTheta = sin(theta).toFloat(),
+            light = floatArrayOf((-sin(limb) * sinPhase).toFloat(), (cos(limb) * sinPhase).toFloat(), cosPhase.toFloat()),
+            earthshine = (0.035 * (1.0 - illuminated)).toFloat(),
+            eclipse = if (eclipse != null) {
+                floatArrayOf(eclipse.dx.toFloat(), eclipse.dy.toFloat(), eclipse.umbra.toFloat(), eclipse.penumbra.toFloat())
+            } else {
+                floatArrayOf(0f, 0f, 0f, 0f)
+            }
+        )
+    }
 
     fun siderealRadians(epochMs: Long, lonDeg: Double): Double {
         val jd = epochMs / 86400000.0 + 2440587.5
@@ -72,14 +111,7 @@ internal object SkyAstro {
         val hourAngle = siderealRadians(epochMs, lonDeg) - ra
         val phi = Math.toRadians(latDeg.coerceIn(-89.9, 89.9))
         val parallactic = atan2(sin(hourAngle), tan(phi) * cos(dec) - sin(dec) * cos(hourAngle))
-        val poleRa = Math.toRadians(270.0)
-        val poleDec = Math.toRadians(90.0 - OBLIQUITY_DEG)
-        val dRa = poleRa - ra
-        val positionAngle = atan2(
-            cos(poleDec) * sin(dRa),
-            sin(poleDec) * cos(dec) - cos(poleDec) * sin(dec) * cos(dRa)
-        )
-        val theta = parallactic - positionAngle
+        val theta = parallactic - positionAngle(ra, dec)
 
         val zenith = doubleArrayOf(0.0, 1.0, 0.0)
         val projection = dot(zenith, dir)
