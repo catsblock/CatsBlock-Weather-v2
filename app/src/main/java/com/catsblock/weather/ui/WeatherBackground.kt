@@ -149,7 +149,8 @@ fun WeatherBackground(
     latitude: Double = Double.NaN,
     longitude: Double = Double.NaN,
     epochMs: Long = Long.MIN_VALUE,
-    visibilityM: Double = 10000.0
+    visibilityM: Double = 10000.0,
+    skyVisible: Boolean = true
 ) {
     val context = LocalContext.current
     val version by BackgroundKit.version.collectAsState()
@@ -226,14 +227,14 @@ fun WeatherBackground(
             SkyShaderLayer(
                 scene = scene,
                 tier = tier,
-                fade = 1f,
+                fade = if (skyVisible) 1f else 0f,
                 windKmh = windKmh,
                 windFromDeg = windDirDeg,
                 lightning = lightning,
                 onJank = { tier = tier.lowered() },
                 modifier = Modifier.fillMaxSize()
             )
-            if (skyWeather(kind) == SkyWeather.Storm) {
+            if (skyVisible && skyWeather(kind) == SkyWeather.Storm) {
                 SkyLightning(lightning, scene, kind, Modifier.fillMaxSize())
             }
         }
