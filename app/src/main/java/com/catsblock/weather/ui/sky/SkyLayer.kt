@@ -151,7 +151,12 @@ internal fun SkyShaderLayer(
             shader.setFloatUniform("uWindDir", sin(toward).toFloat(), cos(toward).toFloat())
             shader.setFloatUniform("uStyle", scene.style[0], scene.style[1], scene.style[2], scene.style[3])
             shader.setFloatUniform("uCirrus", if (tier.cirrus) scene.cirrus else 0f)
-            shader.setFloatUniform("uDark", scene.dark)
+            shader.setFloatUniform("uShade", scene.shade)
+            shader.setFloatUniform("uGrade", scene.grade)
+            shader.setFloatUniform("uContrast", scene.contrast)
+            shader.setFloatUniform("uVeil", scene.veil)
+            shader.setFloatUniform("uGlow", scene.glow)
+            shader.setFloatUniform("uTint", scene.tint[0], scene.tint[1], scene.tint[2])
             shader.setFloatUniform("uFog", scene.fog)
             if (lightning != null) {
                 shader.setFloatUniform("uFlash", lightning.dirX, lightning.dirY, lightning.dirZ, lightning.intensity)
