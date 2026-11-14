@@ -130,7 +130,9 @@ import com.catsblock.weather.ui.glass.snowIntensity
 import com.catsblock.weather.ui.glass.rainIntensity
 import com.catsblock.weather.ui.glass.hazeBackdropSource
 import com.catsblock.weather.ui.particles.ParticleOverlay
-import com.catsblock.weather.ui.particles.ParticleWeather
+import com.catsblock.weather.ui.particles.PrecipMix
+import com.catsblock.weather.ui.particles.precipMixFor
+import com.catsblock.weather.ui.sky.LightningState
 import dev.chrisbanes.haze.HazeState
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -281,6 +283,10 @@ fun MainScreen(vm: WeatherViewModel) {
     val bundle = (state as? WeatherState.Success)?.bundle
     val kind = bundle?.current?.kind ?: Condition.Clear
     val isDay = bundle?.current?.isDay ?: true
+    val lightning = remember { LightningState() }
+    val precipNow = remember(bundle) {
+        bundle?.let { b -> b.hours.firstOrNull { it.time == b.current.now.truncatedTo(ChronoUnit.HOURS) }?.precip } ?: -1.0
+    }
     val currentSummary = remember(bundle) {
         bundle?.let { b ->
             val today = b.current.now.toLocalDate()
@@ -332,37 +338,18 @@ fun MainScreen(vm: WeatherViewModel) {
                     bundle?.current?.now?.dayOfYear ?: 0,
                     bundle?.current?.windDir ?: 0.0,
                     bundle?.current?.pressure ?: Double.NaN,
-                    bundle?.let { b -> b.hours.firstOrNull { it.time == b.current.now.truncatedTo(ChronoUnit.HOURS) }?.precip } ?: -1.0,
+                    precipNow,
                     city?.lat ?: Double.NaN,
                     city?.lon ?: Double.NaN,
                     bundle?.let { b ->
                         b.current.now.toEpochSecond(java.time.ZoneOffset.ofTotalSeconds(b.utcOffsetSeconds)) * 1000L
                     } ?: Long.MIN_VALUE,
                     bundle?.current?.visibility ?: 10000.0,
-                    skyVisible = progress < 0.98f
+                    skyVisible = progress < 0.98f,
+                    lightningState = lightning
                 )
             }
             Box(Modifier.fillMaxSize().background(sky.base.copy(alpha = progress)))
-
-            ParticleOverlay(
-                when {
-                    bundle == null || effectsOff -> ParticleWeather.None
-                    kind == Condition.Storm || kind == Condition.ScatteredStorms || kind == Condition.StrongStorms ->
-                        ParticleWeather.Storm
-                    kind == Condition.Rain || kind == Condition.HeavyRain || kind == Condition.Hail -> ParticleWeather.HeavyRain
-                    kind == Condition.Drizzle || kind == Condition.ScatteredShowers || kind == Condition.IsolatedStorms ->
-                        ParticleWeather.Rain
-                    kind in snowKinds -> ParticleWeather.Snow
-                    else -> ParticleWeather.None
-                },
-                windSpeedKmh = bundle?.current?.windSpeed ?: 0.0,
-                windDirDeg = bundle?.current?.windDir ?: 0.0,
-                alpha = 1f - progress,
-                screenFlash = !skyHandlesLightning(
-                    androidx.compose.ui.platform.LocalContext.current, kind, isDay, city != null && bundle != null
-                )
-            )
-
 
             CompositionLocalProvider(LocalOverscrollFactory provides null) {
             Box(
@@ -447,6 +434,21 @@ fun MainScreen(vm: WeatherViewModel) {
             }
             }
             }
+
+            ParticleOverlay(
+                mix = if (bundle == null || effectsOff) {
+                    PrecipMix.None
+                } else {
+                    precipMixFor(kind, bundle.current.temp, precipNow)
+                },
+                windSpeedKmh = bundle?.current?.windSpeed ?: 0.0,
+                windDirDeg = bundle?.current?.windDir ?: 0.0,
+                alpha = 1f - progress * 0.3f,
+                lightning = lightning,
+                skyLightning = skyHandlesLightning(
+                    androidx.compose.ui.platform.LocalContext.current, kind, isDay, city != null && bundle != null
+                )
+            )
 
             PullIndicator(elastic, refreshing, headerHeight)
 
