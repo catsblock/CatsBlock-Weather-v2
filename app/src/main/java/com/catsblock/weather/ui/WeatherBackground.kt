@@ -48,7 +48,6 @@ import kotlin.math.abs
 private const val LIVE_WINDOW_MS = 30 * 60_000L
 private const val CLOCK_TICK_MS = 5_000L
 private const val SNAP_MS = 120_000L
-private const val CAMERA_LAG_MS = 45 * 60_000L
 
 private const val ASSET_BASE = "file:///android_asset/backgrounds/"
 
@@ -194,14 +193,8 @@ fun WeatherBackground(
         }
         shown = targetEpoch
     }
-    val anchor = remember { longArrayOf(shown) }
-    val cameraEpoch = remember(shown) {
-        val next = if (shown == Long.MIN_VALUE) shown else anchor[0].coerceIn(shown - CAMERA_LAG_MS, shown + CAMERA_LAG_MS)
-        anchor[0] = next
-        next
-    }
-    val scene = remember(atmospheric, shown, cameraEpoch, latitude, longitude, cover, thickness, dark, fog, storm, tier) {
-        if (atmospheric) buildSkyScene(shown, cameraEpoch, latitude, longitude, cover, thickness, dark, fog, storm, tier) else null
+    val scene = remember(atmospheric, shown, latitude, longitude, cover, thickness, dark, fog, storm, tier) {
+        if (atmospheric) buildSkyScene(shown, latitude, longitude, cover, thickness, dark, fog, storm, tier) else null
     }
 
     val model = remember(custom, kind, phase) {
