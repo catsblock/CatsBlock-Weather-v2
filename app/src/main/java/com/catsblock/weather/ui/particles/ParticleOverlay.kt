@@ -33,6 +33,7 @@ import com.catsblock.weather.ui.rememberPowerSaveMode
 import com.catsblock.weather.ui.sky.SkyTier
 import com.catsblock.weather.ui.sky.boltReach
 import com.catsblock.weather.ui.sky.buildBolt
+import com.catsblock.weather.ui.sky.detectSkyTier
 import com.catsblock.weather.ui.sky.drawBolt
 import com.catsblock.weather.ui.sky.lightningEnvelope
 import kotlinx.coroutines.delay
