@@ -115,10 +115,10 @@ fun DrawScope.drawEclipse(eclipse: Eclipse, c: Offset, r: Float) {
             drawCircle(
                 Brush.radialGradient(
                     colorStops = arrayOf(
-                        0f to Color(0xFF4A0E08).copy(alpha = 0.96f * strength),
-                        0.55f to Color(0xFF8E2012).copy(alpha = 0.94f * strength),
-                        0.85f to Color(0xFFC4421E).copy(alpha = 0.90f * strength),
-                        1f to Color(0xFFE2743A).copy(alpha = 0.55f * strength)
+                        0f to Color(0xFF2B0705).copy(alpha = 0.96f * strength),
+                        0.55f to Color(0xFF5A0F08).copy(alpha = 0.94f * strength),
+                        0.85f to Color(0xFF8E2210).copy(alpha = 0.90f * strength),
+                        1f to Color(0xFFC9501F).copy(alpha = 0.55f * strength)
                     ),
                     center = shadow,
                     radius = umbraRadius
