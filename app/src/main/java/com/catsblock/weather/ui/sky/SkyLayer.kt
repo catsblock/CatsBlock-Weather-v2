@@ -82,7 +82,7 @@ internal fun SkyShaderLayer(
     LaunchedEffect(lifecycleOwner, tier, moving) {
         if (!moving) return@LaunchedEffect
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-            val interval = 1_000_000_000L / tier.maxFps
+            val interval = 1_000_000_000L / tier.maxFps - 2_000_000L
             var previous = 0L
             var drawn = 0L
             var frames = 0
@@ -150,7 +150,7 @@ internal fun SkyShaderLayer(
             val toward = Math.toRadians(direction + 180.0)
             shader.setFloatUniform("uWindDir", sin(toward).toFloat(), cos(toward).toFloat())
             shader.setFloatUniform("uStyle", scene.style[0], scene.style[1], scene.style[2], scene.style[3])
-            shader.setFloatUniform("uCirrus", scene.cirrus)
+            shader.setFloatUniform("uCirrus", if (tier.cirrus) scene.cirrus else 0f)
             shader.setFloatUniform("uDark", scene.dark)
             shader.setFloatUniform("uFog", scene.fog)
             if (lightning != null) {
@@ -163,6 +163,9 @@ internal fun SkyShaderLayer(
             shader.setFloatUniform("uThick", scene.thickness)
             shader.setFloatUniform("uOct", tier.octaves.toFloat())
             shader.setFloatUniform("uShadow", tier.shadowSamples.toFloat())
+            shader.setFloatUniform("uReach", tier.reachKm)
+            shader.setFloatUniform("uLite", if (tier.liteShadows) 1f else 0f)
+            shader.setFloatUniform("uOpaque", tier.opaqueCut)
             shader.setFloatUniform("uSteps", tier.atmosphereSteps.toFloat())
             shader.setFloatUniform("uMie", SkyPhysics.MIE_COEFFICIENT.toFloat())
             shader.setFloatUniform("uFade", fade)
