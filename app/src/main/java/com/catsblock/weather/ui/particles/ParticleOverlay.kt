@@ -199,6 +199,7 @@ fun ParticleOverlay(
     windSpeedKmh: Double = 0.0,
     windDirDeg: Double = 0.0,
     alpha: Float = 1f,
+    screenFlash: Boolean = true,
     modifier: Modifier = Modifier
 ) {
     if (weather == ParticleWeather.None || alpha <= 0.02f) return
@@ -220,8 +221,8 @@ fun ParticleOverlay(
     val windRatio = (-sin(Math.toRadians(windDirDeg)) * (windSpeedKmh / 45.0).coerceIn(0.0, 1.0) * 0.55).toFloat()
     val currentWind by rememberUpdatedState(windRatio)
 
-    LaunchedEffect(isStorm) {
-        if (!isStorm) return@LaunchedEffect
+    LaunchedEffect(isStorm, screenFlash) {
+        if (!isStorm || !screenFlash) return@LaunchedEffect
         while (true) {
             delay(2200L + Random.nextLong(5200L))
             lightning = 0.85f
@@ -255,7 +256,7 @@ fun ParticleOverlay(
         tick
         rainSim?.draw(this)
         snowSim?.draw(this, size.width)
-        if (isStorm && lightning > 0f) {
+        if (isStorm && screenFlash && lightning > 0f) {
             drawRect(Color.White.copy(alpha = lightning * 0.55f))
         }
     }
