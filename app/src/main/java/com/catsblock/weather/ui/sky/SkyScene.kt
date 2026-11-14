@@ -165,7 +165,6 @@ fun buildSkyScene(
         (1.0 - moonWeight) * smoothstep(-2.0, 6.0, sunAltitudeDeg)
     val referenceAltitude = (sunAltitudeDeg * (1.0 - moonWeight) + cameraMoonAltitudeDeg * moonWeight) * (1.0 - 0.5 * dayMoon) +
         cameraMoonAltitudeDeg * 0.5 * dayMoon
-    val pitch = Math.toRadians((0.5 * referenceAltitude + 45.0).coerceIn(50.0, 85.0))
     val noonYaw = if (latitude >= 0.0) Math.PI else 0.0
     val follow = smoothstep(80.0, 65.0, referenceAltitude)
     val sunTarget = cameraSun.azimuth + Math.toRadians(10.0)
@@ -179,17 +178,9 @@ fun buildSkyScene(
         sin(noonYaw) * (1.0 - follow) + sin(targetAzimuth) * follow,
         cos(noonYaw) * (1.0 - follow) + cos(targetAzimuth) * follow
     )
-    val forward = floatArrayOf(
-        (sin(yaw) * cos(pitch)).toFloat(),
-        sin(pitch).toFloat(),
-        (cos(yaw) * cos(pitch)).toFloat()
-    )
+    val forward = floatArrayOf(sin(yaw).toFloat(), 0f, cos(yaw).toFloat())
     val right = floatArrayOf(cos(yaw).toFloat(), 0f, (-sin(yaw)).toFloat())
-    val up = floatArrayOf(
-        (-sin(yaw) * sin(pitch)).toFloat(),
-        cos(pitch).toFloat(),
-        (-cos(yaw) * sin(pitch)).toFloat()
-    )
+    val up = floatArrayOf(0f, 1f, 0f)
     val sidereal = SkyAstro.siderealRadians(epochMs, longitude)
     val phi = Math.toRadians(latitude)
     return SkyScene(
