@@ -8,6 +8,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.compositionLocalOf
 import androidx.lifecycle.Lifecycle
@@ -31,6 +32,7 @@ import com.catsblock.weather.ui.sky.SkyLightning
 import com.catsblock.weather.ui.sky.LightningState
 import com.catsblock.weather.ui.sky.SkyShaderLayer
 import com.catsblock.weather.ui.sky.SkyWeather
+import com.catsblock.weather.ui.sky.directionAt
 import com.catsblock.weather.ui.sky.rememberSkyAtmosphere
 import com.catsblock.weather.ui.sky.skyAtmosphereTarget
 import com.catsblock.weather.ui.sky.skyFog
@@ -150,7 +152,8 @@ fun WeatherBackground(
     longitude: Double = Double.NaN,
     epochMs: Long = Long.MIN_VALUE,
     visibilityM: Double = 10000.0,
-    skyVisible: Boolean = true
+    skyVisible: Boolean = true,
+    lightningState: LightningState? = null
 ) {
     val context = LocalContext.current
     val version by BackgroundKit.version.collectAsState()
@@ -170,7 +173,8 @@ fun WeatherBackground(
     val atmosphere = rememberSkyAtmosphere(atmosphereTarget)
     val fog by animateFloatAsState(skyFog(kind, visibilityM), tween(900), label = "skyFog")
     val storm by animateFloatAsState(skyStorm(kind), tween(900), label = "skyStorm")
-    val lightning = remember { LightningState() }
+    val ownLightning = remember { LightningState() }
+    val lightning = lightningState ?: ownLightning
     val lifecycleOwner = LocalLifecycleOwner.current
     var clock by remember { mutableLongStateOf(System.currentTimeMillis()) }
     val live = atmospheric && abs(epochMs - clock) <= LIVE_WINDOW_MS
@@ -199,6 +203,12 @@ fun WeatherBackground(
     }
     val scene = remember(atmospheric, shown, latitude, longitude, cover, thickness, atmosphere, fog, storm, tier) {
         if (atmospheric) buildSkyScene(shown, latitude, longitude, cover, thickness, atmosphere, fog, storm, tier) else null
+    }
+    val directionFn = remember(scene) {
+        scene?.let { s -> { ux: Float, uy: Float -> s.directionAt(ux, uy) } }
+    }
+    SideEffect {
+        if (lightningState != null) lightningState.directionAt = directionFn
     }
 
     val model = remember(custom, kind, phase) {
@@ -234,7 +244,7 @@ fun WeatherBackground(
                 onJank = { tier = tier.lowered() },
                 modifier = Modifier.fillMaxSize()
             )
-            if (skyVisible && skyWeather(kind) == SkyWeather.Storm) {
+            if (skyVisible && lightningState == null && skyWeather(kind) == SkyWeather.Storm) {
                 SkyLightning(lightning, scene, kind, Modifier.fillMaxSize())
             }
         }
