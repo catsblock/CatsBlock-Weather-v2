@@ -31,7 +31,8 @@ import com.catsblock.weather.ui.sky.SkyLightning
 import com.catsblock.weather.ui.sky.LightningState
 import com.catsblock.weather.ui.sky.SkyShaderLayer
 import com.catsblock.weather.ui.sky.SkyWeather
-import com.catsblock.weather.ui.sky.skyDarkness
+import com.catsblock.weather.ui.sky.rememberSkyAtmosphere
+import com.catsblock.weather.ui.sky.skyAtmosphereTarget
 import com.catsblock.weather.ui.sky.skyFog
 import com.catsblock.weather.ui.sky.skyStorm
 import com.catsblock.weather.ui.sky.skyWeather
@@ -163,7 +164,10 @@ fun WeatherBackground(
 
     val cover by animateFloatAsState(skyCover(kind, cloud), tween(900), label = "skyCover")
     val thickness by animateFloatAsState(skyThickness(kind, skyCover(kind, cloud)), tween(900), label = "skyThickness")
-    val dark by animateFloatAsState(skyDarkness(kind), tween(900), label = "skyDark")
+    val atmosphereTarget = remember(kind, cloud, precipMm, visibilityM, pressureHpa) {
+        skyAtmosphereTarget(kind, skyCover(kind, cloud), precipMm, visibilityM, pressureHpa)
+    }
+    val atmosphere = rememberSkyAtmosphere(atmosphereTarget)
     val fog by animateFloatAsState(skyFog(kind, visibilityM), tween(900), label = "skyFog")
     val storm by animateFloatAsState(skyStorm(kind), tween(900), label = "skyStorm")
     val lightning = remember { LightningState() }
@@ -193,8 +197,8 @@ fun WeatherBackground(
         }
         shown = targetEpoch
     }
-    val scene = remember(atmospheric, shown, latitude, longitude, cover, thickness, dark, fog, storm, tier) {
-        if (atmospheric) buildSkyScene(shown, latitude, longitude, cover, thickness, dark, fog, storm, tier) else null
+    val scene = remember(atmospheric, shown, latitude, longitude, cover, thickness, atmosphere, fog, storm, tier) {
+        if (atmospheric) buildSkyScene(shown, latitude, longitude, cover, thickness, atmosphere, fog, storm, tier) else null
     }
 
     val model = remember(custom, kind, phase) {
@@ -214,6 +218,9 @@ fun WeatherBackground(
             )
             if (!isDay && custom == null && !(hasPhaseImage(kind) && phase != SkyPhase.Day)) {
                 Box(Modifier.fillMaxSize().background(Color(0xFF050B1F).copy(alpha = 0.55f)))
+            }
+            if (atmosphere.scrim > 0.01f) {
+                Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = atmosphere.scrim)))
             }
         }
         if (scene != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
