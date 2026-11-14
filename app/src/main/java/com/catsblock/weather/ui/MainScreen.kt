@@ -338,7 +338,8 @@ fun MainScreen(vm: WeatherViewModel) {
                     bundle?.let { b ->
                         b.current.now.toEpochSecond(java.time.ZoneOffset.ofTotalSeconds(b.utcOffsetSeconds)) * 1000L
                     } ?: Long.MIN_VALUE,
-                    bundle?.current?.visibility ?: 10000.0
+                    bundle?.current?.visibility ?: 10000.0,
+                    skyVisible = progress < 0.98f
                 )
             }
             Box(Modifier.fillMaxSize().background(sky.base.copy(alpha = progress)))
