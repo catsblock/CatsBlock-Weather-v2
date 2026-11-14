@@ -137,7 +137,7 @@ internal fun SkyShaderLayer(
             compositingStrategy = CompositingStrategy.Offscreen
         }
         .drawBehind {
-            if (tick < 0L) return@drawBehind
+            if (tick < 0L || fade <= 0.01f) return@drawBehind
             shader.setFloatUniform("uRes", size.width, size.height)
             shader.setFloatUniform("uSun", scene.sun[0], scene.sun[1], scene.sun[2])
             shader.setFloatUniform("uRight", scene.right[0], scene.right[1], scene.right[2])
