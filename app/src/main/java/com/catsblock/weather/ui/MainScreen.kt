@@ -444,10 +444,6 @@ fun MainScreen(vm: WeatherViewModel) {
                 windSpeedKmh = bundle?.current?.windSpeed ?: 0.0,
                 windDirDeg = bundle?.current?.windDir ?: 0.0,
                 alpha = 1f - progress * 0.3f,
-                lightning = lightning,
-                skyLightning = skyHandlesLightning(
-                    androidx.compose.ui.platform.LocalContext.current, kind, isDay, city != null && bundle != null
-                )
             )
 
             PullIndicator(elastic, refreshing, headerHeight)
