@@ -120,6 +120,7 @@ import com.catsblock.weather.data.precipToday
 import com.catsblock.weather.data.uvAdvice
 import com.catsblock.weather.data.windDescription
 import com.catsblock.weather.i18n.tr
+import com.catsblock.weather.ui.sky.SkySimulationInput
 import com.catsblock.weather.sound.WeatherSoundPlayer
 import com.catsblock.weather.ui.glass.EntranceCounter
 import com.catsblock.weather.ui.glass.LocalEntrance
@@ -244,7 +245,6 @@ fun MainScreen(vm: WeatherViewModel) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val saved by vm.savedCities.collectAsStateWithLifecycle()
     val summaries by vm.summaries.collectAsStateWithLifecycle()
-    var citiesOpen by remember { mutableStateOf(false) }
     val scroll = rememberScrollState()
     val scheme = MaterialTheme.colorScheme
     val refreshing by vm.refreshing.collectAsStateWithLifecycle()
@@ -448,13 +448,7 @@ fun MainScreen(vm: WeatherViewModel) {
                 onMode = { mode = it },
                 name = city?.name.orEmpty(),
                 temp = bundle?.let { tempText(it.current.temp, settings.fahrenheit) },
-                progress = progress,
-                dots = saved.size.coerceIn(1, 6),
-                current = saved.indexOfFirst { it.id == city?.id }.coerceAtLeast(0),
-                onCities = {
-                    vm.loadSummaries()
-                    citiesOpen = true
-                }
+                progress = progress
             )
 
             AnimatedVisibility(
@@ -473,24 +467,6 @@ fun MainScreen(vm: WeatherViewModel) {
                 }
             }
 
-            CitiesOverlay(
-                visible = citiesOpen,
-                saved = saved,
-                selectedId = city?.id,
-                current = currentSummary,
-                summaries = summaries,
-                fahrenheit = settings.fahrenheit,
-                onSelect = {
-                    citiesOpen = false
-                    vm.selectCity(it)
-                },
-                onRemove = vm::removeCity,
-                onAdd = {
-                    citiesOpen = false
-                    vm.openPicker()
-                },
-                onClose = { citiesOpen = false }
-            )
         }
         }
     }
@@ -530,10 +506,7 @@ private fun HeaderBar(
     onMode: (DashboardMode) -> Unit,
     name: String,
     temp: String?,
-    progress: Float,
-    dots: Int,
-    current: Int,
-    onCities: () -> Unit
+    progress: Float
 ) {
     Row(
         Modifier.fillMaxWidth().statusBarsPadding().padding(start = 24.dp, end = 4.dp, top = 6.dp),
@@ -551,21 +524,10 @@ private fun HeaderBar(
             Spacer(Modifier.height(6.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Rounded.NearMe, null, Modifier.size(14.dp), tint = Color.White)
-                Spacer(Modifier.width(6.dp))
-                repeat(dots) { i ->
-                    Box(
-                        Modifier
-                            .padding(end = 5.dp)
-                            .size(6.dp)
-                            .clip(CircleShape)
-                            .background(Color.White.copy(alpha = if (i == current) 0.95f else 0.4f))
-                    )
-                }
             }
             Spacer(Modifier.height(8.dp))
             ModeSelector(mode, onMode)
         }
-        IconButton(onClick = onCities) { Icon(Icons.Rounded.Menu, tr("Saved cities"), tint = Color.White) }
     }
 }
 
@@ -761,7 +723,17 @@ private fun WeatherDetails(
     }
 
     if (sheet is Sheet.Sun && city != null) {
-        SunScreen(city, bundle.utcOffsetSeconds, cur.now) { sheet = null }
+        val simulation = SkySimulationInput(
+            kind = cur.kind,
+            cloud = cur.cloud,
+            windKmh = cur.windSpeed,
+            windDirDeg = cur.windDir,
+            precipMm = bundle.hours.firstOrNull { it.time == cur.now.truncatedTo(ChronoUnit.HOURS) }?.precip ?: -1.0,
+            pressureHpa = cur.pressure,
+            visibilityM = cur.visibility,
+            epochMs = cur.now.toEpochSecond(java.time.ZoneOffset.ofTotalSeconds(bundle.utcOffsetSeconds)) * 1000L
+        )
+        SunScreen(city, bundle.utcOffsetSeconds, cur.now, simulation) { sheet = null }
     }
 
     if (sheet is Sheet.Travel) {
