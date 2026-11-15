@@ -44,7 +44,10 @@ html.round #map{border-radius:4px;overflow:hidden;isolation:isolate}
 .leaflet-popup-content{margin:10px 14px;font-size:13px;line-height:1.45}
 .cyw{background:none;border:0}
 .cy{position:relative;width:var(--s);height:var(--s)}
-.cy .bd{position:absolute;inset:0;box-sizing:border-box;border-radius:50%;display:flex;align-items:center;justify-content:center;background:var(--c);color:var(--t);font-weight:800;font-size:calc(var(--s) * .36);line-height:1;letter-spacing:-.02em;border:2px solid rgba(255,255,255,.92);box-shadow:0 0 0 3px var(--g),0 3px 10px rgba(0,0,0,.4);transition:background-color .6s}
+.cy .bd{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:calc(var(--s) * .21);line-height:1;letter-spacing:-.02em;text-shadow:0 1px 2px rgba(0,0,0,.6)}
+.cy svg{position:absolute;left:0;top:0;width:100%;height:100%;overflow:visible;filter:drop-shadow(0 2px 5px rgba(0,0,0,.45));animation:cs 16s linear infinite}
+.cy.cys svg{animation-direction:reverse}
+@keyframes cs{from{transform:rotate(0deg)}to{transform:rotate(-360deg)}}
 .cy:after{content:"";position:absolute;inset:-6px;border-radius:50%;border:1.5px solid var(--c);opacity:0;animation:cp 3s ease-out infinite}
 .cn{position:absolute;left:50%;top:100%;transform:translate(-50%,8px);white-space:nowrap;max-width:60vw;overflow:hidden;text-overflow:ellipsis;pointer-events:none;display:flex;align-items:center;gap:5px;padding:3px 9px 3px 6px;border-radius:12px;background:var(--chip);color:var(--fg);font-size:11px;font-weight:700;box-shadow:0 2px 8px rgba(0,0,0,.28);border:1px solid var(--edge)}
 .cn i{width:8px;height:8px;border-radius:50%;background:var(--c);box-shadow:0 0 6px var(--c)}
@@ -332,6 +335,9 @@ var FieldLayer = L.Layer.extend({
     this._fill = L.DomUtil.create('canvas', 'fc');
     this._fill.style.opacity = 0;
     m.getPane('fieldpane').appendChild(this._fill);
+    this._flow = L.DomUtil.create('canvas', 'fc');
+    this._flow.style.opacity = 0;
+    m.getPane('fieldpane').appendChild(this._flow);
     this._hide = this._hide.bind(this);
     this.refresh = this.refresh.bind(this);
     m.on('moveend zoomend resize', this.refresh);
@@ -339,6 +345,8 @@ var FieldLayer = L.Layer.extend({
     this.refresh();
   },
   onRemove: function (m) {
+    this._flowStop();
+    L.DomUtil.remove(this._flow);
     L.DomUtil.remove(this._fill);
     m.off('moveend zoomend resize', this.refresh);
     m.off('zoomstart', this._hide);
@@ -347,6 +355,7 @@ var FieldLayer = L.Layer.extend({
   },
   _hide: function () {
     this._fill.style.opacity = 0;
+    this._flowStop();
   },
   refresh: function () {
     var self = this;
@@ -358,6 +367,7 @@ var FieldLayer = L.Layer.extend({
     if (!m) return;
     var cv = this._fill, fit = fitCanvas(cv, m), ctx = fit.ctx, pad = fit.pad, size = {x:fit.x, y:fit.y, pad:pad};
     var id = state.layer;
+    if (id !== 'wind' || !grid) this._flowStop();
     if (!grid || !isGrid(id)) return;
     var needsLand = id === 'sea' || id === 'drought';
     if (needsLand && !land) { cv.style.opacity = 0; return; }
@@ -382,8 +392,99 @@ var FieldLayer = L.Layer.extend({
     if (id === 'sea') maskLand(ctx, false, size);
     else if (id === 'drought') maskLand(ctx, true, size);
     cv.style.opacity = 1;
+    if (id === 'wind') this._flowStart(m, size);
+  },
+  _flowStop: function () {
+    if (this._flowRaf) { cancelAnimationFrame(this._flowRaf); this._flowRaf = 0; }
+    this._flowOn = false;
+    if (this._flow) this._flow.style.opacity = 0;
+  },
+  _flowStart: function (m, size) {
+    this._flowStop();
+    ensureWindVectors(grid);
+    var self = this, cv = this._flow, fit = fitCanvas(cv, m), pad = fit.pad;
+    var W = size.x + pad * 2, H = size.y + pad * 2, C = 24;
+    var cols = Math.ceil(W / C) + 1, rows = Math.ceil(H / C) + 1;
+    var k = 0.9 * Math.max(0.6, Math.min(1.8, 1 + 0.12 * (m.getZoom() - 5)));
+    var fu = new Float32Array(cols * rows), fv = new Float32Array(cols * rows);
+    for (var gy = 0; gy < rows; gy++) {
+      for (var gx = 0; gx < cols; gx++) {
+        var ll = m.containerPointToLatLng([gx * C - pad, gy * C - pad]);
+        var lon = lonFor(ll), u = sample(grid.u, ll.lat, lon), v = sample(grid.v, ll.lat, lon), o = gy * cols + gx;
+        if (isNaN(u) || isNaN(v)) { fu[o] = NaN; fv[o] = NaN; } else { fu[o] = u * k; fv[o] = -v * k; }
+      }
+    }
+    var count = Math.max(300, Math.min(1400, Math.round(W * H / 1100)));
+    if (!this._parts || this._parts.length !== count) {
+      this._parts = [];
+      for (var i = 0; i < count; i++) this._parts.push({x:0, y:0, age:0, life:1});
+      this._partsReady = false;
+    }
+    var parts = this._parts;
+    function field(x, y, out) {
+      var fx = Math.min(cols - 1.001, Math.max(0, x / C)), fy = Math.min(rows - 1.001, Math.max(0, y / C));
+      var x0 = Math.floor(fx), y0 = Math.floor(fy), tx = fx - x0, ty = fy - y0;
+      var a = y0 * cols + x0, b = a + 1, c = a + cols, d = c + 1;
+      var w0 = (1 - tx) * (1 - ty), w1 = tx * (1 - ty), w2 = (1 - tx) * ty, w3 = tx * ty;
+      out.u = fu[a] * w0 + fu[b] * w1 + fu[c] * w2 + fu[d] * w3;
+      out.v = fv[a] * w0 + fv[b] * w1 + fv[c] * w2 + fv[d] * w3;
+    }
+    var vel = {u:0, v:0};
+    function spawn(p, stagger) {
+      for (var t = 0; t < 4; t++) {
+        p.x = Math.random() * W; p.y = Math.random() * H;
+        field(p.x, p.y, vel);
+        if (!isNaN(vel.u)) break;
+      }
+      p.life = 1.4 + Math.random() * 2.2;
+      p.age = stagger ? Math.random() * p.life : 0;
+    }
+    if (!this._partsReady) { for (var n = 0; n < parts.length; n++) spawn(parts[n], true); this._partsReady = true; }
+    var dpr = Math.min(2, Math.max(1, window.devicePixelRatio || 1)), ctx = cv.getContext('2d'), last = 0;
+    var ink = state.dark ? '255,255,255' : '14,28,58';
+    this._flowOn = true;
+    cv.style.opacity = 1;
+    function frame(ts) {
+      if (!self._flowOn) return;
+      self._flowRaf = requestAnimationFrame(frame);
+      var dt = last ? Math.min(0.05, (ts - last) / 1000) : 0.016;
+      last = ts;
+      ctx.setTransform(dpr, 0, 0, dpr, pad * dpr, pad * dpr);
+      ctx.clearRect(-pad, -pad, W, H);
+      ctx.lineCap = 'round';
+      ctx.lineWidth = 1.5;
+      for (var n = 0; n < parts.length; n++) {
+        var p = parts[n];
+        p.age += dt;
+        if (p.age > p.life || p.x < 0 || p.y < 0 || p.x > W || p.y > H) { spawn(p, false); continue; }
+        field(p.x, p.y, vel);
+        if (isNaN(vel.u)) { spawn(p, false); continue; }
+        var u = vel.u, v = vel.v, kmh = Math.sqrt(u * u + v * v) / k;
+        p.x += u * dt; p.y += v * dt;
+        var fade = Math.min(1, p.age / 0.4, (p.life - p.age) / 0.5);
+        var alpha = fade * (0.3 + Math.min(0.6, kmh / 90));
+        ctx.strokeStyle = 'rgba(' + ink + ',' + alpha.toFixed(3) + ')';
+        ctx.beginPath();
+        ctx.moveTo(p.x - u * 0.55, p.y - v * 0.55);
+        ctx.lineTo(p.x, p.y);
+        ctx.stroke();
+      }
+    }
+    this._flowRaf = requestAnimationFrame(frame);
   }
 });
+
+function ensureWindVectors(g) {
+  if (g.u && g.v) return;
+  g.u = []; g.v = [];
+  for (var i = 0; i < g.ws.length; i++) {
+    var sp = g.ws[i], dr = g.wd[i];
+    if (sp === null || sp === undefined || dr === null || dr === undefined || isNaN(sp) || isNaN(dr)) { g.u.push(null); g.v.push(null); continue; }
+    var r = dr * Math.PI / 180;
+    g.u.push(-sp * Math.sin(r));
+    g.v.push(-sp * Math.cos(r));
+  }
+}
 
 var ZoneLayer = L.Layer.extend({
   initialize: function (paint) { this._paintFn = paint; },
@@ -462,13 +563,16 @@ function smooth(pts) {
   return out;
 }
 
-function badgeSize(kt) { return Math.round(36 + Math.min(1, Math.max(0, kt) / 140) * 18); }
+function badgeSize(kt) { return Math.round(44 + Math.min(1, Math.max(0, kt) / 140) * 20); }
+
+var CY_BODY = 'M85.52,50C85.52,69.62 69.62,85.52 50,85.52C30.38,85.52 14.48,69.62 14.48,50C14.48,30.38 30.38,14.48 50,14.48C69.62,14.48 85.52,30.38 85.52,50ZM41.71,15.46C53.24,8.85 70.89,10.55 86.98,19.4C77.01,16.29 68.42,15.21 62.56,16.77ZM68.56,19.71C81.39,23.19 92.67,36.87 97.79,54.52C92.94,45.26 87.62,38.43 82.37,35.38ZM84.54,41.71C91.15,53.24 89.45,70.89 80.6,86.98C83.71,77.01 84.79,68.42 83.23,62.56ZM80.29,68.56C76.81,81.39 63.13,92.67 45.48,97.79C54.74,92.94 61.57,87.62 64.62,82.37ZM58.29,84.54C46.76,91.15 29.11,89.45 13.02,80.6C22.99,83.71 31.58,84.79 37.44,83.23ZM31.44,80.29C18.61,76.81 7.33,63.13 2.21,45.48C7.06,54.74 12.38,61.57 17.63,64.62ZM15.46,58.29C8.85,46.76 10.55,29.11 19.4,13.02C16.29,22.99 15.21,31.58 16.77,37.44ZM19.71,31.44C23.19,18.61 36.87,7.33 54.52,2.21C45.26,7.06 38.43,12.38 35.38,17.63Z';
 
 function inkFor(c) { return (0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]) / 255 > 0.6 ? '#10141c' : '#ffffff'; }
 
-function stormIcon(cat, kt, name) {
+function stormIcon(cat, kt, name, lat) {
   var c = ramp(CAT_STOPS, kt), s = badgeSize(kt);
-  var html = '<div class="cy" style="--c:' + rgb(c) + ';--g:' + rgba(c, 0.3) + ';--t:' + inkFor(c) + ';--s:' + s + 'px"><div class="bd">' + esc(cat.k.toUpperCase()) + '</div><span class="cn"><i></i>' + esc(name) + '</span></div>';
+  var svg = '<svg viewBox="0 0 100 100" aria-hidden="true"><path d="' + CY_BODY + '" fill="' + rgb(c) + '"/><circle cx="50" cy="50" r="16.5" fill="#10141c"/></svg>';
+  var html = '<div class="cy' + (lat < 0 ? ' cys' : '') + '" style="--c:' + rgb(c) + ';--s:' + s + 'px">' + svg + '<div class="bd">' + esc(cat.k.toUpperCase()) + '</div><span class="cn"><i></i>' + esc(name) + '</span></div>';
   return L.divIcon({className:'cyw', html:html, iconSize:[s, s], iconAnchor:[s / 2, s / 2]});
 }
 
@@ -503,7 +607,7 @@ function buildStorms(events) {
       }
     }
     var last = pts[pts.length - 1], cat = catOf(last.kt);
-    var m = L.marker([last.lat, last.lon], {icon:stormIcon(cat, last.kt, ev.title), pane:'stormpane', keyboard:false});
+    var m = L.marker([last.lat, last.lon], {icon:stormIcon(cat, last.kt, ev.title, last.lat), pane:'stormpane', keyboard:false});
     var info = '<b>' + esc(ev.title) + '</b><br>' + esc(lbl(cat.k, cat.k.toUpperCase()));
     if (last.kt > 0) info += '<br>' + esc(lbl('winds', 'Max winds')) + ': ' + Math.round(last.kt * 1.852) + ' km/h (' + Math.round(last.kt) + ' kt)';
     info += '<br>' + esc(lbl('stReach', 'Storm winds reach')) + ': ' + Math.round(stormRadii(last.kt).outer) + ' km';
