@@ -8,8 +8,12 @@ const FETCH_TIMEOUT_MS = 12000;
 const MAX_BODY_BYTES = 2048;
 const LIKE_WINDOW_S = 600;
 const LIKE_MAX = 40;
-const REACTIONS = new Set(["🤩", "😁", "😭", "⚡", "👍", "👏"]);
+const REACTION_WINDOW_S = 600;
+const REACTION_MAX = 80;
+const REACTION_LIST = ["🤩", "😁", "😭", "⚡", "👍", "👏"];
+const REACTIONS = new Set(REACTION_LIST);
 const REACTION_KEY = "news:reaction:";
+const REACTION_COUNTS_KEY = "news:reaction-counts:";
 const VOTE_TTL_S = 30 * 24 * 60 * 60;
 const INDEX_TTL_S = 120 * 24 * 60 * 60;
 const ITEM_LIMIT = 40;
@@ -22,6 +26,7 @@ const FEED_KEY = "news:feed:";
 const LIKES_KEY = "news:likes:index";
 const VOTE_KEY = "news:vote:";
 const RATE_KEY = "news:rate:";
+const REACTION_RATE_KEY = "news:rate:reaction:";
 const USER_AGENT = "CatsBlockWeather/2.0 (+https://github.com/catsblock)";
 const CONTROL_CHARS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g;
 const ENTITIES = { amp: "&", lt: "<", gt: ">", quot: "\"", apos: "'", nbsp: " ", "#39": "'", "#34": "\"", "#8217": "\u2019", "#8216": "\u2018", "#8220": "\u201c", "#8221": "\u201d", "#8211": "\u2013", "#8212": "\u2014", "#8230": "\u2026" };
@@ -291,24 +296,240 @@ async function likeIndex(env) {
   }
 }
 
-async function likeWithDatabase(env, articleId, voterId) {
+function emptyCounts() {
+  const counts = {};
+  for (const reaction of REACTION_LIST) counts[reaction] = 0;
+  return counts;
+}
+
+function normalizeCounts(value) {
+  const counts = emptyCounts();
+  if (!value || typeof value !== "object") return counts;
+  for (const reaction of REACTION_LIST) counts[reaction] = Math.max(0, Math.min(MAX_LIKES, Number(value[reaction]) || 0));
+  return counts;
+}
+
+function placeholdersFor(ids) {
+  return ids.map(() => "?").join(",");
+}
+
+async function socialState(env, ids, owner) {
+  const reactions = {};
+  const mine = {};
+  const liked = {};
+  if (!ids.length) return { reactions, mine, liked };
+  const marks = placeholdersFor(ids);
+  if (env.NEWS_DB) {
+    try {
+      const counts = await env.NEWS_DB.prepare(
+        "SELECT article_id, reaction, votes FROM news_reaction_counts WHERE article_id IN (" + marks + ")"
+      ).bind(...ids).all();
+      for (const row of counts.results || []) {
+        const articleId = String(row.article_id || "");
+        if (!articleId || !REACTIONS.has(row.reaction)) continue;
+        reactions[articleId] = reactions[articleId] || emptyCounts();
+        reactions[articleId][row.reaction] = Math.max(0, Number(row.votes) || 0);
+      }
+      if (owner) {
+        const votes = await env.NEWS_DB.prepare(
+          "SELECT article_id, reaction FROM news_reaction_votes WHERE voter_id = ? AND article_id IN (" + marks + ")"
+        ).bind(owner, ...ids).all();
+        for (const row of votes.results || []) {
+          if (REACTIONS.has(row.reaction)) mine[String(row.article_id || "")] = row.reaction;
+        }
+        const likes = await env.NEWS_DB.prepare(
+          "SELECT article_id FROM news_reactions WHERE voter_id = ? AND article_id IN (" + marks + ")"
+        ).bind(owner, ...ids).all();
+        for (const row of likes.results || []) liked[String(row.article_id || "")] = true;
+      }
+      return { reactions, mine, liked };
+    } catch (err) {
+      return { reactions, mine, liked };
+    }
+  }
+  try {
+    const results = await Promise.all(ids.map(async (articleId) => {
+      const raw = await env.APP_KV.get(REACTION_COUNTS_KEY + articleId);
+      const parsed = raw ? JSON.parse(raw) : null;
+      const vote = owner ? await env.APP_KV.get(REACTION_KEY + articleId + ":" + owner) : null;
+      const like = owner ? await env.APP_KV.get(VOTE_KEY + articleId + ":" + owner) : null;
+      return { articleId, parsed, vote, like };
+    }));
+    for (const entry of results) {
+      if (entry.parsed) reactions[entry.articleId] = normalizeCounts(entry.parsed);
+      if (entry.vote && REACTIONS.has(entry.vote)) mine[entry.articleId] = entry.vote;
+      if (entry.like) liked[entry.articleId] = true;
+    }
+  } catch (err) {
+    return { reactions, mine, liked };
+  }
+  return { reactions, mine, liked };
+}
+
+async function reactionCountsFor(env, articleId) {
+  if (env.NEWS_DB) {
+    try {
+      const rows = await env.NEWS_DB.prepare(
+        "SELECT reaction, votes FROM news_reaction_counts WHERE article_id = ?"
+      ).bind(articleId).all();
+      const counts = emptyCounts();
+      for (const row of rows.results || []) {
+        if (REACTIONS.has(row.reaction)) counts[row.reaction] = Math.max(0, Number(row.votes) || 0);
+      }
+      return counts;
+    } catch (err) {
+      return null;
+    }
+  }
+  try {
+    const raw = await env.APP_KV.get(REACTION_COUNTS_KEY + articleId);
+    return raw ? normalizeCounts(JSON.parse(raw)) : emptyCounts();
+  } catch (err) {
+    return null;
+  }
+}
+
+async function shiftReactionCount(env, articleId, reaction, delta, now) {
+  if (delta > 0) {
+    await env.NEWS_DB.prepare(
+      "INSERT INTO news_reaction_counts(article_id, reaction, votes, updated_at) VALUES (?, ?, 1, ?) " +
+        "ON CONFLICT(article_id, reaction) DO UPDATE SET votes = min(votes + 1, ?), updated_at = excluded.updated_at"
+    ).bind(articleId, reaction, now, MAX_LIKES).run();
+    return;
+  }
+  await env.NEWS_DB.prepare(
+    "UPDATE news_reaction_counts SET votes = max(votes - 1, 0), updated_at = ? WHERE article_id = ? AND reaction = ?"
+  ).bind(now, articleId, reaction).run();
+}
+
+async function reactionWithDatabase(env, articleId, voterId, reaction) {
   const now = Date.now();
   try {
-    const results = await env.NEWS_DB.batch([
-      env.NEWS_DB.prepare("INSERT OR IGNORE INTO news_article_counts(article_id, likes, updated_at) VALUES (?, 0, ?)").bind(articleId, now),
-      env.NEWS_DB.prepare("INSERT OR IGNORE INTO news_reactions(article_id, voter_id, created_at) VALUES (?, ?, ?)").bind(articleId, voterId, now)
-    ]);
-    const inserted = Number(results[1]?.meta?.changes || 0) === 1;
-    if (inserted) {
-      const updated = await env.NEWS_DB.prepare("UPDATE news_article_counts SET likes = likes + 1, updated_at = ? WHERE article_id = ? AND likes < ?").bind(now, articleId, MAX_LIKES).run();
+    const created = await env.NEWS_DB.prepare(
+      "INSERT INTO news_reaction_votes(article_id, voter_id, reaction, created_at) VALUES (?, ?, ?, ?) " +
+        "ON CONFLICT(article_id, voter_id) DO NOTHING"
+    ).bind(articleId, voterId, reaction, now).run();
+    let next = "";
+    if (Number(created.meta?.changes || 0) === 1) {
+      next = reaction;
+      await shiftReactionCount(env, articleId, reaction, 1, now);
+    } else {
+      const existing = await env.NEWS_DB.prepare(
+        "SELECT reaction FROM news_reaction_votes WHERE article_id = ? AND voter_id = ?"
+      ).bind(articleId, voterId).first();
+      const current = existing && REACTIONS.has(existing.reaction) ? existing.reaction : "";
+      if (current === reaction) {
+        const removed = await env.NEWS_DB.prepare(
+          "DELETE FROM news_reaction_votes WHERE article_id = ? AND voter_id = ? AND reaction = ?"
+        ).bind(articleId, voterId, reaction).run();
+        if (Number(removed.meta?.changes || 0) === 1) await shiftReactionCount(env, articleId, reaction, -1, now);
+      } else {
+        const moved = await env.NEWS_DB.prepare(
+          "UPDATE news_reaction_votes SET reaction = ?, created_at = ? WHERE article_id = ? AND voter_id = ? AND reaction = ?"
+        ).bind(reaction, now, articleId, voterId, current).run();
+        if (Number(moved.meta?.changes || 0) === 1) {
+          if (current) await shiftReactionCount(env, articleId, current, -1, now);
+          await shiftReactionCount(env, articleId, reaction, 1, now);
+          next = reaction;
+        } else {
+          const fresh = await env.NEWS_DB.prepare(
+            "SELECT reaction FROM news_reaction_votes WHERE article_id = ? AND voter_id = ?"
+          ).bind(articleId, voterId).first();
+          next = fresh && REACTIONS.has(fresh.reaction) ? fresh.reaction : "";
+        }
+      }
+    }
+    const counts = await reactionCountsFor(env, articleId);
+    return counts ? { reaction: next, counts } : { error: "unavailable" };
+  } catch (err) {
+    return { error: "unavailable" };
+  }
+}
+
+async function reactionWithKv(env, articleId, voterId, reaction) {
+  const voteKey = REACTION_KEY + articleId + ":" + voterId;
+  const countsKey = REACTION_COUNTS_KEY + articleId;
+  try {
+    const previous = await env.APP_KV.get(voteKey);
+    const raw = await env.APP_KV.get(countsKey);
+    const counts = raw ? normalizeCounts(JSON.parse(raw)) : emptyCounts();
+    if (previous && REACTIONS.has(previous)) counts[previous] = Math.max(0, counts[previous] - 1);
+    let next = "";
+    if (previous === reaction) {
+      await env.APP_KV.delete(voteKey);
+    } else {
+      counts[reaction] = Math.min(MAX_LIKES, counts[reaction] + 1);
+      await env.APP_KV.put(voteKey, reaction, { expirationTtl: VOTE_TTL_S });
+      next = reaction;
+    }
+    await env.APP_KV.put(countsKey, JSON.stringify(counts), { expirationTtl: INDEX_TTL_S });
+    return { reaction: next, counts };
+  } catch (err) {
+    return { error: "unavailable" };
+  }
+}
+
+async function likeTotals(env, articleId) {
+  const row = await env.NEWS_DB.prepare("SELECT likes FROM news_article_counts WHERE article_id = ?").bind(articleId).first();
+  return Math.max(0, Number(row?.likes) || 0);
+}
+
+async function likeWithDatabase(env, articleId, voterId, unlike) {
+  const now = Date.now();
+  try {
+    if (unlike) {
+      const removed = await env.NEWS_DB.prepare(
+        "DELETE FROM news_reactions WHERE article_id = ? AND voter_id = ?"
+      ).bind(articleId, voterId).run();
+      if (Number(removed.meta?.changes || 0) === 1) {
+        await env.NEWS_DB.prepare(
+          "UPDATE news_article_counts SET likes = max(likes - 1, 0), updated_at = ? WHERE article_id = ?"
+        ).bind(now, articleId).run();
+      }
+      return { likes: await likeTotals(env, articleId), liked: false };
+    }
+    await env.NEWS_DB.prepare(
+      "INSERT OR IGNORE INTO news_article_counts(article_id, likes, updated_at) VALUES (?, 0, ?)"
+    ).bind(articleId, now).run();
+    const inserted = await env.NEWS_DB.prepare(
+      "INSERT OR IGNORE INTO news_reactions(article_id, voter_id, created_at) VALUES (?, ?, ?)"
+    ).bind(articleId, voterId, now).run();
+    if (Number(inserted.meta?.changes || 0) === 1) {
+      const updated = await env.NEWS_DB.prepare(
+        "UPDATE news_article_counts SET likes = likes + 1, updated_at = ? WHERE article_id = ? AND likes < ?"
+      ).bind(now, articleId, MAX_LIKES).run();
       if (Number(updated.meta?.changes || 0) !== 1) {
         await env.NEWS_DB.prepare("DELETE FROM news_reactions WHERE article_id = ? AND voter_id = ?").bind(articleId, voterId).run();
         return { error: "limit_reached", likes: MAX_LIKES };
       }
     }
-    const row = await env.NEWS_DB.prepare("SELECT likes FROM news_article_counts WHERE article_id = ?").bind(articleId).first();
-    const likes = Math.max(0, Number(row?.likes) || 0);
-    return inserted ? { likes } : { error: "already_liked", likes };
+    return { likes: await likeTotals(env, articleId), liked: true };
+  } catch (err) {
+    return { error: "unavailable" };
+  }
+}
+
+async function likeWithKv(env, articleId, voterId, unlike) {
+  const voteKey = VOTE_KEY + articleId + ":" + voterId;
+  const index = await likeIndex(env);
+  const current = Number(index[articleId]) || 0;
+  try {
+    const voted = await env.APP_KV.get(voteKey);
+    if (unlike) {
+      if (!voted) return { likes: current, liked: false };
+      const updated = Math.max(0, current - 1);
+      index[articleId] = updated;
+      await env.APP_KV.put(LIKES_KEY, JSON.stringify(index), { expirationTtl: INDEX_TTL_S });
+      await env.APP_KV.delete(voteKey);
+      return { likes: updated, liked: false };
+    }
+    if (voted) return { likes: current, liked: true };
+    if (current >= MAX_LIKES) return { error: "limit_reached", likes: current };
+    const updated = current + 1;
+    index[articleId] = updated;
+    await env.APP_KV.put(LIKES_KEY, JSON.stringify(index), { expirationTtl: INDEX_TTL_S });
+    await env.APP_KV.put(voteKey, "1", { expirationTtl: VOTE_TTL_S });
+    return { likes: updated, liked: true };
   } catch (err) {
     return { error: "unavailable" };
   }
@@ -364,6 +585,13 @@ async function readBody(request) {
 export async function handleNews(request, env, h) {
   if (!env.APP_KV) return h.jsonResponse({ error: "unavailable" }, 503);
   const url = new URL(request.url);
+  let owner = "";
+  try {
+    const identity = await h.identify(request, env);
+    if (identity && !identity.error) owner = identity.hasDevice ? identity.deviceHash : identity.ipHash;
+  } catch (err) {
+    owner = "";
+  }
   const rawLang = url.searchParams.get("lang") || "en";
   const lang = LANG_PATTERN.test(rawLang) ? rawLang : "en";
   const rawRegion = url.searchParams.get("region") || "";
@@ -404,6 +632,7 @@ export async function handleNews(request, env, h) {
   const page = after.slice(0, pageSize);
   const last = page[page.length - 1];
   const next = after.length > pageSize && last ? encodeCursor({ likes: last.likes, regional: last.regional, publishedAt: last.item.publishedAt, id: last.item.id, lang, region, query, event }) : "";
+  const social = await socialState(env, page.map((entry) => entry.item.id), owner);
   const payload = page.map((entry) => ({
     id: entry.item.id,
     title: entry.item.title,
@@ -414,7 +643,10 @@ export async function handleNews(request, env, h) {
     url: entry.item.url,
     lang: entry.item.lang,
     region: entry.item.region,
-    likes: entry.likes
+    likes: entry.likes,
+    liked: social.liked[entry.item.id] === true,
+    reactions: social.reactions[entry.item.id] || emptyCounts(),
+    myReaction: social.mine[entry.item.id] || ""
   }));
   return h.jsonResponse({ articles: payload, cursor: next, total: scored.length }, 200, { "Cache-Control": "no-store" });
 }
@@ -428,13 +660,17 @@ export async function handleNewsReaction(request, env, h) {
   const reaction = body && typeof body.reaction === "string" ? body.reaction : "";
   if (!ID_PATTERN.test(articleId) || !REACTIONS.has(reaction)) return h.jsonResponse({ error: "bad_request" }, 400);
   const owner = id.hasDevice ? id.deviceHash : id.ipHash;
-  const key = REACTION_KEY + articleId + ":" + owner;
   try {
-    const used = Number((await env.APP_KV.get(RATE_KEY + owner + ":reaction")) || 0);
-    if (used >= LIKE_MAX) return h.jsonResponse({ error: "rate_limited" }, 429);
-    await env.APP_KV.put(RATE_KEY + owner + ":reaction", String(used + 1), { expirationTtl: LIKE_WINDOW_S * 2 });
-    await env.APP_KV.put(key, reaction, { expirationTtl: VOTE_TTL_S });
-    return h.jsonResponse({ id: articleId, reaction }, 200);
+    const windowStart = Math.floor(Date.now() / (REACTION_WINDOW_S * 1000));
+    const rateKey = REACTION_RATE_KEY + owner + ":" + windowStart;
+    const used = Number((await env.APP_KV.get(rateKey)) || 0);
+    if (used >= REACTION_MAX) return h.jsonResponse({ error: "rate_limited" }, 429);
+    await env.APP_KV.put(rateKey, String(used + 1), { expirationTtl: REACTION_WINDOW_S * 2 });
+    const result = env.NEWS_DB
+      ? await reactionWithDatabase(env, articleId, owner, reaction)
+      : await reactionWithKv(env, articleId, owner, reaction);
+    if (result.error) return h.jsonResponse({ error: result.error }, 503);
+    return h.jsonResponse({ id: articleId, reaction: result.reaction, reactions: result.counts }, 200);
   } catch (err) {
     return h.jsonResponse({ error: "unavailable" }, 503);
   }
@@ -446,6 +682,7 @@ export async function handleNewsLike(request, env, h) {
   if (!id || id.error) return h.jsonResponse({ error: "bad_request" }, 400);
   const body = await readBody(request);
   const articleId = body && typeof body.id === "string" ? body.id.trim().toLowerCase() : "";
+  const unlike = body && body.unlike === true;
   if (!ID_PATTERN.test(articleId)) return h.jsonResponse({ error: "bad_request" }, 400);
   const owner = id.hasDevice ? id.deviceHash : id.ipHash;
   const windowStart = Math.floor(Date.now() / (LIKE_WINDOW_S * 1000));
@@ -457,32 +694,12 @@ export async function handleNewsLike(request, env, h) {
   } catch (err) {
     return h.jsonResponse({ error: "unavailable" }, 503);
   }
-  if (env.NEWS_DB) {
-    const result = await likeWithDatabase(env, articleId, owner);
-    if (result.error === "already_liked") return h.jsonResponse(result, 409);
-    if (result.error === "limit_reached") return h.jsonResponse(result, 409);
-    if (result.error) return h.jsonResponse(result, 503);
-    return h.jsonResponse({ id: articleId, likes: result.likes }, 200);
-  }
-  const voteKey = VOTE_KEY + articleId + ":" + owner;
-  const index = await likeIndex(env);
-  const current = Number(index[articleId]) || 0;
-  try {
-    const voted = await env.APP_KV.get(voteKey);
-    if (voted) return h.jsonResponse({ error: "already_liked", likes: current }, 409);
-  } catch (err) {
-    return h.jsonResponse({ error: "unavailable" }, 503);
-  }
-  if (current >= MAX_LIKES) return h.jsonResponse({ error: "limit_reached", likes: current }, 409);
-  const updated = current + 1;
-  index[articleId] = updated;
-  try {
-    await env.APP_KV.put(LIKES_KEY, JSON.stringify(index), { expirationTtl: INDEX_TTL_S });
-    await env.APP_KV.put(voteKey, "1", { expirationTtl: VOTE_TTL_S });
-  } catch (err) {
-    return h.jsonResponse({ error: "unavailable" }, 503);
-  }
-  return h.jsonResponse({ id: articleId, likes: updated }, 200);
+  const result = env.NEWS_DB
+    ? await likeWithDatabase(env, articleId, owner, unlike)
+    : await likeWithKv(env, articleId, owner, unlike);
+  if (result.error === "limit_reached") return h.jsonResponse(result, 409);
+  if (result.error) return h.jsonResponse(result, 503);
+  return h.jsonResponse({ id: articleId, likes: result.likes, liked: result.liked }, 200);
 }
 
 export { relevant, encodeCursor, decodeCursor };

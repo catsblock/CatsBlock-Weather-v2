@@ -450,7 +450,8 @@ fun MainScreen(vm: WeatherViewModel) {
                 onMode = { mode = it },
                 name = city?.name.orEmpty(),
                 temp = bundle?.let { tempText(it.current.temp, settings.fahrenheit) },
-                progress = progress
+                progress = progress,
+                vm = vm
             )
 
             AnimatedVisibility(
@@ -508,10 +509,11 @@ private fun HeaderBar(
     onMode: (DashboardMode) -> Unit,
     name: String,
     temp: String?,
-    progress: Float
+    progress: Float,
+    vm: WeatherViewModel
 ) {
     Row(
-        Modifier.fillMaxWidth().statusBarsPadding().padding(start = 24.dp, end = 4.dp, top = 6.dp),
+        Modifier.fillMaxWidth().statusBarsPadding().padding(start = 24.dp, end = 14.dp, top = 6.dp),
         verticalAlignment = Alignment.Top
     ) {
         Column(Modifier.weight(1f).padding(top = 6.dp)) {
@@ -530,6 +532,8 @@ private fun HeaderBar(
             Spacer(Modifier.height(8.dp))
             ModeSelector(mode, onMode)
         }
+        Spacer(Modifier.width(12.dp))
+        SavedCitiesMenu(vm = vm, modifier = Modifier.padding(top = 2.dp))
     }
 }
 

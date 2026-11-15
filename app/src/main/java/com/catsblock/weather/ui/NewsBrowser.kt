@@ -27,7 +27,6 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.OpenInNew
-import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -83,7 +82,6 @@ fun NewsBrowserDialog(article: NewsArticle, onDismiss: () -> Unit) {
     var blocked by remember { mutableStateOf(false) }
     var currentUrl by remember { mutableStateOf(initial) }
     var confirmExternal by remember { mutableStateOf(false) }
-    var securityOpen by remember { mutableStateOf(false) }
     val lifecycleOwner = LocalLifecycleOwner.current
 
     DisposableEffect(lifecycleOwner) {
@@ -150,9 +148,6 @@ fun NewsBrowserDialog(article: NewsArticle, onDismiss: () -> Unit) {
                     }
                     IconButton(onClick = { if (currentUrl != null) confirmExternal = true }) {
                         Icon(Icons.Rounded.OpenInNew, contentDescription = tr("Open in browser"), tint = MaterialTheme.colorScheme.onSurface)
-                    }
-                    IconButton(onClick = { securityOpen = true }) {
-                        Icon(Icons.Rounded.Info, contentDescription = tr("Security information"), tint = MaterialTheme.colorScheme.onSurface)
                     }
                 }
                 if (progress in 0.01f..0.99f) {
@@ -272,16 +267,6 @@ fun NewsBrowserDialog(article: NewsArticle, onDismiss: () -> Unit) {
                 }) { Text(tr("Open anyway")) }
             },
             dismissButton = { TextButton(onClick = { confirmExternal = false }) { Text(tr("Cancel")) } }
-        )
-    }
-    if (securityOpen) {
-        val https = currentUrl?.startsWith("https://") == true
-        val domain = currentUrl?.let { runCatching { Uri.parse(it).host }.getOrNull() }.orEmpty()
-        AlertDialog(
-            onDismissRequest = { securityOpen = false },
-            title = { Text(tr("Security information")) },
-            text = { Text("${tr("Domain")}: $domain\n${tr("HTTPS/TLS")}: ${if (https) tr("Verified") else tr("Not verified")}\n${tr("JavaScript")}: ${tr("Disabled")}\n${tr("Permissions")}: ${tr("Denied")}\n${tr("Downloads")}: ${tr("Blocked")}") },
-            confirmButton = { TextButton(onClick = { securityOpen = false }) { Text(tr("Close")) } }
         )
     }
 }

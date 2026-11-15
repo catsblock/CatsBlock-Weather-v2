@@ -1,7 +1,11 @@
 package com.catsblock.weather.ui
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,33 +17,28 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Clear
-import androidx.compose.material.icons.rounded.Favorite
-import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -47,46 +46,44 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import coil.compose.AsyncImage
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.catsblock.weather.data.NewsArticle
 import com.catsblock.weather.data.NewsFeed
 import com.catsblock.weather.data.NewsLikeResult
 import com.catsblock.weather.data.NewsLoad
+import com.catsblock.weather.data.NewsReactionResult
+import com.catsblock.weather.data.Reaction
+import com.catsblock.weather.data.optimisticLike
+import com.catsblock.weather.data.optimisticReaction
 import com.catsblock.weather.i18n.I18n
 import com.catsblock.weather.i18n.tr
-import com.catsblock.weather.ui.components.ExpressiveLoader
 import com.catsblock.weather.ui.typography.GoogleSansFlex
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 import java.util.Locale
-import kotlin.math.min
 
 private const val SEARCH_DEBOUNCE_MS = 2500L
 
-private fun newsDescription(value: String): String {
+internal fun newsDescription(value: String): String {
     val clean = value.replace(Regex("\\s+"), " ").trim()
     if (clean.length <= 75) return clean
     val cut = clean.substring(0, 75).substringBeforeLast(" ").trimEnd()
     return "$cut…"
 }
 
-private fun publishedLabel(epochMs: Long, locale: Locale): String {
+internal fun publishedLabel(epochMs: Long, locale: Locale): String {
     if (epochMs <= 0L) return ""
     val zone = ZoneId.systemDefault()
     val time = Instant.ofEpochMilli(epochMs).atZone(zone)
@@ -99,116 +96,56 @@ private fun publishedLabel(epochMs: Long, locale: Locale): String {
     }
 }
 
+private enum class NewsPhase { Loading, Ready, Empty, Error, Unavailable }
+
 @Composable
 fun NewsScreen(vm: WeatherViewModel) {
     val city by vm.city.collectAsStateWithLifecycle()
     val language = I18n.lang
     val locale = language.locale
     val region = city?.code?.takeIf { it.length == 2 } ?: NewsFeed.regionFor(language.code)
-    val scope = rememberCoroutineScope()
-    val context = LocalContext.current
-    val reactionPrefs = remember { context.getSharedPreferences("news_reactions", android.content.Context.MODE_PRIVATE) }
-    val likePrefs = remember { context.getSharedPreferences("news_likes", android.content.Context.MODE_PRIVATE) }
-    val savedLikes = remember { likePrefs.all.filterValues { it == true }.keys }
-    val savedReactions = remember { reactionPrefs.all.mapNotNull { (key, value) -> (value as? String)?.let { key to it } }.toMap() }
-    var reactions by remember { mutableStateOf(savedReactions) }
-    var reactionMenuFor by remember { mutableStateOf<String?>(null) }
-    var reactionPulse by remember { mutableStateOf<String?>(null) }
+    val news: NewsViewModel = viewModel()
+    val state by news.state.collectAsStateWithLifecycle()
     val listState = rememberLazyListState()
     var query by rememberSaveable { mutableStateOf("") }
     var debounced by rememberSaveable { mutableStateOf("") }
-    var articles by remember { mutableStateOf<List<NewsArticle>>(emptyList()) }
-    var cursor by remember { mutableStateOf<String?>(null) }
-    var loading by remember { mutableStateOf(false) }
-    var status by remember { mutableIntStateOf(0) }
-    var liked by remember { mutableStateOf(savedLikes) }
-    var message by remember { mutableStateOf<String?>(null) }
-    var selected by remember { mutableStateOf<NewsArticle?>(null) }
-    var attempt by remember { mutableIntStateOf(0) }
-    var requestGeneration by remember { mutableIntStateOf(0) }
-    var loadJob by remember { mutableStateOf<Job?>(null) }
-    val available = remember { NewsFeed.available() }
-
-    fun load(reset: Boolean, immediateGeneration: Int = requestGeneration) {
-        if (loading && !reset) return
-        loadJob?.cancel()
-        loading = true
-        if (reset) status = 0
-        val next = if (reset) "" else cursor.orEmpty()
-        loadJob = scope.launch {
-            when (val result = NewsFeed.page(language.code, region, debounced, next)) {
-                is NewsLoad.Success -> if (immediateGeneration == requestGeneration) {
-                    val incoming = result.page.articles
-                    val merged = if (reset) incoming else (articles + incoming).distinctBy { it.id }
-                    articles = merged
-                    cursor = result.page.cursor
-                    status = 1
-                }
-                is NewsLoad.Failure -> if (immediateGeneration == requestGeneration) status = if (reset) result.status else status
-            }
-            if (immediateGeneration == requestGeneration) loading = false
-        }
-    }
+    var openedId by rememberSaveable { mutableStateOf<String?>(null) }
+    val scheme = MaterialTheme.colorScheme
+    val side = detailSidePadding()
+    val topInset = LocalBottomInset.current
 
     LaunchedEffect(query) {
         delay(SEARCH_DEBOUNCE_MS)
-        debounced = query.trim()
+        debounced = query.trim().replace(Regex("\\s+"), " ")
     }
-    LaunchedEffect(language.code, region, debounced, attempt) {
-        requestGeneration += 1
-        loadJob?.cancel()
-        cursor = null
-        articles = emptyList()
-        load(reset = true)
+    LaunchedEffect(language.code, region, debounced) {
+        news.ensureLoaded(language.code, region, debounced)
     }
-    LaunchedEffect(listState, cursor, loading) {
+    LaunchedEffect(listState) {
         snapshotFlow { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1 }
-            .collect { index ->
-                if (cursor != null && !loading && index >= articles.size - 2 && articles.isNotEmpty()) load(reset = false)
-            }
+            .collect { index -> news.loadMoreIfNeeded(index) }
     }
-    LaunchedEffect(message) {
-        if (message != null) {
-            delay(4000)
-            message = null
-        }
-    }
-    fun like(article: NewsArticle) {
-        if (article.id in liked) return
-        liked = liked + article.id
-        likePrefs.edit().putBoolean(article.id, true).apply()
-        articles = articles.map { if (it.id == article.id) it.copy(likes = (it.likes + 1).coerceAtMost(NewsFeed.MAX_LIKES)) else it }
-        scope.launch {
-            when (val result = NewsFeed.like(article.id)) {
-                is NewsLikeResult.Liked, is NewsLikeResult.AlreadyLiked -> {
-                    val count = when (result) {
-                        is NewsLikeResult.Liked -> result.likes
-                        is NewsLikeResult.AlreadyLiked -> result.likes
-                        else -> article.likes + 1
-                    }
-                    articles = articles.map { if (it.id == article.id) it.copy(likes = count) else it }
-                }
-                else -> {
-                    liked = liked - article.id
-                    likePrefs.edit().remove(article.id).apply()
-                    articles = articles.map { if (it.id == article.id) it.copy(likes = article.likes) else it }
-                    message = when (result) {
-                        NewsLikeResult.LimitReached -> tr("Like limit reached")
-                        NewsLikeResult.RateLimited -> tr("Too many requests. Try again later.")
-                        else -> tr("The news service is not available right now.")
-                    }
-                }
-            }
+    LaunchedEffect(state.message) {
+        if (state.message != null) {
+            delay(3200)
+            news.clearMessage()
         }
     }
 
-    val side = detailSidePadding()
-    val topInset = LocalBottomInset.current
-    Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+    val phase = when {
+        !state.available -> NewsPhase.Unavailable
+        state.articles.isNotEmpty() -> NewsPhase.Ready
+        state.loading -> NewsPhase.Loading
+        state.failed -> NewsPhase.Error
+        state.status != 0 && state.status != 1 -> NewsPhase.Error
+        else -> NewsPhase.Empty
+    }
+
+    Column(Modifier.fillMaxSize().background(scheme.background)) {
         Column(Modifier.fillMaxWidth().padding(horizontal = side).padding(top = 28.dp)) {
             Text(
                 tr("Weather news"),
-                color = MaterialTheme.colorScheme.onSurface,
+                color = scheme.onSurface,
                 fontFamily = GoogleSansFlex.family,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 34.sp,
@@ -221,94 +158,130 @@ fun NewsScreen(vm: WeatherViewModel) {
                 onValueChange = { if (it.length <= 60) query = it },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(20.dp),
                 placeholder = { Text(tr("Search news")) },
-                leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
+                leadingIcon = {
+                    Icon(Icons.Rounded.Search, contentDescription = null, modifier = Modifier.size(20.dp))
+                },
                 trailingIcon = {
                     if (query.isNotEmpty()) {
                         IconButton(onClick = { query = "" }) {
-                            Icon(Icons.Rounded.Clear, contentDescription = tr("Close"))
+                            Icon(Icons.Rounded.Clear, contentDescription = tr("Close"), modifier = Modifier.size(18.dp))
                         }
                     }
                 },
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 keyboardActions = KeyboardActions(onSearch = {
                     val normalized = query.trim().replace(Regex("\\s+"), " ")
-                    if (normalized != debounced) debounced = normalized else attempt++
+                    if (normalized != debounced) debounced = normalized else news.refresh()
                 }),
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = MaterialTheme.colorScheme.outline,
-                    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
+                    focusedBorderColor = scheme.primary.copy(alpha = 0.7f),
+                    unfocusedBorderColor = Color.Transparent,
+                    focusedContainerColor = scheme.surfaceContainerHigh,
+                    unfocusedContainerColor = scheme.surfaceContainerHigh
                 )
             )
-            message?.let {
+            if (state.refreshing) {
+                Spacer(Modifier.height(8.dp))
+                LinearProgressIndicator(
+                    modifier = Modifier.fillMaxWidth().height(3.dp),
+                    color = scheme.primary,
+                    trackColor = scheme.surfaceContainerHigh
+                )
+            }
+            state.message?.let {
                 Spacer(Modifier.height(10.dp))
-                Text(it, color = MaterialTheme.colorScheme.error, fontSize = 13.sp)
+                Surface(
+                    shape = CircleShape,
+                    color = scheme.errorContainer.copy(alpha = 0.6f)
+                ) {
+                    Text(
+                        it,
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp),
+                        color = scheme.onErrorContainer,
+                        fontSize = 12.sp
+                    )
+                }
             }
             Spacer(Modifier.height(8.dp))
         }
         Box(Modifier.weight(1f).fillMaxWidth()) {
-            when {
-                !available -> NewsMessage(tr("News unavailable"), tr("The news service is not available right now.")) { attempt++ }
-                status == 0 && loading -> NewsSkeletonList()
-                status == 0 && articles.isEmpty() -> NewsMessage(tr("News unavailable"), tr("The news service is not available right now.")) { attempt++ }
-                status == 429 -> NewsMessage(tr("Weather news"), tr("Too many requests. Try again later.")) { attempt++ }
-                articles.isEmpty() -> NewsMessage(tr("No meteorological news found"), tr("Try a different search or check again later.")) { attempt++ }
-                else -> LazyColumn(
-                    state = listState,
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(start = side, end = side, top = 8.dp, bottom = topInset + 24.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    items(articles, key = { it.id }) { article ->
-                        NewsCard(
-                            article = article,
-                            locale = locale,
-                            liked = article.id in liked,
-                            onLike = { like(article) },
-                            reaction = reactions[article.id],
-                            reactionOpen = reactionMenuFor == article.id,
-                            pulse = reactionPulse == article.id,
-                            onReactionMenu = { reactionMenuFor = if (reactionMenuFor == article.id) null else article.id },
-                            onReaction = { value ->
-                                reactionMenuFor = null
-                                scope.launch {
-                                    when (val result = NewsFeed.react(article.id, value)) {
-                                        is NewsFeed.NewsReactionResult.Selected -> {
-                                            reactions = reactions + (article.id to result.reaction)
-                                            reactionPrefs.edit().putString(article.id, result.reaction).apply()
-                                            reactionPulse = article.id
-                                            scope.launch { kotlinx.coroutines.delay(420); reactionPulse = null }
-                                        }
-                                        NewsFeed.NewsReactionResult.RateLimited -> message = tr("Too many requests. Try again later.")
-                                        else -> message = tr("The news service is not available right now.")
+            AnimatedContent(
+                targetState = phase,
+                transitionSpec = { fadeIn(tween(260)) togetherWith fadeOut(tween(160)) },
+                label = "newsPhase"
+            ) { target ->
+                when (target) {
+                    NewsPhase.Loading -> NewsSkeletonFeed()
+                    NewsPhase.Unavailable -> NewsMessage(
+                        tr("News unavailable"),
+                        tr("The news service is not available right now.")
+                    ) { news.refresh() }
+                    NewsPhase.Error -> NewsMessage(
+                        if (state.status == 429) tr("Weather news") else tr("News unavailable"),
+                        if (state.status == 429) tr("Too many requests. Try again later.") else tr("The news service is not available right now.")
+                    ) { news.refresh() }
+                    NewsPhase.Empty -> NewsMessage(
+                        tr("No meteorological news found"),
+                        tr("Try a different search or check again later.")
+                    ) { news.refresh() }
+                    NewsPhase.Ready -> LazyColumn(
+                        state = listState,
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(start = side, end = side, top = 8.dp, bottom = topInset + 24.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        items(state.articles, key = { it.id }) { article ->
+                            NewsCard(
+                                article = article,
+                                locale = locale,
+                                onToggleLike = { news.like(article) },
+                                onReact = { reaction -> news.react(article, reaction) },
+                                onOpen = { openedId = article.id },
+                                modifier = Modifier.animateItem()
+                            )
+                        }
+                        if (state.cursor != null) {
+                            item {
+                                Box(
+                                    Modifier.fillMaxWidth().padding(vertical = 16.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (state.loading) {
+                                        NewsSkeletonMore()
+                                    } else {
+                                        TextButton(onClick = { news.loadMore() }) { Text(tr("Retry")) }
                                     }
-                                }
-                            },
-                            onOpen = { selected = article }
-                        )
-                    }
-                    if (cursor != null) {
-                        item {
-                            Box(Modifier.fillMaxWidth().padding(vertical = 18.dp), contentAlignment = Alignment.Center) {
-                                if (loading) {
-                                    NewsSkeletonRow()
-                                } else {
-                                    TextButton(onClick = { load(reset = false) }) { Text(tr("Retry")) }
                                 }
                             }
                         }
                     }
                 }
             }
+            if (state.articles.isNotEmpty() && state.failed) {
+                Surface(
+                    onClick = { news.refresh() },
+                    modifier = Modifier.align(Alignment.BottomCenter).padding(horizontal = side).padding(bottom = 12.dp),
+                    shape = CircleShape,
+                    color = scheme.surfaceContainerHighest,
+                    shadowElevation = 6.dp
+                ) {
+                    Text(
+                        tr("The news service is not available right now."),
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                        color = scheme.onSurface,
+                        fontSize = 12.sp
+                    )
+                }
+            }
         }
     }
-    selected?.let { article ->
-        NewsBrowserDialog(article) { selected = null }
+    val opened = state.articles.firstOrNull { it.id == openedId }
+    if (opened != null) {
+        NewsBrowserDialog(opened) { openedId = null }
     }
 }
-
-
 
 @Composable
 internal fun EventNewsSection(event: String, region: String) {
@@ -329,7 +302,7 @@ internal fun EventNewsSection(event: String, region: String) {
     if (loading) {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(tr("Related meteorological news"), style = MaterialTheme.typography.titleMedium)
-            NewsSkeletonRow()
+            NewsSkeletonCard()
         }
         return
     }
@@ -337,38 +310,40 @@ internal fun EventNewsSection(event: String, region: String) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(tr("Related meteorological news"), style = MaterialTheme.typography.titleMedium)
         articles.forEach { article ->
-            NewsCard(article, locale, false, onLike = {
-                scope.launch { NewsFeed.like(article.id) }
-            }, onOpen = { selected = article })
+            NewsCard(
+                article = article,
+                locale = locale,
+                onToggleLike = {
+                    val previous = article
+                    articles = articles.map { if (it.id == previous.id) it.optimisticLike() else it }
+                    scope.launch {
+                        when (val result = NewsFeed.like(previous.id, unlike = previous.liked)) {
+                            is NewsLikeResult.Updated -> articles = articles.map {
+                                if (it.id == previous.id) it.copy(likes = result.likes, liked = result.liked) else it
+                            }
+                            else -> articles = articles.map { if (it.id == previous.id) previous else it }
+                        }
+                    }
+                },
+                onReact = { reaction ->
+                    val previous = article
+                    articles = articles.map {
+                        if (it.id == previous.id) it.optimisticReaction(reaction.emoji) else it
+                    }
+                    scope.launch {
+                        when (val result = NewsFeed.react(previous.id, reaction.emoji)) {
+                            is NewsReactionResult.Updated -> articles = articles.map {
+                                if (it.id == previous.id) it.copy(myReaction = result.reaction, reactions = result.counts) else it
+                            }
+                            else -> articles = articles.map { if (it.id == previous.id) previous else it }
+                        }
+                    }
+                },
+                onOpen = { selected = article }
+            )
         }
     }
     selected?.let { NewsBrowserDialog(it) { selected = null } }
-}
-
-@Composable
-private fun NewsSkeletonList() {
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        items(5) { NewsSkeletonRow() }
-    }
-}
-
-@Composable
-private fun NewsSkeletonRow() {
-    Surface(
-        modifier = Modifier.fillMaxWidth().height(128.dp),
-        shape = RoundedCornerShape(20.dp),
-        color = MaterialTheme.colorScheme.surfaceContainer
-    ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Box(Modifier.widthIn(max = 150.dp).height(12.dp).clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surfaceVariant))
-            Box(Modifier.fillMaxWidth(0.9f).height(18.dp).clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surfaceVariant))
-            Box(Modifier.fillMaxWidth(0.65f).height(14.dp).clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surfaceVariant))
-        }
-    }
 }
 
 @Composable
@@ -383,131 +358,17 @@ private fun NewsMessage(title: String, body: String, onRetry: () -> Unit) {
             color = MaterialTheme.colorScheme.onSurface,
             fontFamily = GoogleSansFlex.family,
             fontWeight = FontWeight.SemiBold,
-            fontSize = 20.sp
+            fontSize = 20.sp,
+            textAlign = TextAlign.Center
         )
         Spacer(Modifier.height(8.dp))
         Text(
             body,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontSize = 14.sp,
-            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+            textAlign = TextAlign.Center
         )
         Spacer(Modifier.height(12.dp))
         TextButton(onClick = onRetry) { Text(tr("Retry")) }
-    }
-}
-
-@Composable
-private fun NewsCard(
-    article: NewsArticle,
-    locale: Locale,
-    liked: Boolean,
-    onLike: () -> Unit,
-    reaction: String? = null,
-    reactionOpen: Boolean = false,
-    pulse: Boolean = false,
-    onReactionMenu: () -> Unit = {},
-    onReaction: (String) -> Unit = {},
-    onOpen: () -> Unit
-) {
-    val scheme = MaterialTheme.colorScheme
-    Surface(
-        shape = RoundedCornerShape(20.dp),
-        color = scheme.surfaceContainer,
-        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).clickable(onClick = onOpen)
-    ) {
-        Row(Modifier.padding(14.dp)) {
-            Column(Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        article.source.ifBlank { tr("Source") },
-                        color = scheme.onSurfaceVariant,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false)
-                    )
-                    val date = publishedLabel(article.publishedAt, locale)
-                    if (date.isNotEmpty()) {
-                        Text(" · ", color = scheme.onSurfaceVariant, fontSize = 12.sp)
-                        Text(date, color = scheme.onSurfaceVariant, fontSize = 12.sp, maxLines = 1)
-                    }
-                }
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    article.title,
-                    color = scheme.onSurface,
-                    fontFamily = GoogleSansFlex.family,
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 17.sp,
-                    lineHeight = 22.sp,
-                    maxLines = 4,
-                    overflow = TextOverflow.Ellipsis
-                )
-                if (article.summary.isNotBlank()) {
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        newsDescription(article.summary),
-                        color = scheme.onSurfaceVariant,
-                        fontSize = 13.sp,
-                        lineHeight = 18.sp,
-                        maxLines = 3,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-                Spacer(Modifier.height(8.dp))
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    val heartScale by animateFloatAsState(if (pulse) 1.28f else 1f, label = "heartPulse")
-                    Surface(
-                        shape = CircleShape,
-                        color = if (liked) scheme.primary.copy(alpha = 0.12f) else androidx.compose.ui.graphics.Color.Transparent,
-                        modifier = Modifier.clip(CircleShape).graphicsLayer { scaleX = heartScale; scaleY = heartScale }.clickable(enabled = !liked, onClick = onLike)
-                    ) {
-                        Row(Modifier.padding(horizontal = 10.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                if (liked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
-                                contentDescription = tr("Like"),
-                                tint = if (liked) scheme.primary else scheme.onSurfaceVariant,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(Modifier.width(6.dp))
-                            Text(
-                                if (article.likes > 0) "${min(article.likes, NewsFeed.MAX_LIKES)}" else tr("Like"),
-                                color = if (liked) scheme.primary else scheme.onSurfaceVariant,
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Medium
-                            )
-                        }
-                    }
-                    Surface(
-                        shape = CircleShape,
-                        color = scheme.primary.copy(alpha = if (reaction != null) 0.14f else 0.08f),
-                        modifier = Modifier.clip(CircleShape).clickable(onClick = onReactionMenu)
-                    ) {
-                        Text(reaction ?: "+", modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp), fontSize = 18.sp)
-                    }
-                }
-                if (reactionOpen) {
-                    Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        NewsFeed.REACTIONS.forEach { value ->
-                            Surface(shape = CircleShape, color = scheme.surfaceContainerHighest, modifier = Modifier.clip(CircleShape).clickable { onReaction(value) }) {
-                                Text(value, modifier = Modifier.padding(horizontal = 7.dp, vertical = 5.dp), fontSize = 18.sp)
-                            }
-                        }
-                    }
-                }
-            }
-            val image = article.imageUrl
-            if (!image.isNullOrBlank()) {
-                Spacer(Modifier.width(12.dp))
-                AsyncImage(
-                    model = image,
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.size(88.dp).clip(RoundedCornerShape(14.dp))
-                )
-            }
-        }
     }
 }
