@@ -61,8 +61,8 @@ import com.catsblock.weather.data.NewsLikeResult
 import com.catsblock.weather.data.NewsLoad
 import com.catsblock.weather.data.NewsReactionResult
 import com.catsblock.weather.data.Reaction
-import com.catsblock.weather.data.optimisticLike
-import com.catsblock.weather.data.optimisticReaction
+import com.catsblock.weather.data.withLike
+import com.catsblock.weather.data.withReaction
 import com.catsblock.weather.i18n.I18n
 import com.catsblock.weather.i18n.tr
 import com.catsblock.weather.ui.typography.GoogleSansFlex
@@ -236,8 +236,8 @@ fun NewsScreen(vm: WeatherViewModel) {
                             NewsCard(
                                 article = article,
                                 locale = locale,
-                                onToggleLike = { news.like(article) },
-                                onReact = { reaction -> news.react(article, reaction) },
+                                onToggleLike = { news.setLike(article, !article.liked) },
+                                onReact = { reaction -> news.toggleReaction(article, reaction) },
                                 onOpen = { openedId = article.id },
                                 modifier = Modifier.animateItem()
                             )
@@ -291,6 +291,43 @@ internal fun EventNewsSection(event: String, region: String) {
     var articles by remember(event, language.code, region) { mutableStateOf<List<NewsArticle>>(emptyList()) }
     var selected by remember { mutableStateOf<NewsArticle?>(null) }
     var loading by remember(event, language.code, region) { mutableStateOf(true) }
+    val likeSenders = remember { mutableMapOf<String, LatestSender<Boolean>>() }
+    val reactionSenders = remember { mutableMapOf<String, LatestSender<String>>() }
+    val likeSnapshots = remember { mutableMapOf<String, Pair<Boolean, Int>>() }
+    val reactionSnapshots = remember { mutableMapOf<String, Pair<String?, Map<String, Int>>>() }
+
+    fun update(articleId: String, transform: (NewsArticle) -> NewsArticle) {
+        articles = articles.map { if (it.id == articleId) transform(it) else it }
+    }
+
+    fun likeSender(articleId: String): LatestSender<Boolean> = likeSenders.getOrPut(articleId) {
+        LatestSender(scope) { target ->
+            when (val result = NewsFeed.setLike(articleId, target)) {
+                is NewsLikeResult.Updated -> {
+                    likeSnapshots[articleId] = result.liked to result.likes
+                    update(articleId) { it.copy(liked = result.liked, likes = result.likes) }
+                }
+                else -> likeSnapshots[articleId]?.let { snapshot ->
+                    update(articleId) { it.copy(liked = snapshot.first, likes = snapshot.second) }
+                }
+            }
+        }
+    }
+
+    fun reactionSender(articleId: String): LatestSender<String> = reactionSenders.getOrPut(articleId) {
+        LatestSender(scope) { target ->
+            when (val result = NewsFeed.setReaction(articleId, target.ifEmpty { null })) {
+                is NewsReactionResult.Updated -> {
+                    reactionSnapshots[articleId] = result.reaction to result.counts
+                    update(articleId) { it.copy(myReaction = result.reaction, reactions = result.counts) }
+                }
+                else -> reactionSnapshots[articleId]?.let { snapshot ->
+                    update(articleId) { it.copy(myReaction = snapshot.first, reactions = snapshot.second) }
+                }
+            }
+        }
+    }
+
     LaunchedEffect(event, language.code, region) {
         loading = true
         when (val result = NewsFeed.event(language.code, region, event)) {
@@ -314,30 +351,16 @@ internal fun EventNewsSection(event: String, region: String) {
                 article = article,
                 locale = locale,
                 onToggleLike = {
-                    val previous = article
-                    articles = articles.map { if (it.id == previous.id) it.optimisticLike() else it }
-                    scope.launch {
-                        when (val result = NewsFeed.like(previous.id, unlike = previous.liked)) {
-                            is NewsLikeResult.Updated -> articles = articles.map {
-                                if (it.id == previous.id) it.copy(likes = result.likes, liked = result.liked) else it
-                            }
-                            else -> articles = articles.map { if (it.id == previous.id) previous else it }
-                        }
-                    }
+                    val target = !article.liked
+                    likeSnapshots.putIfAbsent(article.id, article.liked to article.likes)
+                    update(article.id) { it.withLike(target) }
+                    likeSender(article.id).submit(target)
                 },
                 onReact = { reaction ->
-                    val previous = article
-                    articles = articles.map {
-                        if (it.id == previous.id) it.optimisticReaction(reaction.emoji) else it
-                    }
-                    scope.launch {
-                        when (val result = NewsFeed.react(previous.id, reaction.emoji)) {
-                            is NewsReactionResult.Updated -> articles = articles.map {
-                                if (it.id == previous.id) it.copy(myReaction = result.reaction, reactions = result.counts) else it
-                            }
-                            else -> articles = articles.map { if (it.id == previous.id) previous else it }
-                        }
-                    }
+                    val target = if (article.myReaction == reaction.emoji) null else reaction.emoji
+                    reactionSnapshots.putIfAbsent(article.id, article.myReaction to article.reactions)
+                    update(article.id) { it.withReaction(target) }
+                    reactionSender(article.id).submit(target.orEmpty())
                 },
                 onOpen = { selected = article }
             )

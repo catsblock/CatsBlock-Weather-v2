@@ -52,24 +52,17 @@ The event route reuses the same normalized feed, relevance filter, ranking, cach
 
 ## POST /v1/news/like
 
-Body: `{"id": "<article id>"}`, optionally `{"id": "...", "unlike": true}`. `Content-Type: application/json`.
+Body: `{"id": "<article id>", "liked": true}` with `Content-Type: application/json`. Send `"liked": false` to remove the like. The older `{"unlike": true}` form is still accepted.
 
-Responses:
+Response: `200 {"id": "...", "likes": 13, "liked": true}`. `liked` always reports the state that is actually stored, so a client can apply it directly. Both operations are idempotent: repeating the same body leaves the total unchanged and never creates a second vote.
 
-- `200 {"id": "...", "likes": 13, "liked": true}` – the like was added, or already existed.
-- `200 {"id": "...", "likes": 12, "liked": false}` – the like was removed, or did not exist.
-- `409 {"error": "limit_reached"}` – the article already has 10 000 likes.
-- `429 {"error": "rate_limited"}` – 40 like actions per ten minutes per device.
-- `400 {"error": "bad_request"}` – missing or malformed identifier.
-- `503 {"error": "unavailable"}` – the storage binding is missing.
-
-The endpoint is idempotent: repeating a like keeps a single vote and the same total, and repeating an unlike keeps the total at zero.
+Errors: `400 bad_request` (missing or malformed identifier), `429 rate_limited` (40 actions per ten minutes), `503 unavailable` (storage missing).
 
 ## POST /v1/news/reaction
 
-Body: `{"id": "<article id>", "reaction": "🤩"}`. Only 🤩, 😁, 😭, ⚡, 👍 and 👏 are accepted.
+Body: `{"id": "<article id>", "reaction": "🤩"}`. Only 🤩, 😁, 😭, ⚡, 👍 and 👏 are accepted. Send `"reaction": ""` (or omit the field) to remove the reader's reaction.
 
-Behaviour: a reader has at most one reaction per article. Selecting a new emoji replaces the previous one and moves the vote between counters. Selecting the currently selected emoji removes the reaction.
+The route is a set operation, not a toggle: the stored reaction becomes exactly the requested one. Selecting a different emoji replaces the previous one, repeating the same emoji is a no-op, and an empty value removes the vote. This makes retries and coalesced client requests safe.
 
 Response:
 
@@ -81,19 +74,21 @@ Response:
 }
 ```
 
-`reaction` is an empty string when the reaction was removed. Errors: `400 bad_request` (unknown article, reaction or identifier), `429 rate_limited` (80 reaction actions per ten minutes per device), `503 unavailable` (storage missing).
+`reaction` is the state that is actually stored, and `reactions` is the resulting per-emoji tally. Errors: `400 bad_request` (unknown reaction or identifier), `429 rate_limited` (80 actions per ten minutes), `503 unavailable` (storage missing).
+
+## Counts, consistency and abuse protection
+
+Counters are never stored as separate mutable rows. Each like and each reaction is a single row keyed by `(article_id, voter_id)`, and every total in a response is computed with `COUNT(*)` over those rows:
+
+- one reader can hold at most one like and at most one reaction per article, enforced by primary keys;
+- a total can therefore never drift, double, or lose other reactions, regardless of how many requests arrive at once;
+- every write is a single statement, so no read-modify-write sequence exists to interleave badly.
+
+Rate limits use a fixed ten-minute window stored in D1 and incremented atomically. Two keys are consumed per action: the device identity and the client address, so rotating device identifiers from one address does not multiply the budget. When D1 is unavailable the limiter falls back to the KV counter, which is approximate but still bounded. The app additionally collapses rapid taps into one in-flight request per article, sending only the latest desired state.
 
 ## Sources and caching
 
 Each language is served by a keyless Google News RSS weather query (`hl`/`gl` per locale) plus curated feeds where they exist: Severe Weather Europe, NOAA, IPCC (English), G1 Meio Ambiente (pt-BR), 20minutos and El País (Spanish), Le Monde (French), MeteoGiornale (Italian), tagesschau (German, filtered by weather keywords). Aggregated lists are cached in `APP_KV` under `news:feed:<lang>` for 15 minutes, so a normal request performs no upstream fetch.
-
-Likes, unlikes and reactions are stored in D1:
-
-- `news_reaction_votes` – one row per reader and article (like), primary key `(article_id, voter_id)`.
-- `news_reaction_counts` – per-emoji counters with a `0..10000` check constraint.
-- `news_reactions` – legacy per-device like votes, kept for compatibility with existing deployments.
-
-Per-device action throttling uses the existing KV counters.
 
 ## Requirements
 

@@ -28,21 +28,17 @@ data class NewsArticle(
         get() = Reaction.entries.filter { countOf(it) > 0 || myReaction == it.emoji }
 }
 
-fun NewsArticle.optimisticLike(): NewsArticle {
-    val next = !liked
-    val count = (likes + if (next) 1 else -1).coerceIn(0, NewsFeed.MAX_LIKES)
-    return copy(liked = next, likes = count)
+fun NewsArticle.withLike(liked: Boolean): NewsArticle {
+    if (this.liked == liked) return this
+    val count = (likes + if (liked) 1 else -1).coerceIn(0, NewsFeed.MAX_LIKES)
+    return copy(liked = liked, likes = count)
 }
 
-fun NewsArticle.optimisticReaction(emoji: String): NewsArticle {
+fun NewsArticle.withReaction(emoji: String?): NewsArticle {
+    if (myReaction == emoji) return this
     val counts = reactions.toMutableMap()
-    val active = myReaction
-    if (active == emoji) {
-        counts[emoji] = ((counts[emoji] ?: 0) - 1).coerceAtLeast(0)
-        return copy(reactions = counts, myReaction = null)
-    }
-    if (active != null) counts[active] = ((counts[active] ?: 0) - 1).coerceAtLeast(0)
-    counts[emoji] = (counts[emoji] ?: 0) + 1
+    myReaction?.let { active -> counts[active] = ((counts[active] ?: 0) - 1).coerceAtLeast(0) }
+    emoji?.let { target -> counts[target] = ((counts[target] ?: 0) + 1).coerceAtMost(NewsFeed.MAX_LIKES) }
     return copy(reactions = counts, myReaction = emoji)
 }
 
@@ -176,11 +172,12 @@ object NewsFeed {
         }
     }
 
-    suspend fun react(articleId: String, reaction: String): NewsReactionResult = withContext(Dispatchers.IO) {
-        if (Reaction.of(reaction) == null || articleId.isBlank()) return@withContext NewsReactionResult.Failed
+    suspend fun setReaction(articleId: String, reaction: String?): NewsReactionResult = withContext(Dispatchers.IO) {
+        if (articleId.isBlank()) return@withContext NewsReactionResult.Failed
+        if (reaction != null && Reaction.of(reaction) == null) return@withContext NewsReactionResult.Failed
         val base = SecretKeys.baseUrl()
         if (base.isEmpty()) return@withContext NewsReactionResult.Unavailable
-        val payload = JSONObject().put("id", articleId).put("reaction", reaction).toString()
+        val payload = JSONObject().put("id", articleId).put("reaction", reaction.orEmpty()).toString()
         val call = request("$base/v1/news/reaction")
             .post(payload.toRequestBody(JSON.toMediaType()))
             .build()
@@ -202,11 +199,11 @@ object NewsFeed {
         }
     }
 
-    suspend fun like(articleId: String, unlike: Boolean = false): NewsLikeResult = withContext(Dispatchers.IO) {
+    suspend fun setLike(articleId: String, liked: Boolean): NewsLikeResult = withContext(Dispatchers.IO) {
+        if (articleId.isBlank()) return@withContext NewsLikeResult.Failed
         val base = SecretKeys.baseUrl()
         if (base.isEmpty()) return@withContext NewsLikeResult.Unavailable
-        val payload = JSONObject().put("id", articleId)
-        if (unlike) payload.put("unlike", true)
+        val payload = JSONObject().put("id", articleId).put("liked", liked)
         val call = request("$base/v1/news/like")
             .post(payload.toString().toRequestBody(JSON.toMediaType()))
             .build()
@@ -219,7 +216,7 @@ object NewsFeed {
                 when {
                     response.isSuccessful && likes >= 0 -> NewsLikeResult.Updated(
                         likes.coerceIn(0, MAX_LIKES),
-                        json?.optBoolean("liked", !unlike) ?: !unlike
+                        json?.optBoolean("liked", liked) ?: liked
                     )
                     error == "limit_reached" -> NewsLikeResult.LimitReached
                     error == "rate_limited" -> NewsLikeResult.RateLimited

@@ -8,8 +8,8 @@ import com.catsblock.weather.data.NewsLikeResult
 import com.catsblock.weather.data.NewsLoad
 import com.catsblock.weather.data.NewsReactionResult
 import com.catsblock.weather.data.Reaction
-import com.catsblock.weather.data.optimisticLike
-import com.catsblock.weather.data.optimisticReaction
+import com.catsblock.weather.data.withLike
+import com.catsblock.weather.data.withReaction
 import com.catsblock.weather.i18n.tr
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -39,8 +39,11 @@ class NewsViewModel : ViewModel() {
     private var language = "en"
     private var region = "US"
     private var query = ""
-    private val likeTokens = HashMap<String, Int>()
-    private val reactionTokens = HashMap<String, Int>()
+
+    private val likeQueues = HashMap<String, LatestSender<Boolean>>()
+    private val reactionQueues = HashMap<String, LatestSender<String>>()
+    private val likeSnapshots = HashMap<String, Pair<Boolean, Int>>()
+    private val reactionSnapshots = HashMap<String, Pair<String?, Map<String, Int>>>()
 
     fun ensureLoaded(language: String, region: String, query: String) {
         this.language = language
@@ -74,6 +77,23 @@ class NewsViewModel : ViewModel() {
         _state.update { it.copy(message = null) }
     }
 
+    fun setLike(article: NewsArticle, liked: Boolean) {
+        val current = _state.value.articles.firstOrNull { it.id == article.id } ?: return
+        if (current.liked == liked) return
+        likeSnapshots.putIfAbsent(current.id, current.liked to current.likes)
+        updateArticle(current.id) { it.withLike(liked) }
+        likeQueue(current.id).submit(liked)
+    }
+
+    fun toggleReaction(article: NewsArticle, reaction: Reaction) {
+        val current = _state.value.articles.firstOrNull { it.id == article.id } ?: return
+        val target = if (current.myReaction == reaction.emoji) null else reaction.emoji
+        if (current.myReaction == target) return
+        reactionSnapshots.putIfAbsent(current.id, current.myReaction to current.reactions)
+        updateArticle(current.id) { it.withReaction(target) }
+        reactionQueue(current.id).submit(target.orEmpty())
+    }
+
     private fun fetch(reset: Boolean) {
         val token = ++generation
         job?.cancel()
@@ -91,20 +111,26 @@ class NewsViewModel : ViewModel() {
             val result = NewsFeed.page(language, region, query, cursor)
             if (token != generation) return@launch
             when (result) {
-                is NewsLoad.Success -> _state.update { current ->
-                    val merged = if (reset) {
-                        result.page.articles
-                    } else {
-                        (current.articles + result.page.articles).distinctBy { it.id }
+                is NewsLoad.Success -> {
+                    result.page.articles.forEach { article ->
+                        likeSnapshots[article.id] = article.liked to article.likes
+                        reactionSnapshots[article.id] = article.myReaction to article.reactions
                     }
-                    current.copy(
-                        articles = merged,
-                        cursor = result.page.cursor,
-                        loading = false,
-                        refreshing = false,
-                        failed = false,
-                        status = 1
-                    )
+                    _state.update { current ->
+                        val merged = if (reset) {
+                            result.page.articles
+                        } else {
+                            (current.articles + result.page.articles).distinctBy { it.id }
+                        }
+                        current.copy(
+                            articles = merged,
+                            cursor = result.page.cursor,
+                            loading = false,
+                            refreshing = false,
+                            failed = false,
+                            status = 1
+                        )
+                    }
                 }
                 is NewsLoad.Failure -> _state.update { current ->
                     current.copy(
@@ -118,44 +144,33 @@ class NewsViewModel : ViewModel() {
         }
     }
 
-    fun like(article: NewsArticle) {
-        val current = _state.value.articles.firstOrNull { it.id == article.id } ?: return
-        val target = !current.liked
-        updateArticle(current.id) { it.optimisticLike() }
-        val token = (likeTokens[current.id] ?: 0) + 1
-        likeTokens[current.id] = token
-        viewModelScope.launch {
-            val result = NewsFeed.like(current.id, unlike = !target)
-            if (likeTokens[current.id] != token) return@launch
-            when (result) {
-                is NewsLikeResult.Updated -> updateArticle(current.id) {
-                    it.copy(likes = result.likes, liked = result.liked)
+    private fun likeQueue(articleId: String): LatestSender<Boolean> = likeQueues.getOrPut(articleId) {
+        LatestSender(viewModelScope) { target ->
+            when (val result = NewsFeed.setLike(articleId, target)) {
+                is NewsLikeResult.Updated -> {
+                    likeSnapshots[articleId] = result.liked to result.likes
+                    updateArticle(articleId) { it.copy(liked = result.liked, likes = result.likes) }
                 }
                 else -> {
-                    updateArticle(current.id) { it.copy(liked = current.liked, likes = current.likes) }
+                    likeSnapshots[articleId]?.let { snapshot ->
+                        updateArticle(articleId) { it.copy(liked = snapshot.first, likes = snapshot.second) }
+                    }
                     _state.update { it.copy(message = likeMessage(result)) }
                 }
             }
         }
     }
 
-    fun react(article: NewsArticle, reaction: Reaction) {
-        val current = _state.value.articles.firstOrNull { it.id == article.id } ?: return
-        val previousReaction = current.myReaction
-        val previousCounts = current.reactions
-        updateArticle(current.id) { it.optimisticReaction(reaction.emoji) }
-        val token = (reactionTokens[current.id] ?: 0) + 1
-        reactionTokens[current.id] = token
-        viewModelScope.launch {
-            val result = NewsFeed.react(current.id, reaction.emoji)
-            if (reactionTokens[current.id] != token) return@launch
-            when (result) {
-                is NewsReactionResult.Updated -> updateArticle(current.id) {
-                    it.copy(myReaction = result.reaction, reactions = result.counts)
+    private fun reactionQueue(articleId: String): LatestSender<String> = reactionQueues.getOrPut(articleId) {
+        LatestSender(viewModelScope) { target ->
+            when (val result = NewsFeed.setReaction(articleId, target.ifEmpty { null })) {
+                is NewsReactionResult.Updated -> {
+                    reactionSnapshots[articleId] = result.reaction to result.counts
+                    updateArticle(articleId) { it.copy(myReaction = result.reaction, reactions = result.counts) }
                 }
                 else -> {
-                    updateArticle(current.id) {
-                        it.copy(myReaction = previousReaction, reactions = previousCounts)
+                    reactionSnapshots[articleId]?.let { snapshot ->
+                        updateArticle(articleId) { it.copy(myReaction = snapshot.first, reactions = snapshot.second) }
                     }
                     _state.update { it.copy(message = reactionMessage(result)) }
                 }
