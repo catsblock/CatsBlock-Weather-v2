@@ -13,8 +13,5 @@ enum class Reaction(val emoji: String, val label: String, @DrawableRes val drawa
 
     companion object {
         fun of(emoji: String?): Reaction? = entries.firstOrNull { it.emoji == emoji }
-
-        fun ordered(counts: Map<String, Int>): Map<String, Int> =
-            entries.associate { it.emoji to (counts[it.emoji] ?: 0) }
     }
 }

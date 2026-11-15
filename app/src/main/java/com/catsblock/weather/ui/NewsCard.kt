@@ -475,5 +475,3 @@ private fun ReactionOption(
         )
     }
 }
-
-internal fun reactionSummary(counts: Map<String, Int>): Int = counts.values.sum()

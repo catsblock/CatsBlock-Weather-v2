@@ -92,12 +92,4 @@ class NewsReactionTest {
         }
         assertNull(Reaction.of("🔥"))
     }
-
-    @Test
-    fun orderedCountsCoverEveryReaction() {
-        val ordered = Reaction.ordered(mapOf(Reaction.Clapping.emoji to 5))
-        assertEquals(Reaction.entries.size, ordered.size)
-        assertEquals(5, ordered[Reaction.Clapping.emoji])
-        assertEquals(0, ordered[Reaction.StarStruck.emoji])
-    }
 }
