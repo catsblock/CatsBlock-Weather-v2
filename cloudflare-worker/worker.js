@@ -3,6 +3,7 @@ import { isRegionBlocked, REGION_MESSAGE } from "./region.js";
 import { ADMIN_COMMAND, ADMIN_PATHS, handleAdmin, isBannedAtEdge } from "./admin.js";
 import { recordHit } from "./analytics.js";
 import { handleFeedback } from "./feedback.js";
+import { handleNews, handleNewsLike } from "./news.js";
 import { PROVIDER_ORDER, aggregateForAgent, normalizeProvider } from "./aggregate.js";
 
 export { RateLimiter } from "./limiter.js";
@@ -17,7 +18,7 @@ const KEY_QUOTA_DOWN_S = 3600;
 
 const USER_KEY_PATTERN = /^[A-Za-z0-9_-]{16,64}$/;
 const PUBLIC_PATHS = new Set(["/", "/v1/health", "/v1/region"]);
-const PROTECTED_PATHS = new Set(["/v1/weather", "/v1/visual", "/v1/openweather", "/v1/agent", "/v1/agent/status", "/v1/agent/feedback"]);
+const PROTECTED_PATHS = new Set(["/v1/weather", "/v1/visual", "/v1/openweather", "/v1/agent", "/v1/agent/status", "/v1/agent/feedback", "/v1/news", "/v1/news/like"]);
 const BROWSER_HEADERS = ["Origin", "Sec-Fetch-Mode", "Sec-Fetch-Site", "Sec-Fetch-Dest"];
 const COORD_PATTERN = /^-?\d{1,3}(\.\d{1,10})?$/;
 
@@ -1690,6 +1691,27 @@ async function handleRequest(request, env, ctx) {
       return await handleAdmin(request, env, path, { jsonResponse, identify, authorized, hmacHex, constantTimeEqual, readEnvSecret });
     }
 
+    if (path === "/v1/news") {
+      if (request.method !== "GET") {
+        return jsonResponse({ error: "method_not_allowed" }, 405, { Allow: "GET, OPTIONS" });
+      }
+      if (!(await authorized(request, env))) {
+        return jsonResponse({ error: "unauthorized" }, 401);
+      }
+      return await handleNews(request, env, { jsonResponse, identify });
+    }
+    if (path === "/v1/news/like") {
+      if (request.method !== "POST") {
+        return jsonResponse({ error: "method_not_allowed" }, 405, { Allow: "POST, OPTIONS" });
+      }
+      if (!(await authorized(request, env))) {
+        return jsonResponse({ error: "unauthorized" }, 401);
+      }
+      if (!/^application\/json/i.test(request.headers.get("Content-Type") || "")) {
+        return jsonResponse({ error: "unsupported_media_type" }, 415);
+      }
+      return await handleNewsLike(request, env, { jsonResponse, identify });
+    }
     if (path === "/v1/agent/status") {
       if (request.method !== "GET") {
         return jsonResponse({ error: "method_not_allowed" }, 405, { Allow: "GET, OPTIONS" });
