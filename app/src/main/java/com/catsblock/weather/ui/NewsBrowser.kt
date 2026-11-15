@@ -27,7 +27,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.OpenInNew
-import androidx.compose.material.icons.rounded.Menu
+import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -152,7 +152,7 @@ fun NewsBrowserDialog(article: NewsArticle, onDismiss: () -> Unit) {
                         Icon(Icons.Rounded.OpenInNew, contentDescription = tr("Open in browser"), tint = MaterialTheme.colorScheme.onSurface)
                     }
                     IconButton(onClick = { securityOpen = true }) {
-                        Icon(Icons.Rounded.Menu, contentDescription = tr("Security information"), tint = MaterialTheme.colorScheme.onSurface)
+                        Icon(Icons.Rounded.Info, contentDescription = tr("Security information"), tint = MaterialTheme.colorScheme.onSurface)
                     }
                 }
                 if (progress in 0.01f..0.99f) {

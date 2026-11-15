@@ -144,6 +144,40 @@ object NewsFeed {
             NewsLoad.Failure(-1)
         }
     }
+    sealed interface NewsReactionResult {
+        data class Selected(val reaction: String) : NewsReactionResult
+        data object RateLimited : NewsReactionResult
+        data object Invalid : NewsReactionResult
+        data object Unavailable : NewsReactionResult
+        data object Failed : NewsReactionResult
+    }
+
+    val REACTIONS = listOf("🤩", "😁", "😭", "⚡", "👍", "👏")
+
+    suspend fun react(articleId: String, reaction: String): NewsReactionResult = withContext(Dispatchers.IO) {
+        if (reaction !in REACTIONS || articleId.isBlank()) return@withContext NewsReactionResult.Invalid
+        val base = SecretKeys.baseUrl()
+        if (base.isEmpty()) return@withContext NewsReactionResult.Unavailable
+        val payload = JSONObject().put("id", articleId).put("reaction", reaction).toString()
+        val request = Request.Builder().url("$base/v1/news/reaction")
+            .header("X-App-Token", SecretKeys.appToken())
+            .header("X-Device-Id", DeviceFingerprint.id)
+            .header("X-Client-Platform", "android")
+            .post(payload.toRequestBody(JSON.toMediaType())).build()
+        try {
+            client.newCall(request).execute().use { response ->
+                val json = runCatching { JSONObject(response.body?.string().orEmpty()) }.getOrNull()
+                when {
+                    response.isSuccessful && json?.optString("reaction")?.let { it in REACTIONS } == true -> NewsReactionResult.Selected(json.optString("reaction"))
+                    response.code == 429 -> NewsReactionResult.RateLimited
+                    response.code == 400 -> NewsReactionResult.Invalid
+                    response.code == 503 -> NewsReactionResult.Unavailable
+                    else -> NewsReactionResult.Failed
+                }
+            }
+        } catch (_: Exception) { NewsReactionResult.Failed }
+    }
+
     suspend fun like(articleId: String): NewsLikeResult = withContext(Dispatchers.IO) {
         val base = SecretKeys.baseUrl()
         if (base.isEmpty()) return@withContext NewsLikeResult.Unavailable

@@ -47,6 +47,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
@@ -54,6 +55,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.catsblock.weather.data.NewsArticle
@@ -103,6 +106,14 @@ fun NewsScreen(vm: WeatherViewModel) {
     val locale = language.locale
     val region = city?.code?.takeIf { it.length == 2 } ?: NewsFeed.regionFor(language.code)
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val reactionPrefs = remember { context.getSharedPreferences("news_reactions", android.content.Context.MODE_PRIVATE) }
+    val likePrefs = remember { context.getSharedPreferences("news_likes", android.content.Context.MODE_PRIVATE) }
+    val savedLikes = remember { likePrefs.all.filterValues { it == true }.keys }
+    val savedReactions = remember { reactionPrefs.all.mapNotNull { (key, value) -> (value as? String)?.let { key to it } }.toMap() }
+    var reactions by remember { mutableStateOf(savedReactions) }
+    var reactionMenuFor by remember { mutableStateOf<String?>(null) }
+    var reactionPulse by remember { mutableStateOf<String?>(null) }
     val listState = rememberLazyListState()
     var query by rememberSaveable { mutableStateOf("") }
     var debounced by rememberSaveable { mutableStateOf("") }
@@ -110,7 +121,7 @@ fun NewsScreen(vm: WeatherViewModel) {
     var cursor by remember { mutableStateOf<String?>(null) }
     var loading by remember { mutableStateOf(false) }
     var status by remember { mutableIntStateOf(0) }
-    var liked by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var liked by remember { mutableStateOf(savedLikes) }
     var message by remember { mutableStateOf<String?>(null) }
     var selected by remember { mutableStateOf<NewsArticle?>(null) }
     var attempt by remember { mutableIntStateOf(0) }
@@ -164,19 +175,29 @@ fun NewsScreen(vm: WeatherViewModel) {
     }
     fun like(article: NewsArticle) {
         if (article.id in liked) return
+        liked = liked + article.id
+        likePrefs.edit().putBoolean(article.id, true).apply()
+        articles = articles.map { if (it.id == article.id) it.copy(likes = (it.likes + 1).coerceAtMost(NewsFeed.MAX_LIKES)) else it }
         scope.launch {
             when (val result = NewsFeed.like(article.id)) {
-                is NewsLikeResult.Liked -> {
-                    liked = liked + article.id
-                    articles = articles.map { if (it.id == article.id) it.copy(likes = result.likes) else it }
+                is NewsLikeResult.Liked, is NewsLikeResult.AlreadyLiked -> {
+                    val count = when (result) {
+                        is NewsLikeResult.Liked -> result.likes
+                        is NewsLikeResult.AlreadyLiked -> result.likes
+                        else -> article.likes + 1
+                    }
+                    articles = articles.map { if (it.id == article.id) it.copy(likes = count) else it }
                 }
-                is NewsLikeResult.AlreadyLiked -> {
-                    liked = liked + article.id
-                    articles = articles.map { if (it.id == article.id) it.copy(likes = result.likes) else it }
+                else -> {
+                    liked = liked - article.id
+                    likePrefs.edit().remove(article.id).apply()
+                    articles = articles.map { if (it.id == article.id) it.copy(likes = article.likes) else it }
+                    message = when (result) {
+                        NewsLikeResult.LimitReached -> tr("Like limit reached")
+                        NewsLikeResult.RateLimited -> tr("Too many requests. Try again later.")
+                        else -> tr("The news service is not available right now.")
+                    }
                 }
-                NewsLikeResult.LimitReached -> message = tr("Like limit reached")
-                NewsLikeResult.RateLimited -> message = tr("Too many requests. Try again later.")
-                NewsLikeResult.Unavailable, NewsLikeResult.Failed -> message = tr("The news service is not available right now.")
             }
         }
     }
@@ -245,6 +266,25 @@ fun NewsScreen(vm: WeatherViewModel) {
                             locale = locale,
                             liked = article.id in liked,
                             onLike = { like(article) },
+                            reaction = reactions[article.id],
+                            reactionOpen = reactionMenuFor == article.id,
+                            pulse = reactionPulse == article.id,
+                            onReactionMenu = { reactionMenuFor = if (reactionMenuFor == article.id) null else article.id },
+                            onReaction = { value ->
+                                reactionMenuFor = null
+                                scope.launch {
+                                    when (val result = NewsFeed.react(article.id, value)) {
+                                        is NewsFeed.NewsReactionResult.Selected -> {
+                                            reactions = reactions + (article.id to result.reaction)
+                                            reactionPrefs.edit().putString(article.id, result.reaction).apply()
+                                            reactionPulse = article.id
+                                            scope.launch { kotlinx.coroutines.delay(420); reactionPulse = null }
+                                        }
+                                        NewsFeed.NewsReactionResult.RateLimited -> message = tr("Too many requests. Try again later.")
+                                        else -> message = tr("The news service is not available right now.")
+                                    }
+                                }
+                            },
                             onOpen = { selected = article }
                         )
                     }
@@ -363,6 +403,11 @@ private fun NewsCard(
     locale: Locale,
     liked: Boolean,
     onLike: () -> Unit,
+    reaction: String? = null,
+    reactionOpen: Boolean = false,
+    pulse: Boolean = false,
+    onReactionMenu: () -> Unit = {},
+    onReaction: (String) -> Unit = {},
     onOpen: () -> Unit
 ) {
     val scheme = MaterialTheme.colorScheme
@@ -412,11 +457,12 @@ private fun NewsCard(
                     )
                 }
                 Spacer(Modifier.height(8.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    val heartScale by animateFloatAsState(if (pulse) 1.28f else 1f, label = "heartPulse")
                     Surface(
                         shape = CircleShape,
                         color = if (liked) scheme.primary.copy(alpha = 0.12f) else androidx.compose.ui.graphics.Color.Transparent,
-                        modifier = Modifier.clip(CircleShape).clickable(enabled = !liked, onClick = onLike)
+                        modifier = Modifier.clip(CircleShape).graphicsLayer { scaleX = heartScale; scaleY = heartScale }.clickable(enabled = !liked, onClick = onLike)
                     ) {
                         Row(Modifier.padding(horizontal = 10.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                             Icon(
@@ -432,6 +478,22 @@ private fun NewsCard(
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.Medium
                             )
+                        }
+                    }
+                    Surface(
+                        shape = CircleShape,
+                        color = scheme.primary.copy(alpha = if (reaction != null) 0.14f else 0.08f),
+                        modifier = Modifier.clip(CircleShape).clickable(onClick = onReactionMenu)
+                    ) {
+                        Text(reaction ?: "+", modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp), fontSize = 18.sp)
+                    }
+                }
+                if (reactionOpen) {
+                    Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        NewsFeed.REACTIONS.forEach { value ->
+                            Surface(shape = CircleShape, color = scheme.surfaceContainerHighest, modifier = Modifier.clip(CircleShape).clickable { onReaction(value) }) {
+                                Text(value, modifier = Modifier.padding(horizontal = 7.dp, vertical = 5.dp), fontSize = 18.sp)
+                            }
                         }
                     }
                 }

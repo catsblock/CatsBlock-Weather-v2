@@ -3,7 +3,7 @@ import { isRegionBlocked, REGION_MESSAGE } from "./region.js";
 import { ADMIN_COMMAND, ADMIN_PATHS, handleAdmin, isBannedAtEdge } from "./admin.js";
 import { recordHit } from "./analytics.js";
 import { handleFeedback } from "./feedback.js";
-import { handleNews, handleNewsLike } from "./news.js";
+import { handleNews, handleNewsLike, handleNewsReaction } from "./news.js";
 import { PROVIDER_ORDER, aggregateForAgent, normalizeProvider } from "./aggregate.js";
 
 export { RateLimiter } from "./limiter.js";
@@ -1699,6 +1699,12 @@ async function handleRequest(request, env, ctx) {
         return jsonResponse({ error: "unauthorized" }, 401);
       }
       return await handleNews(request, env, { jsonResponse, identify });
+    }
+    if (path === "/v1/news/reaction") {
+      if (request.method !== "POST") return jsonResponse({ error: "method_not_allowed" }, 405, { Allow: "POST, OPTIONS" });
+      if (!(await authorized(request, env))) return jsonResponse({ error: "unauthorized" }, 401);
+      if (!/^application\/json/i.test(request.headers.get("Content-Type") || "")) return jsonResponse({ error: "unsupported_media_type" }, 415);
+      return await handleNewsReaction(request, env, { jsonResponse, identify });
     }
     if (path === "/v1/news/like") {
       if (request.method !== "POST") {

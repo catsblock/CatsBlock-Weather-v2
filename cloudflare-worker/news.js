@@ -8,6 +8,8 @@ const FETCH_TIMEOUT_MS = 12000;
 const MAX_BODY_BYTES = 2048;
 const LIKE_WINDOW_S = 600;
 const LIKE_MAX = 40;
+const REACTIONS = new Set(["🤩", "😁", "😭", "⚡", "👍", "👏"]);
+const REACTION_KEY = "news:reaction:";
 const VOTE_TTL_S = 30 * 24 * 60 * 60;
 const INDEX_TTL_S = 120 * 24 * 60 * 60;
 const ITEM_LIMIT = 40;
@@ -415,6 +417,27 @@ export async function handleNews(request, env, h) {
     likes: entry.likes
   }));
   return h.jsonResponse({ articles: payload, cursor: next, total: scored.length }, 200, { "Cache-Control": "no-store" });
+}
+
+export async function handleNewsReaction(request, env, h) {
+  if (!env.APP_KV) return h.jsonResponse({ error: "unavailable" }, 503);
+  const id = await h.identify(request, env);
+  if (!id || id.error) return h.jsonResponse({ error: "bad_request" }, 400);
+  const body = await readBody(request);
+  const articleId = body && typeof body.id === "string" ? body.id.trim().toLowerCase() : "";
+  const reaction = body && typeof body.reaction === "string" ? body.reaction : "";
+  if (!ID_PATTERN.test(articleId) || !REACTIONS.has(reaction)) return h.jsonResponse({ error: "bad_request" }, 400);
+  const owner = id.hasDevice ? id.deviceHash : id.ipHash;
+  const key = REACTION_KEY + articleId + ":" + owner;
+  try {
+    const used = Number((await env.APP_KV.get(RATE_KEY + owner + ":reaction")) || 0);
+    if (used >= LIKE_MAX) return h.jsonResponse({ error: "rate_limited" }, 429);
+    await env.APP_KV.put(RATE_KEY + owner + ":reaction", String(used + 1), { expirationTtl: LIKE_WINDOW_S * 2 });
+    await env.APP_KV.put(key, reaction, { expirationTtl: VOTE_TTL_S });
+    return h.jsonResponse({ id: articleId, reaction }, 200);
+  } catch (err) {
+    return h.jsonResponse({ error: "unavailable" }, 503);
+  }
 }
 
 export async function handleNewsLike(request, env, h) {
