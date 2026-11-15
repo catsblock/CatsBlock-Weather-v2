@@ -39,12 +39,7 @@ fun ExpressiveLoader(
     contained: Boolean = false
 ) {
     val scheme = MaterialTheme.colorScheme
-    val tint = if (color == Color.Unspecified) {
-        if (contained) scheme.onPrimaryContainer else scheme.primary
-    } else {
-        color
-    }
-    val container = scheme.primaryContainer
+    val tint = if (color == Color.Unspecified) scheme.primary else color
     val transition = rememberInfiniteTransition(label = "expressive-loader")
     val rotation by transition.animateFloat(
         initialValue = 0f,
@@ -68,8 +63,7 @@ fun ExpressiveLoader(
     Canvas(modifier.size(size)) {
         val half = min(this.size.width, this.size.height) / 2f
         val center = Offset(this.size.width / 2f, this.size.height / 2f)
-        if (contained) drawCircle(container, half, center)
-        val radius = half * (if (contained) 0.58f else 0.88f) * pulse
+        val radius = half * 0.88f * pulse
         val a3 = 0.20f * (1f - morph)
         val a5 = 0.15f * morph
         val a7 = 0.05f * sin(morph * TWO_PI / 2f)
