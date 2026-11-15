@@ -159,9 +159,6 @@ function setLegend(extra) {
   else if (id === 'sea') { grad = gradCss(RAMPS.sea); lo = '-2 m'; hi = '+2 m'; }
   else if (id === 'alerts') { grad = hard([LEVEL_COLORS.warning, LEVEL_COLORS.alert, LEVEL_COLORS.danger]); lo = lbl('lvWarn', 'Warning'); hi = lbl('lvDanger', 'Danger'); }
   else if (id === 'drought') { grad = hard(DRY.map(rgb)); lo = lbl('d0', 'Slightly dry'); hi = lbl('d4', 'Extreme dry'); }
-  else if (id === 'coldfront') {
-    if (!extra && grid) extra = frontAny() ? lbl('cfKeyLine', 'Lines: blue passed · gray ahead') + '\n' + lbl('cfKeyArea', 'Blue dot: cold front is here now') : lbl('cfNone', 'No cold fronts right now');
-  }
   var html = '<div class="t">' + esc(state.title) + '</div>';
   if (extra) html += '<div class="m">' + esc(extra).replace(/\n/g, '<br>') + '</div>';
   legend.innerHTML = html;
@@ -373,7 +370,6 @@ var FieldLayer = L.Layer.extend({
     if (needsLand && !land) { cv.style.opacity = 0; return; }
     var arr = grid[GRID_KEY[id]];
     if (!arr) return;
-    if (id === 'coldfront') { paintFront(ctx, m, size); cv.style.opacity = 1; return; }
     var step = id === 'drought' ? 4 : 5, sw = Math.ceil((size.x + pad * 2) / step), sh = Math.ceil((size.y + pad * 2) / step);
     if (!this._small) this._small = document.createElement('canvas');
     this._small.width = sw; this._small.height = sh;

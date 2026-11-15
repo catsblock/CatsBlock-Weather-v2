@@ -202,7 +202,6 @@ function parseFeed(xml, meta) {
 
 async function fetchFeed(meta) {
   try {
-    if (meta.gdelt) return fetchGdelt(meta);
     const response = await fetch(meta.url, {
       headers: { "User-Agent": USER_AGENT, "Accept": "application/rss+xml, application/xml, text/xml;q=0.9" },
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
@@ -218,54 +217,19 @@ async function fetchFeed(meta) {
 }
 
 
-const GDELT_LANG = { en: "english", pt: "portuguese", es: "spanish", fr: "french", de: "german", it: "italian", ru: "russian", ko: "korean", id: "indonesian" };
-function gdeltQuery(lang, focus) {
-  const key = languageKey(lang);
-  const base = (keywordsFor(lang).slice(0, 10).map((word) => `"${word}"`).join(" OR "));
-  const extra = clean(focus, MAX_EVENT).replace(/[(){}\[\]"]/g, " ").trim();
-  const language = GDELT_LANG[key] ? ` sourcelang:${GDELT_LANG[key]}` : "";
-  return `(${extra || base})${language}`;
-}
-function parseGdeltDate(value) {
-  const raw = String(value || "");
-  if (/^\d{8}T\d{6}Z?$/.test(raw)) {
-    const iso = raw.replace(/(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z?/, "$1-$2-$3T$4:$5:$6Z");
-    const parsed = Date.parse(iso);
-    if (Number.isFinite(parsed)) return parsed;
-  }
-  const parsed = Date.parse(raw);
-  return Number.isFinite(parsed) ? parsed : Date.now();
-}
-async function fetchGdelt(meta) {
-  try {
-    const response = await fetch(meta.url, { headers: { "User-Agent": USER_AGENT, "Accept": "application/json" }, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS), cf: { cacheTtl: 600, cacheEverything: true } });
-    if (!response.ok) return [];
-    const payload = await response.json();
-    const articles = Array.isArray(payload?.articles) ? payload.articles : [];
-    return articles.slice(0, ITEM_LIMIT).map((item) => {
-      const url = safeUrl(item.url);
-      const title = clean(item.title, TITLE_MAX);
-      if (!url || !title) return null;
-      return { id: hashId(url), title, summary: "", source: clean(item.domain || "GDELT", 80), publishedAt: parseGdeltDate(item.seendate), imageUrl: safeUrl(item.socialimage), url, lang: meta.lang, region: meta.region };
-    }).filter(Boolean).filter((article) => relevant(article, { lang: meta.lang, strict: false }));
-  } catch (err) {
-    return [];
-  }
-}
-
 function sourcesFor(lang, focus = "") {
-  const google = GOOGLE[lang];
-  const key = languageKey(lang);
-  const list = [];
-  const query = gdeltQuery(lang, focus);
-  list.push({
-    url: "https://api.gdeltproject.org/api/v2/doc/doc?query=" + encodeURIComponent(query) + "&mode=artlist&format=json&maxrecords=50&sort=HybridRel",
-    source: "GDELT",
-    region: google?.gl || "US",
+  const google = GOOGLE[lang] || GOOGLE.en;
+  const query = clean(focus, MAX_QUERY) || google.query;
+  const encodedQuery = encodeURIComponent(query);
+  const googleUrl = "https://news.google.com/rss/search?q=" + encodedQuery + "&hl=" + encodeURIComponent(google.hl) + "&gl=" + google.gl + "&ceid=" + google.gl + ":" + google.hl.slice(0, 2);
+  const list = [{
+    url: googleUrl,
+    source: "Google News",
+    region: google.gl,
     lang,
     strict: false,
-    gdelt: true
-  });
+    google: true
+  }];
   for (const item of CURATED[lang] || []) list.push(Object.assign({ lang, google: false }, item));
   return list;
 }

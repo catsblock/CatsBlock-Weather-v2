@@ -5,7 +5,7 @@ internal object MapLayerScripts {
     val source: String = """
 var extra = null, land = null, landLoading = false, landWaiters = [];
 var OM = 'https://api.open-meteo.com/v1/forecast';
-var GRID_KEY = {temp:'t', clouds:'c', wind:'ws', pressure:'p', dew:'dp', uv:'uv', aqi:'aq', sea:'sl', drought:'dr', coldfront:'cp'};
+var GRID_KEY = {temp:'t', clouds:'c', wind:'ws', pressure:'p', dew:'dp', uv:'uv', aqi:'aq', sea:'sl', drought:'dr'};
 var LEVEL_COLORS = {warning:'#ffd600', alert:'#ff6d00', danger:'#e53935'};
 var LEVEL_RANK = {warning:1, alert:2, danger:3};
 var DRY = [[255, 236, 140], [255, 200, 60], [245, 140, 30], [216, 67, 21], [150, 20, 20]];
@@ -354,28 +354,6 @@ function fetchDrought(p) {
   });
 }
 
-function fetchFront(p) {
-  var n = 48 + new Date().getUTCHours();
-  return omFetch(OM, p, '&hourly=temperature_2m&past_days=2&forecast_days=3&timezone=UTC', 60).then(function (d) {
-    var cp = [], cn = [];
-    d.forEach(function (it) {
-      var t = it && it.hourly ? it.hourly.temperature_2m : null;
-      if (!t || t.length < 40) { cp.push(null); cn.push(null); return; }
-      var best = 0, bestAt = -1;
-      for (var h = 30; h < t.length; h++) {
-        var a = t[h - 6], b = t[h], c = t[h - 30], e = t[h - 24];
-        if (a === null || b === null || c === null || e === null || a === undefined || b === undefined || c === undefined || e === undefined) continue;
-        var adj = (a - b) - (c - e);
-        if (adj > best) { best = adj; bestAt = h; }
-      }
-      if (bestAt >= 0 && best >= FRONT.drop) { cp.push(bestAt - n); cn.push(best); }
-      else { cp.push(FRONT.none); cn.push(0); }
-    });
-    if (!hasData(cp)) throw new Error('none');
-    return {cp:cp, cn:cn};
-  });
-}
-
 function loadGrid(force) {
   if (!isGrid(state.layer) || !state.canvas) return;
   var seq = state.seq, id = state.layer, token = ++gridToken;
@@ -397,7 +375,7 @@ function loadGrid(force) {
     }
   }
   state.busy = true; setLegend('');
-  var job = id === 'aqi' ? fetchAir(p) : (id === 'sea' ? fetchSea(p) : (id === 'drought' ? fetchDrought(p) : (id === 'coldfront' ? fetchFront(p) : fetchWeather(p, id))));
+  var job = id === 'aqi' ? fetchAir(p) : (id === 'sea' ? fetchSea(p) : (id === 'drought' ? fetchDrought(p) : fetchWeather(p, id)));
   job.then(function (g) {
     if (seq !== state.seq || token !== gridToken) return;
     g.s = GRID_BOX.s; g.n = GRID_BOX.n; g.w = GRID_BOX.w; g.e = GRID_BOX.e;
@@ -549,7 +527,6 @@ function frontTrack() {
   return tracks;
 }
 
-function frontAny() { return frontTrack().length > 0; }
 
 function smoothPath(pts) {
   var out = pts;
@@ -578,60 +555,6 @@ function strokePath(ctx, pts, color, halo, width) {
     ctx.stroke();
   });
 }
-
-function paintFront(ctx, m, size) {
-  frontHits = [];
-  var tracks = frontTrack();
-  if (!tracks.length) return;
-  var centerLng = m.getCenter().lng;
-  var halo = state.dark ? 'rgba(0,0,0,.38)' : 'rgba(255,255,255,.7)';
-  ctx.lineCap = 'round';
-  ctx.lineJoin = 'round';
-  tracks.forEach(function (track) {
-    var screen = track.map(function (k) {
-      var lon = k.lon + 360 * Math.round((centerLng - k.lon) / 360), pt = m.latLngToContainerPoint([k.lat, lon]);
-      return {t:k.t, x:pt.x, y:pt.y};
-    });
-    var blue = [], gray = [], cur = null, i;
-    if (screen[0].t >= 0) {
-      cur = screen[0];
-      gray = screen.map(function (k) { return [k.x, k.y]; });
-    } else if (screen[screen.length - 1].t <= 0) {
-      cur = screen[screen.length - 1];
-      blue = screen.map(function (k) { return [k.x, k.y]; });
-    } else {
-      for (i = 0; i < screen.length - 1; i++) {
-        var a = screen[i], b = screen[i + 1];
-        if (a.t <= 0 && b.t > 0) {
-          var f = (0 - a.t) / (b.t - a.t);
-          cur = {x:a.x + (b.x - a.x) * f, y:a.y + (b.y - a.y) * f};
-          blue = screen.slice(0, i + 1).map(function (k) { return [k.x, k.y]; });
-          blue.push([cur.x, cur.y]);
-          gray = [[cur.x, cur.y]].concat(screen.slice(i + 1).map(function (k) { return [k.x, k.y]; }));
-          break;
-        }
-      }
-    }
-    strokePath(ctx, smoothPath(gray), state.dark ? '#d0d0d0' : '#757575', halo, 3);
-    strokePath(ctx, smoothPath(blue), '#1e88e5', halo, 3);
-    if (!cur) return;
-    ctx.beginPath();
-    ctx.arc(cur.x, cur.y, 7, 0, Math.PI * 2);
-    ctx.fillStyle = '#1e88e5';
-    ctx.fill();
-    ctx.lineWidth = 2.4;
-    ctx.strokeStyle = '#ffffff';
-    ctx.stroke();
-    frontHits.push({x:cur.x, y:cur.y});
-  });
-}
-
-map.on('click', function (ev) {
-  if (state.layer !== 'coldfront' || !frontHits.length) return;
-  var near = frontHits.some(function (h) { return Math.hypot(ev.containerPoint.x - h.x, ev.containerPoint.y - h.y) <= 18; });
-  if (!near) return;
-  L.popup({closeButton:false}).setLatLng(ev.latlng).setContent('<b>' + esc(lbl('cfNow', 'Cold front is here now')) + '</b>').openOn(map);
-});
 
 function stormRadii(kt) {
   return {outer:110 + 2.2 * kt, inner:kt >= 64 ? 30 + 0.9 * kt : 0};

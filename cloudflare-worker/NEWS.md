@@ -48,7 +48,7 @@ Responses: `200 {"id": "...", "likes": 13}`, `409 already_liked` or `409 limit_r
 
 ## Sources and caching
 
-Each language is served by a Google News weather query (`hl`/`gl` per locale) plus curated feeds where they exist: Severe Weather Europe, NOAA, IPCC (English), G1 Meio Ambiente (pt-BR), 20minutos and El País (Spanish), Le Monde (French), MeteoGiornale (Italian), tagesschau (German, filtered by weather keywords). Aggregated lists are cached in `APP_KV` under `news:feed:<lang>` for 15 minutes, so a normal request performs no upstream fetch. Like counters live in `news:likes:index`; per-device votes live in `news:vote:<article>:<owner>` for 30 days.
+Each language is served by a keyless Google News RSS weather query (`hl`/`gl` per locale) plus curated feeds where they exist: Severe Weather Europe, NOAA, IPCC (English), G1 Meio Ambiente (pt-BR), 20minutos and El País (Spanish), Le Monde (French), MeteoGiornale (Italian), tagesschau (German, filtered by weather keywords). Aggregated lists are cached in `APP_KV` under `news:feed:<lang>` for 15 minutes, so a normal request performs no upstream fetch. Like counters live in `news:likes:index`; per-device votes live in `news:vote:<article>:<owner>` for 30 days.
 
 ## Requirements
 
