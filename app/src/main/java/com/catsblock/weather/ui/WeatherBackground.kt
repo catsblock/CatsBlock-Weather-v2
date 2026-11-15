@@ -31,6 +31,7 @@ import com.catsblock.weather.data.Condition
 import com.catsblock.weather.ui.sky.SkyLightning
 import com.catsblock.weather.ui.sky.LightningState
 import com.catsblock.weather.ui.sky.SkyShaderLayer
+import com.catsblock.weather.ui.sky.SkySoftwareLayer
 import com.catsblock.weather.ui.sky.SkyWeather
 import com.catsblock.weather.ui.sky.directionAt
 import com.catsblock.weather.ui.sky.rememberSkyAtmosphere
@@ -42,6 +43,7 @@ import com.catsblock.weather.ui.sky.buildSkyScene
 import com.catsblock.weather.ui.sky.detectSkyTier
 import com.catsblock.weather.ui.sky.skyCover
 import com.catsblock.weather.ui.sky.skyThickness
+import com.catsblock.weather.ui.sky.SkyTier
 import com.catsblock.weather.ui.sky.usesAtmosphere
 import com.catsblock.weather.kit.BackgroundKit
 import java.time.LocalTime
@@ -161,9 +163,11 @@ fun WeatherBackground(
     val phase = skyPhase(time, isDay)
     val powerSave = rememberPowerSaveMode()
     var tier by remember(powerSave) { mutableStateOf(detectSkyTier(context, powerSave)) }
-    val atmospheric = custom == null && tier.usesShader && usesAtmosphere(kind) &&
-        !latitude.isNaN() && !longitude.isNaN() && epochMs != Long.MIN_VALUE &&
-        Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+    val skyData = custom == null && usesAtmosphere(kind) &&
+        !latitude.isNaN() && !longitude.isNaN() && epochMs != Long.MIN_VALUE
+    val shaderSky = skyData && tier.usesShader && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+    val softwareSky = skyData && Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU && tier != SkyTier.Minimal
+    val atmospheric = shaderSky || softwareSky
 
     val cover by animateFloatAsState(skyCover(kind, cloud), tween(900), label = "skyCover")
     val thickness by animateFloatAsState(skyThickness(kind, skyCover(kind, cloud)), tween(900), label = "skyThickness")
@@ -233,7 +237,7 @@ fun WeatherBackground(
                 Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = atmosphere.scrim)))
             }
         }
-        if (scene != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        if (scene != null && shaderSky) {
             SkyShaderLayer(
                 scene = scene,
                 tier = tier,
@@ -244,13 +248,24 @@ fun WeatherBackground(
                 onJank = { tier = tier.lowered() },
                 modifier = Modifier.fillMaxSize()
             )
-            if (skyVisible && lightningState == null && skyWeather(kind) == SkyWeather.Storm) {
-                SkyLightning(lightning, scene, kind, Modifier.fillMaxSize())
-            }
+        }
+        if (scene != null && softwareSky) {
+            SkySoftwareLayer(
+                scene = scene,
+                tier = tier,
+                fade = if (skyVisible) 1f else 0f,
+                windKmh = windKmh,
+                windFromDeg = windDirDeg,
+                lightning = lightning,
+                onSlow = { tier = tier.lowered() },
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+        if (scene != null && skyVisible && lightningState == null && skyWeather(kind) == SkyWeather.Storm) {
+            SkyLightning(lightning, scene, kind, Modifier.fillMaxSize())
         }
     }
 }
 
 fun skyHandlesLightning(context: android.content.Context, kind: Condition, isDay: Boolean, hasLocation: Boolean): Boolean =
-    hasLocation && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-        skyWeather(kind) == SkyWeather.Storm && BackgroundKit.visual(context, kind, isDay) == null
+    hasLocation && skyWeather(kind) == SkyWeather.Storm && BackgroundKit.visual(context, kind, isDay) == null
