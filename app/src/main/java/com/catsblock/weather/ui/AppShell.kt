@@ -51,7 +51,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Cloud
+import androidx.compose.material.icons.outlined.LocationCity
+import androidx.compose.material.icons.rounded.LocationCity
 import androidx.compose.material.icons.outlined.Map
+import androidx.compose.material.icons.outlined.Newspaper
+import androidx.compose.material.icons.rounded.Newspaper
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Stars
 import androidx.compose.material.icons.rounded.Cloud
@@ -100,6 +104,7 @@ enum class AppTab(
     val active: ImageVector
 ) {
     Weather(Screen.Main, "Weather", Icons.Outlined.Cloud, Icons.Rounded.Cloud),
+    News(Screen.News, "Weather news", Icons.Outlined.Newspaper, Icons.Rounded.Newspaper),
     WeatherMap(Screen.Map, "Weather map", Icons.Outlined.Map, Icons.Rounded.Map),
     Agent(Screen.Agent, "Agent", Icons.Outlined.Stars, Icons.Rounded.Stars),
     Settings(Screen.Settings, "Settings", Icons.Outlined.Settings, Icons.Rounded.Settings);
@@ -137,6 +142,7 @@ fun AppShell(vm: WeatherViewModel, screen: Screen?) {
                 AppTab.Weather -> vm.openWeather()
                 AppTab.WeatherMap -> vm.openMap()
                 AppTab.Agent -> vm.openAgent()
+                AppTab.News -> vm.openNews()
                 AppTab.Settings -> vm.openSettings()
             }
         }
@@ -165,27 +171,38 @@ fun AppShell(vm: WeatherViewModel, screen: Screen?) {
                     AppTab.Weather -> MainScreen(vm)
                     AppTab.WeatherMap -> MapScreen(vm)
                     AppTab.Agent -> if (agentAllowed) AgentScreen(vm) else Box(Modifier.fillMaxSize())
+                    AppTab.News -> NewsScreen(vm)
                     AppTab.Settings -> SettingsScreen(vm)
                 }
             }
         }
     }
 
-    if (layout.useRail) {
-        Row(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-            ExpressiveNavigationRail(tabs = tabs, selected = tab, onSelect = onSelect)
-            Box(Modifier.weight(1f).fillMaxHeight()) { content() }
-        }
-    } else {
-        Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+    val citiesOpen by vm.citiesOpen.collectAsStateWithLifecycle()
+    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+        if (layout.useRail) {
+            Row(Modifier.fillMaxSize()) {
+                ExpressiveNavigationRail(
+                    tabs = tabs,
+                    selected = tab,
+                    onSelect = onSelect,
+                    citiesOpen = citiesOpen,
+                    onCities = vm::openCities
+                )
+                Box(Modifier.weight(1f).fillMaxHeight()) { content() }
+            }
+        } else {
             content()
             ExpressiveNavigationBar(
                 tabs = tabs,
                 selected = tab,
                 onSelect = onSelect,
+                citiesOpen = citiesOpen,
+                onCities = vm::openCities,
                 modifier = Modifier.align(Alignment.BottomCenter)
             )
         }
+        SavedCitiesHost(vm)
     }
 }
 
@@ -194,6 +211,8 @@ private fun ExpressiveNavigationRail(
     tabs: List<AppTab>,
     selected: AppTab,
     onSelect: (AppTab) -> Unit,
+    citiesOpen: Boolean,
+    onCities: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val scheme = MaterialTheme.colorScheme
@@ -225,6 +244,7 @@ private fun ExpressiveNavigationRail(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
+            CitiesRailItem(citiesOpen, idleTint, activeTint, pill, onCities)
             tabs.forEach { tab ->
                 RailItem(tab, tab == selected, idleTint, activeTint, pill) { onSelect(tab) }
             }
@@ -278,10 +298,12 @@ private fun RailItem(
 }
 
 @Composable
-private fun ExpressiveNavigationBar(
+internal fun ExpressiveNavigationBar(
     tabs: List<AppTab>,
     selected: AppTab,
     onSelect: (AppTab) -> Unit,
+    citiesOpen: Boolean,
+    onCities: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val scheme = MaterialTheme.colorScheme
@@ -302,6 +324,7 @@ private fun ExpressiveNavigationBar(
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                CitiesNavigationItem(citiesOpen, onCities)
                 tabs.forEach { tab ->
                     NavigationItem(tab, tab == selected) { onSelect(tab) }
                 }
@@ -426,6 +449,11 @@ private fun AnimatedNavigationIcon(tab: AppTab, selected: Boolean, tint: Color) 
                         scaleX *= 1f + 0.22f * arc
                         scaleY *= 1f + 0.22f * arc
                     }
+                    AppTab.News -> {
+                        rotationZ = -18f * sin(t * PI * 3.0).toFloat() * decay
+                        scaleX *= 1f + 0.10f * arc
+                        scaleY *= 1f + 0.10f * arc
+                    }
                     AppTab.Settings -> rotationZ = 180f * t
                 }
             },
@@ -439,5 +467,128 @@ private fun AnimatedNavigationIcon(tab: AppTab, selected: Boolean, tint: Color) 
                 tint = tint
             )
         }
+    }
+}
+
+@Composable
+private fun RowScope.CitiesNavigationItem(open: Boolean, onClick: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    val haptics = LocalHapticFeedback.current
+    val weight by animateFloatAsState(
+        if (open) 2.6f else 1f,
+        spring(dampingRatio = 0.74f, stiffness = Spring.StiffnessMediumLow),
+        label = "citiesWeight"
+    )
+    val container by animateColorAsState(
+        if (open) scheme.secondaryContainer else Color.Transparent,
+        tween(280),
+        label = "citiesContainer"
+    )
+    val tint by animateColorAsState(
+        if (open) scheme.onSecondaryContainer else scheme.onSurfaceVariant,
+        tween(280),
+        label = "citiesTint"
+    )
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val press by animateFloatAsState(
+        if (pressed) 0.9f else 1f,
+        spring(dampingRatio = 0.5f, stiffness = Spring.StiffnessMedium),
+        label = "citiesPress"
+    )
+    Box(
+        Modifier
+            .weight(weight)
+            .fillMaxHeight()
+            .graphicsLayer {
+                scaleX = press
+                scaleY = press
+            }
+            .clip(CircleShape)
+            .background(container)
+            .clickable(
+                interactionSource = interaction,
+                indication = null,
+                role = Role.Tab,
+                onClick = {
+                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    onClick()
+                }
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
+            Icon(
+                if (open) Icons.Rounded.LocationCity else Icons.Outlined.LocationCity,
+                contentDescription = tr("Saved cities"),
+                tint = tint,
+                modifier = Modifier.size(24.dp)
+            )
+            AnimatedVisibility(
+                visible = open,
+                enter = expandHorizontally(
+                    spring(dampingRatio = 0.82f, stiffness = Spring.StiffnessMediumLow),
+                    expandFrom = Alignment.Start
+                ) + fadeIn(tween(240, delayMillis = 90)),
+                exit = shrinkHorizontally(
+                    tween(220, easing = Emphasized),
+                    shrinkTowards = Alignment.Start
+                ) + fadeOut(tween(110))
+            ) {
+                Text(
+                    tr("Saved cities"),
+                    modifier = Modifier.padding(start = 8.dp),
+                    color = tint,
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CitiesRailItem(open: Boolean, idleTint: Color, activeTint: Color, pill: Color, onClick: () -> Unit) {
+    val haptics = LocalHapticFeedback.current
+    val indicator by animateColorAsState(if (open) pill else Color.Transparent, tween(240), label = "citiesRailIndicator")
+    val tint = if (open) activeTint else idleTint
+    Column(
+        Modifier
+            .width(RailWidth - 8.dp)
+            .clip(RoundedCornerShape(22.dp))
+            .clickable(role = Role.Tab) {
+                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                onClick()
+            }
+            .padding(vertical = 6.dp, horizontal = 2.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Box(
+            Modifier
+                .width(60.dp)
+                .height(34.dp)
+                .background(indicator, CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                if (open) Icons.Rounded.LocationCity else Icons.Outlined.LocationCity,
+                contentDescription = tr("Saved cities"),
+                tint = tint,
+                modifier = Modifier.size(24.dp)
+            )
+        }
+        Spacer(Modifier.height(4.dp))
+        Text(
+            tr("Saved cities"),
+            color = tint,
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = if (open) FontWeight.SemiBold else FontWeight.Medium,
+            textAlign = TextAlign.Center,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
