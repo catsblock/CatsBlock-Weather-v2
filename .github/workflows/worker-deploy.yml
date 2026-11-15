@@ -70,24 +70,32 @@ jobs:
           fi
           echo "KV_ID=$EXISTING_ID" >> "$GITHUB_ENV"
 
-      - name: Resolve D1 database
+      - name: Resolve D1 database when permitted
         working-directory: cloudflare-worker
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CONFIGURED_NEWS_DB_ID: ${{ secrets.NEWS_DB_ID }}
         run: |
-          LIST_JSON=$(wrangler d1 list --json)
-          EXISTING_ID=$(node -e "const list=JSON.parse(process.argv[1]); const match=list.find(n=>n.name==='catsblock-weather-news'); process.stdout.write(match ? match.uuid : '')" "$LIST_JSON")
-          if [ -z "$EXISTING_ID" ]; then
-            CREATE_OUTPUT=$(wrangler d1 create catsblock-weather-news)
-            EXISTING_ID=$(echo "$CREATE_OUTPUT" | grep -oE '[a-f0-9]{32}' | head -n 1)
+          NEWS_DB_ID="$CONFIGURED_NEWS_DB_ID"
+          if [ -z "$NEWS_DB_ID" ]; then
+            set +e
+            LIST_JSON=$(wrangler d1 list --json 2>/tmp/wrangler-d1-list.log)
+            LIST_STATUS=$?
+            set -e
+            if [ "$LIST_STATUS" -eq 0 ]; then
+              NEWS_DB_ID=$(node -e "const list=JSON.parse(process.argv[1]); const match=list.find(n=>n.name==='catsblock-weather-news'); process.stdout.write(match ? match.uuid : '')" "$LIST_JSON")
+            else
+              echo "::warning::D1 is not available to this Cloudflare token; deploying with the validated KV reaction fallback."
+              cat /tmp/wrangler-d1-list.log >&2 || true
+            fi
           fi
-          if [ -z "$EXISTING_ID" ]; then
-            echo "::error::Could not resolve the NEWS_DB database id."
-            exit 1
+          if [ -n "$NEWS_DB_ID" ]; then
+            echo "NEWS_DB_ENABLED=true" >> "$GITHUB_ENV"
+            echo "NEWS_DB_ID=$NEWS_DB_ID" >> "$GITHUB_ENV"
+          else
+            echo "NEWS_DB_ENABLED=false" >> "$GITHUB_ENV"
           fi
-          echo "NEWS_DB_ID=$EXISTING_ID" >> "$GITHUB_ENV"
-
       - name: Write wrangler configuration
         working-directory: cloudflare-worker
         run: |
@@ -96,42 +104,38 @@ jobs:
           main = "worker.js"
           compatibility_date = "2024-11-01"
           logpush = false
-
           [observability]
           enabled = false
-
           [[kv_namespaces]]
           binding = "APP_KV"
           id = "${KV_ID}"
-
+          [[durable_objects.bindings]]
+          name = "RATE_LIMITER"
+          class_name = "RateLimiter"
+          [[durable_objects.bindings]]
+          name = "ADMIN_GUARD"
+          class_name = "AdminGuard"
+          [[durable_objects.bindings]]
+          name = "METRICS_HUB"
+          class_name = "MetricsHub"
+          [[migrations]]
+          tag = "v1"
+          new_sqlite_classes = ["RateLimiter"]
+          [[migrations]]
+          tag = "v2"
+          new_sqlite_classes = ["AdminGuard", "MetricsHub"]
+          EOF
+          if [ "${NEWS_DB_ENABLED}" = "true" ]; then
+            cat >> wrangler.toml <<EOF
           [[d1_databases]]
           binding = "NEWS_DB"
           database_name = "catsblock-weather-news"
           database_id = "${NEWS_DB_ID}"
           migrations_dir = "migrations"
-
-          [[durable_objects.bindings]]
-          name = "RATE_LIMITER"
-          class_name = "RateLimiter"
-
-          [[durable_objects.bindings]]
-          name = "ADMIN_GUARD"
-          class_name = "AdminGuard"
-
-          [[durable_objects.bindings]]
-          name = "METRICS_HUB"
-          class_name = "MetricsHub"
-
-          [[migrations]]
-          tag = "v1"
-          new_sqlite_classes = ["RateLimiter"]
-
-          [[migrations]]
-          tag = "v2"
-          new_sqlite_classes = ["AdminGuard", "MetricsHub"]
           EOF
-
+          fi
       - name: Apply D1 migrations
+        if: env.NEWS_DB_ENABLED == 'true'
         working-directory: cloudflare-worker
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
