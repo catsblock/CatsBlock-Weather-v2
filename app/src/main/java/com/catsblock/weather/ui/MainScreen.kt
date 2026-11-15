@@ -124,12 +124,8 @@ import com.catsblock.weather.sound.WeatherSoundPlayer
 import com.catsblock.weather.ui.glass.EntranceCounter
 import com.catsblock.weather.ui.glass.LocalEntrance
 import com.catsblock.weather.ui.glass.LocalHazeState
-import com.catsblock.weather.ui.glass.LocalRainIntensity
-import com.catsblock.weather.ui.glass.LocalSnowIntensity
-import com.catsblock.weather.ui.glass.snowIntensity
-import com.catsblock.weather.ui.glass.rainIntensity
 import com.catsblock.weather.ui.glass.hazeBackdropSource
-import com.catsblock.weather.ui.particles.ParticleOverlay
+import com.catsblock.weather.ui.particles.AtmosphericPrecipitation
 import com.catsblock.weather.ui.particles.PrecipMix
 import com.catsblock.weather.ui.particles.precipMixFor
 import com.catsblock.weather.ui.sky.LightningState
@@ -348,6 +344,16 @@ fun MainScreen(vm: WeatherViewModel) {
                     skyVisible = progress < 0.98f,
                     lightningState = lightning
                 )
+                AtmosphericPrecipitation(
+                    mix = if (bundle == null || effectsOff) {
+                        PrecipMix.None
+                    } else {
+                        precipMixFor(kind, bundle.current.temp, precipNow)
+                    },
+                    windSpeedKmh = bundle?.current?.windSpeed ?: 0.0,
+                    windDirDeg = bundle?.current?.windDir ?: 0.0,
+                    alpha = 1f - progress * 0.3f
+                )
             }
             Box(Modifier.fillMaxSize().background(sky.base.copy(alpha = progress)))
 
@@ -434,17 +440,6 @@ fun MainScreen(vm: WeatherViewModel) {
             }
             }
             }
-
-            ParticleOverlay(
-                mix = if (bundle == null || effectsOff) {
-                    PrecipMix.None
-                } else {
-                    precipMixFor(kind, bundle.current.temp, precipNow)
-                },
-                windSpeedKmh = bundle?.current?.windSpeed ?: 0.0,
-                windDirDeg = bundle?.current?.windDir ?: 0.0,
-                alpha = 1f - progress * 0.3f,
-            )
 
             PullIndicator(elastic, refreshing, headerHeight)
 
@@ -675,9 +670,7 @@ private fun WeatherDetails(
         CompositionLocalProvider(
             LocalGlass provides true,
             LocalSkyColors provides sky,
-            LocalEntrance provides entrance,
-            LocalRainIntensity provides rainIntensity(cur.kind),
-            LocalSnowIntensity provides snowIntensity(cur.kind)
+            LocalEntrance provides entrance
         ) {
             MaterialTheme(colorScheme = glassScheme, typography = MaterialTheme.typography, shapes = MaterialTheme.shapes) {
                 val onOpenMetric: (String) -> Unit = { key ->
