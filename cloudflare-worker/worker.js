@@ -18,7 +18,7 @@ const KEY_QUOTA_DOWN_S = 3600;
 
 const USER_KEY_PATTERN = /^[A-Za-z0-9_-]{16,64}$/;
 const PUBLIC_PATHS = new Set(["/", "/v1/health", "/v1/region"]);
-const PROTECTED_PATHS = new Set(["/v1/weather", "/v1/visual", "/v1/openweather", "/v1/agent", "/v1/agent/status", "/v1/agent/feedback", "/v1/news", "/v1/news/like"]);
+const PROTECTED_PATHS = new Set(["/v1/news/event", "/v1/weather", "/v1/visual", "/v1/openweather", "/v1/agent", "/v1/agent/status", "/v1/agent/feedback", "/v1/news", "/v1/news/like"]);
 const BROWSER_HEADERS = ["Origin", "Sec-Fetch-Mode", "Sec-Fetch-Site", "Sec-Fetch-Dest"];
 const COORD_PATTERN = /^-?\d{1,3}(\.\d{1,10})?$/;
 
@@ -1691,7 +1691,7 @@ async function handleRequest(request, env, ctx) {
       return await handleAdmin(request, env, path, { jsonResponse, identify, authorized, hmacHex, constantTimeEqual, readEnvSecret });
     }
 
-    if (path === "/v1/news") {
+    if (path === "/v1/news" || path === "/v1/news/event") {
       if (request.method !== "GET") {
         return jsonResponse({ error: "method_not_allowed" }, 405, { Allow: "GET, OPTIONS" });
       }

@@ -30,7 +30,6 @@ enum class SkyTier(
 private const val BYTES_PER_GB = 1024.0 * 1024.0 * 1024.0
 
 fun detectSkyTier(context: Context, powerSave: Boolean): SkyTier {
-    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return SkyTier.Minimal
     val manager = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
         ?: return SkyTier.Low
     val info = ActivityManager.MemoryInfo().also { manager.getMemoryInfo(it) }
@@ -43,6 +42,7 @@ fun detectSkyTier(context: Context, powerSave: Boolean): SkyTier {
         ramGb < 9.0 -> SkyTier.High
         else -> SkyTier.Ultra
     }
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU && base.ordinal > SkyTier.Medium.ordinal) base = SkyTier.Medium
     if (Runtime.getRuntime().availableProcessors() <= 4) base = base.lowered()
     return if (powerSave && base.ordinal > SkyTier.Low.ordinal) SkyTier.Low else base
 }

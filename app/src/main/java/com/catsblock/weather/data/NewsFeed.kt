@@ -120,6 +120,30 @@ object NewsFeed {
             }
         }
 
+    suspend fun event(language: String, region: String, event: String): NewsLoad = withContext(Dispatchers.IO) {
+        val normalized = event.trim().replace(Regex("\\s+"), " ").take(40)
+        if (normalized.isBlank()) return@withContext NewsLoad.Success(NewsPage(emptyList(), null))
+        val key = "event|$language|$region|$normalized"
+        cached(key)?.let { return@withContext NewsLoad.Success(it) }
+        val base = SecretKeys.baseUrl()
+        if (base.isEmpty()) return@withContext NewsLoad.Failure(0)
+        val url = "$base/v1/news/event?lang=${encode(language)}&region=${encode(region)}&event=${encode(normalized)}"
+        val request = Request.Builder().url(url)
+            .header("X-App-Token", SecretKeys.appToken())
+            .header("X-Device-Id", DeviceFingerprint.id)
+            .header("X-Client-Platform", "android")
+            .build()
+        try {
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return@withContext NewsLoad.Failure(response.code)
+                val page = parsePage(JSONObject(response.body?.string().orEmpty())) ?: return@withContext NewsLoad.Failure(response.code)
+                synchronized(cache) { cache[key] = Entry(System.currentTimeMillis(), page) }
+                NewsLoad.Success(page)
+            }
+        } catch (_: Exception) {
+            NewsLoad.Failure(-1)
+        }
+    }
     suspend fun like(articleId: String): NewsLikeResult = withContext(Dispatchers.IO) {
         val base = SecretKeys.baseUrl()
         if (base.isEmpty()) return@withContext NewsLikeResult.Unavailable

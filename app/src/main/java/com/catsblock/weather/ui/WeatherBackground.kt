@@ -22,11 +22,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import coil.compose.AsyncImage
-import coil.request.ImageRequest
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.platform.LocalContext
 import com.catsblock.weather.data.Condition
 import com.catsblock.weather.ui.sky.SkyLightning
 import com.catsblock.weather.ui.sky.LightningState
@@ -54,15 +54,11 @@ private const val LIVE_WINDOW_MS = 30 * 60_000L
 private const val CLOCK_TICK_MS = 5_000L
 private const val SNAP_MS = 120_000L
 
-private const val ASSET_BASE = "file:///android_asset/backgrounds/"
-
 private enum class SkyPhase { Day, Sunrise, Sunset, Night }
-
 private const val SUNRISE_START = 5 * 60 + 30
 private const val SUNRISE_END = 8 * 60
 private const val SUNSET_START = 17 * 60
 private const val SUNSET_END = 18 * 60 + 40
-
 private fun skyPhase(time: LocalTime?, isDay: Boolean): SkyPhase {
     if (time != null) {
         val minutes = time.hour * 60 + time.minute
@@ -71,33 +67,7 @@ private fun skyPhase(time: LocalTime?, isDay: Boolean): SkyPhase {
     }
     return if (isDay) SkyPhase.Day else SkyPhase.Night
 }
-
-private fun hasPhaseImage(kind: Condition): Boolean =
-    kind == Condition.Clear || kind == Condition.FewClouds ||
-        kind == Condition.PartlyCloudy || kind == Condition.MoreClouds
-
-private fun backgroundAsset(kind: Condition, phase: SkyPhase): String = ASSET_BASE + when (kind) {
-    Condition.Clear, Condition.FewClouds -> when (phase) {
-        SkyPhase.Sunrise -> "Clean_sunrise.jpg"
-        SkyPhase.Sunset -> "Clean_sunset.jpg"
-        SkyPhase.Night -> "Clean_night.jpg"
-        SkyPhase.Day -> "Sunny.jpg"
-    }
-    Condition.PartlyCloudy, Condition.MoreClouds -> when (phase) {
-        SkyPhase.Sunrise -> "Partly_cloudy_sunrise.jpg"
-        SkyPhase.Sunset -> "Partly_cloudy_sunset.jpg"
-        SkyPhase.Night -> "Partly_cloudy_night.jpg"
-        SkyPhase.Day -> "Partlycloud.jpg"
-    }
-    Condition.Cloudy, Condition.Fog, Condition.Windy -> "cloudy.jpg"
-    Condition.Drizzle, Condition.Rain, Condition.Sleet, Condition.Icy, Condition.HeavyRain,
-    Condition.ScatteredShowers, Condition.RainSnow, Condition.WintryMix -> "Rain.jpg"
-    Condition.Storm, Condition.Hail, Condition.ScatteredStorms, Condition.IsolatedStorms,
-    Condition.StrongStorms -> "Storm.jpg"
-    Condition.Snow, Condition.HeavySnow, Condition.Blizzard, Condition.Flurries, Condition.BlowingSnow,
-    Condition.ScatteredSnow, Condition.SnowShowers -> "Ssnow.jpg"
-}
-
+private fun hasPhaseImage(kind: Condition): Boolean = kind == Condition.Clear || kind == Condition.FewClouds || kind == Condition.PartlyCloudy || kind == Condition.MoreClouds
 class SkyColors(val base: Color, val card: Color, val accent: Color)
 
 val LocalSkyColors = compositionLocalOf { SkyColors(Color(0xFF0E1A28), Color(0xFF16273A), Color(0xFFCDE6FF)) }
@@ -160,13 +130,13 @@ fun WeatherBackground(
     val context = LocalContext.current
     val version by BackgroundKit.version.collectAsState()
     val custom = remember(kind, isDay, version) { BackgroundKit.visual(context, kind, isDay) }
-    val phase = skyPhase(time, isDay)
     val powerSave = rememberPowerSaveMode()
     var tier by remember(powerSave) { mutableStateOf(detectSkyTier(context, powerSave)) }
     val skyData = custom == null && usesAtmosphere(kind) &&
         !latitude.isNaN() && !longitude.isNaN() && epochMs != Long.MIN_VALUE
     val shaderSky = skyData && tier.usesShader && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
-    val softwareSky = skyData && Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU && tier != SkyTier.Minimal
+    val softwareSky = false
+    val legacyImage = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU && custom == null
     val atmospheric = shaderSky || softwareSky
 
     val cover by animateFloatAsState(skyCover(kind, cloud), tween(900), label = "skyCover")
@@ -215,24 +185,33 @@ fun WeatherBackground(
         if (lightningState != null) lightningState.directionAt = directionFn
     }
 
-    val model = remember(custom, kind, phase) {
-        ImageRequest.Builder(context)
-            .data(custom ?: backgroundAsset(kind, phase))
-            .crossfade(true)
-            .build()
-    }
     Box(modifier) {
         Box(Modifier.fillMaxSize().background(Color(0xFF0B1220)))
-        if (!atmospheric) {
+        if (legacyImage) {
+            val image = when {
+                skyWeather(kind) == SkyWeather.Storm -> "Storm.jpg"
+                skyWeather(kind) == SkyWeather.Snow -> "Ssnow.jpg"
+                skyWeather(kind) == SkyWeather.Rain -> "Rain.jpg"
+                !isDay -> if (kind == Condition.PartlyCloudy || kind == Condition.MoreClouds) "Partly_cloudy_night.jpg" else "Clean_night.jpg"
+                time != null && time.hour in 5..8 -> if (kind == Condition.PartlyCloudy || kind == Condition.MoreClouds) "Partly_cloudy_sunrise.jpg" else "Clean_sunrise.jpg"
+                time != null && time.hour in 16..19 -> if (kind == Condition.PartlyCloudy || kind == Condition.MoreClouds) "Partly_cloudy_sunset.jpg" else "Clean_sunset.jpg"
+                kind == Condition.PartlyCloudy -> "Partlycloud.jpg"
+                kind == Condition.MoreClouds -> "cloudy.jpg"
+                else -> "Sunny.jpg"
+            }
             AsyncImage(
-                model = model,
+                model = "file:///android_asset/backgrounds/$image",
                 contentDescription = null,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop
             )
-            if (!isDay && custom == null && !(hasPhaseImage(kind) && phase != SkyPhase.Day)) {
-                Box(Modifier.fillMaxSize().background(Color(0xFF050B1F).copy(alpha = 0.55f)))
-            }
+        } else if (!atmospheric) {
+            val fallback = skyColors(kind, isDay, time)
+            Box(
+                Modifier.fillMaxSize().background(
+                    Brush.verticalGradient(listOf(fallback.base, fallback.card, Color(0xFF081018)))
+                )
+            )
             if (atmosphere.scrim > 0.01f) {
                 Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = atmosphere.scrim)))
             }

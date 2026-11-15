@@ -2,7 +2,8 @@ const PAGE_SIZE = 15;
 const CACHE_TTL_S = 900;
 const MAX_LIKES = 10000;
 const MAX_QUERY = 60;
-const MAX_CURSOR = 8;
+const MAX_EVENT = 40;
+const MAX_CURSOR = 256;
 const FETCH_TIMEOUT_MS = 12000;
 const MAX_BODY_BYTES = 2048;
 const LIKE_WINDOW_S = 600;
@@ -201,6 +202,7 @@ function parseFeed(xml, meta) {
 
 async function fetchFeed(meta) {
   try {
+    if (meta.gdelt) return fetchGdelt(meta);
     const response = await fetch(meta.url, {
       headers: { "User-Agent": USER_AGENT, "Accept": "application/rss+xml, application/xml, text/xml;q=0.9" },
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
@@ -215,23 +217,62 @@ async function fetchFeed(meta) {
   }
 }
 
-function sourcesFor(lang) {
+
+const GDELT_LANG = { en: "english", pt: "portuguese", es: "spanish", fr: "french", de: "german", it: "italian", ru: "russian", ko: "korean", id: "indonesian" };
+function gdeltQuery(lang, focus) {
+  const key = languageKey(lang);
+  const base = (keywordsFor(lang).slice(0, 10).map((word) => `"${word}"`).join(" OR "));
+  const extra = clean(focus, MAX_EVENT).replace(/[(){}\[\]"]/g, " ").trim();
+  const language = GDELT_LANG[key] ? ` sourcelang:${GDELT_LANG[key]}` : "";
+  return `(${extra || base})${language}`;
+}
+function parseGdeltDate(value) {
+  const raw = String(value || "");
+  if (/^\d{8}T\d{6}Z?$/.test(raw)) {
+    const iso = raw.replace(/(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z?/, "$1-$2-$3T$4:$5:$6Z");
+    const parsed = Date.parse(iso);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  const parsed = Date.parse(raw);
+  return Number.isFinite(parsed) ? parsed : Date.now();
+}
+async function fetchGdelt(meta) {
+  try {
+    const response = await fetch(meta.url, { headers: { "User-Agent": USER_AGENT, "Accept": "application/json" }, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS), cf: { cacheTtl: 600, cacheEverything: true } });
+    if (!response.ok) return [];
+    const payload = await response.json();
+    const articles = Array.isArray(payload?.articles) ? payload.articles : [];
+    return articles.slice(0, ITEM_LIMIT).map((item) => {
+      const url = safeUrl(item.url);
+      const title = clean(item.title, TITLE_MAX);
+      if (!url || !title) return null;
+      return { id: hashId(url), title, summary: "", source: clean(item.domain || "GDELT", 80), publishedAt: parseGdeltDate(item.seendate), imageUrl: safeUrl(item.socialimage), url, lang: meta.lang, region: meta.region };
+    }).filter(Boolean).filter((article) => relevant(article, { lang: meta.lang, strict: false }));
+  } catch (err) {
+    return [];
+  }
+}
+
+function sourcesFor(lang, focus = "") {
   const google = GOOGLE[lang];
+  const key = languageKey(lang);
   const list = [];
-  if (google) {
-    const url = "https://news.google.com/rss/search?q=" + encodeURIComponent(google.query) +
-      "&hl=" + encodeURIComponent(google.hl) + "&gl=" + encodeURIComponent(google.gl) +
-      "&ceid=" + encodeURIComponent(google.gl + ":" + google.hl);
-    list.push({ url, source: "Google News", region: google.gl, lang, strict: true, google: true });
-  }
-  for (const item of CURATED[lang] || []) {
-    list.push(Object.assign({ lang, google: false }, item));
-  }
+  const query = gdeltQuery(lang, focus);
+  list.push({
+    url: "https://api.gdeltproject.org/api/v2/doc/doc?query=" + encodeURIComponent(query) + "&mode=artlist&format=json&maxrecords=50&sort=HybridRel",
+    source: "GDELT",
+    region: google?.gl || "US",
+    lang,
+    strict: false,
+    gdelt: true
+  });
+  for (const item of CURATED[lang] || []) list.push(Object.assign({ lang, google: false }, item));
   return list;
 }
 
-async function feedFor(env, lang) {
-  const key = FEED_KEY + lang;
+async function feedFor(env, lang, focus = "") {
+  const scopedFocus = clean(focus, MAX_QUERY).toLowerCase();
+  const key = FEED_KEY + lang + ":" + hashId(scopedFocus);
   try {
     const cached = await env.APP_KV.get(key);
     if (cached) {
@@ -241,7 +282,7 @@ async function feedFor(env, lang) {
   } catch (err) {
     return [];
   }
-  const lists = await Promise.all(sourcesFor(lang).map((meta) => fetchFeed(meta)));
+  const lists = await Promise.all(sourcesFor(lang, scopedFocus).map((meta) => fetchFeed(meta)));
   const merged = [];
   const seenIds = new Set();
   const seenTitles = new Set();
@@ -267,6 +308,14 @@ async function feedFor(env, lang) {
 }
 
 async function likeIndex(env) {
+  if (env.NEWS_DB) {
+    try {
+      const result = await env.NEWS_DB.prepare("SELECT article_id, likes FROM news_article_counts WHERE likes > 0").all();
+      return Object.fromEntries((result.results || []).map((row) => [row.article_id, Number(row.likes) || 0]));
+    } catch (err) {
+      return {};
+    }
+  }
   try {
     const raw = await env.APP_KV.get(LIKES_KEY);
     const parsed = raw ? JSON.parse(raw) : {};
@@ -276,14 +325,44 @@ async function likeIndex(env) {
   }
 }
 
-function encodeCursor(offset) {
-  return String(offset).padStart(MAX_CURSOR, "0");
+async function likeWithDatabase(env, articleId, voterId) {
+  const now = Date.now();
+  try {
+    const results = await env.NEWS_DB.batch([
+      env.NEWS_DB.prepare("INSERT OR IGNORE INTO news_article_counts(article_id, likes, updated_at) VALUES (?, 0, ?)").bind(articleId, now),
+      env.NEWS_DB.prepare("INSERT OR IGNORE INTO news_reactions(article_id, voter_id, created_at) VALUES (?, ?, ?)").bind(articleId, voterId, now)
+    ]);
+    const inserted = Number(results[1]?.meta?.changes || 0) === 1;
+    if (inserted) {
+      const updated = await env.NEWS_DB.prepare("UPDATE news_article_counts SET likes = likes + 1, updated_at = ? WHERE article_id = ? AND likes < ?").bind(now, articleId, MAX_LIKES).run();
+      if (Number(updated.meta?.changes || 0) !== 1) {
+        await env.NEWS_DB.prepare("DELETE FROM news_reactions WHERE article_id = ? AND voter_id = ?").bind(articleId, voterId).run();
+        return { error: "limit_reached", likes: MAX_LIKES };
+      }
+    }
+    const row = await env.NEWS_DB.prepare("SELECT likes FROM news_article_counts WHERE article_id = ?").bind(articleId).first();
+    const likes = Math.max(0, Number(row?.likes) || 0);
+    return inserted ? { likes } : { error: "already_liked", likes };
+  } catch (err) {
+    return { error: "unavailable" };
+  }
+}
+
+function encodeCursor(boundary) {
+  const encoded = btoa(JSON.stringify(boundary)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+  return encoded.slice(0, MAX_CURSOR);
 }
 
 function decodeCursor(raw) {
-  if (typeof raw !== "string" || !/^\d{1,8}$/.test(raw)) return 0;
-  const value = Number.parseInt(raw, 10);
-  return Number.isFinite(value) && value >= 0 ? value : 0;
+  if (!raw || typeof raw !== "string" || raw.length > MAX_CURSOR || !/^[A-Za-z0-9_-]+$/.test(raw)) return null;
+  try {
+    const padded = raw.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((raw.length + 3) % 4);
+    const value = JSON.parse(atob(padded));
+    if (!value || !Number.isFinite(value.likes) || !Number.isFinite(value.publishedAt) || typeof value.id !== "string") return null;
+    return { likes: value.likes, publishedAt: value.publishedAt, id: value.id, regional: value.regional === 1 ? 1 : 0, lang: typeof value.lang === "string" ? value.lang : "", region: typeof value.region === "string" ? value.region : "", query: typeof value.query === "string" ? value.query : "", event: typeof value.event === "string" ? value.event : "" };
+  } catch (err) {
+    return null;
+  }
 }
 
 async function readBody(request) {
@@ -325,15 +404,20 @@ export async function handleNews(request, env, h) {
   const region = REGION_PATTERN.test(rawRegion) ? rawRegion : "";
   const rawQuery = (url.searchParams.get("q") || "").trim().toLowerCase();
   const query = Array.from(rawQuery.replace(CONTROL_CHARS, " ")).slice(0, MAX_QUERY).join("");
+  const event = Array.from((url.searchParams.get("event") || "").trim().toLowerCase().replace(CONTROL_CHARS, " ")).slice(0, MAX_EVENT).join("");
+  const pageSize = event ? 10 : PAGE_SIZE;
   const cursor = decodeCursor(url.searchParams.get("cursor") || "");
-  const articles = await feedFor(env, lang);
+  if (url.searchParams.get("cursor") && !cursor) return h.jsonResponse({ error: "invalid_cursor" }, 400);
+  if (cursor && (cursor.lang !== lang || cursor.region !== region || cursor.query !== query || cursor.event !== event)) return h.jsonResponse({ error: "cursor_scope_mismatch" }, 400);
+  const articles = await feedFor(env, lang, event || query);
   if (articles.length === 0) {
     return h.jsonResponse({ articles: [], cursor: "", total: 0 }, 200, { "Cache-Control": "no-store" });
   }
   const index = await likeIndex(env);
-  const filtered = query
-    ? articles.filter((item) => (item.title + " " + item.summary).toLowerCase().includes(query))
-    : articles;
+  const filtered = articles.filter((item) => {
+    const text = (item.title + " " + item.summary + " " + item.source).toLowerCase();
+    return (!query || text.includes(query)) && (!event || text.includes(event));
+  });
   const scored = filtered.map((item) => {
     const likes = Number(index[item.id]) || 0;
     const regional = region && item.region === region ? 1 : 0;
@@ -342,10 +426,18 @@ export async function handleNews(request, env, h) {
   scored.sort((a, b) => {
     if (b.likes !== a.likes) return b.likes - a.likes;
     if (b.regional !== a.regional) return b.regional - a.regional;
-    return b.item.publishedAt - a.item.publishedAt;
+    if (b.item.publishedAt !== a.item.publishedAt) return b.item.publishedAt - a.item.publishedAt;
+    return a.item.id.localeCompare(b.item.id);
   });
-  const page = scored.slice(cursor, cursor + PAGE_SIZE);
-  const next = cursor + PAGE_SIZE < scored.length ? encodeCursor(cursor + PAGE_SIZE) : "";
+  const after = cursor ? scored.filter((entry) => {
+    if (entry.likes !== cursor.likes) return entry.likes < cursor.likes;
+    if (entry.regional !== cursor.regional) return entry.regional < cursor.regional;
+    if (entry.item.publishedAt !== cursor.publishedAt) return entry.item.publishedAt < cursor.publishedAt;
+    return entry.item.id > cursor.id;
+  }) : scored;
+  const page = after.slice(0, pageSize);
+  const last = page[page.length - 1];
+  const next = after.length > pageSize && last ? encodeCursor({ likes: last.likes, regional: last.regional, publishedAt: last.item.publishedAt, id: last.item.id, lang, region, query, event }) : "";
   const payload = page.map((entry) => ({
     id: entry.item.id,
     title: entry.item.title,
@@ -378,6 +470,13 @@ export async function handleNewsLike(request, env, h) {
   } catch (err) {
     return h.jsonResponse({ error: "unavailable" }, 503);
   }
+  if (env.NEWS_DB) {
+    const result = await likeWithDatabase(env, articleId, owner);
+    if (result.error === "already_liked") return h.jsonResponse(result, 409);
+    if (result.error === "limit_reached") return h.jsonResponse(result, 409);
+    if (result.error) return h.jsonResponse(result, 503);
+    return h.jsonResponse({ id: articleId, likes: result.likes }, 200);
+  }
   const voteKey = VOTE_KEY + articleId + ":" + owner;
   const index = await likeIndex(env);
   const current = Number(index[articleId]) || 0;
@@ -398,3 +497,5 @@ export async function handleNewsLike(request, env, h) {
   }
   return h.jsonResponse({ id: articleId, likes: updated }, 200);
 }
+
+export { relevant, encodeCursor, decodeCursor };

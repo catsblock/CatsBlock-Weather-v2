@@ -153,7 +153,6 @@ internal enum class MapLayer(val id: String, val label: String, val icon: ImageV
     AirQuality("aqi", "Air quality", Icons.Rounded.Masks),
     SeaLevel("sea", "Sea level", Icons.Rounded.Water),
     Alerts("alerts", "Weather alerts", Icons.Rounded.Warning),
-    ColdFronts("coldfront", "Cold fronts", Icons.Rounded.AcUnit),
     Drought("drought", "Drought & dryness", Icons.Rounded.Landscape)
 }
 
@@ -298,20 +297,8 @@ internal fun mapLabels(): JSONObject = JSONObject()
     .put("lvAlert", tr("Alert"))
     .put("lvDanger", tr("Danger"))
     .put("noAlerts", tr("No active alerts right now"))
-    .put("cfPassed", tr("Cold front passed"))
-    .put("cfComing", tr("Cold front approaching"))
-    .put("cfWeak", tr("Weak"))
-    .put("cfModerate", tr("Moderate"))
-    .put("cfStrong", tr("Strong"))
-    .put("cfStrength", tr("Strength"))
-    .put("cfKeyLine", tr("Lines: blue passed · gray ahead"))
-    .put("cfKeyArea", tr("Blue dot: cold front is here now"))
-    .put("cfNow", tr("Cold front is here now"))
     .put("stKey", tr("Blue: active now · Gray: already passed"))
     .put("stReach", tr("Storm winds reach"))
-    .put("cfNone", tr("No cold fronts right now"))
-    .put("cfDropPast", tr("Temperature drop in 24 h"))
-    .put("cfDropNext", tr("Expected drop in 24 h"))
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

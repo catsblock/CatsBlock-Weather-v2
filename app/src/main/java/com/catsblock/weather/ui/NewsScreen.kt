@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -24,7 +25,6 @@ import androidx.compose.material.icons.rounded.Clear
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.Search
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -33,6 +33,9 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -62,6 +65,7 @@ import com.catsblock.weather.i18n.tr
 import com.catsblock.weather.ui.components.ExpressiveLoader
 import com.catsblock.weather.ui.typography.GoogleSansFlex
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.ZoneId
@@ -71,6 +75,13 @@ import java.util.Locale
 import kotlin.math.min
 
 private const val SEARCH_DEBOUNCE_MS = 2500L
+
+private fun newsDescription(value: String): String {
+    val clean = value.replace(Regex("\\s+"), " ").trim()
+    if (clean.length <= 75) return clean
+    val cut = clean.substring(0, 75).substringBeforeLast(" ").trimEnd()
+    return "$cut…"
+}
 
 private fun publishedLabel(epochMs: Long, locale: Locale): String {
     if (epochMs <= 0L) return ""
@@ -103,25 +114,28 @@ fun NewsScreen(vm: WeatherViewModel) {
     var message by remember { mutableStateOf<String?>(null) }
     var selected by remember { mutableStateOf<NewsArticle?>(null) }
     var attempt by remember { mutableIntStateOf(0) }
+    var requestGeneration by remember { mutableIntStateOf(0) }
+    var loadJob by remember { mutableStateOf<Job?>(null) }
     val available = remember { NewsFeed.available() }
 
-    fun load(reset: Boolean) {
-        if (loading) return
+    fun load(reset: Boolean, immediateGeneration: Int = requestGeneration) {
+        if (loading && !reset) return
+        loadJob?.cancel()
         loading = true
         if (reset) status = 0
-        scope.launch {
-            val next = if (reset) "" else cursor.orEmpty()
+        val next = if (reset) "" else cursor.orEmpty()
+        loadJob = scope.launch {
             when (val result = NewsFeed.page(language.code, region, debounced, next)) {
-                is NewsLoad.Success -> {
+                is NewsLoad.Success -> if (immediateGeneration == requestGeneration) {
                     val incoming = result.page.articles
                     val merged = if (reset) incoming else (articles + incoming).distinctBy { it.id }
                     articles = merged
                     cursor = result.page.cursor
                     status = 1
                 }
-                is NewsLoad.Failure -> status = if (reset) result.status else status
+                is NewsLoad.Failure -> if (immediateGeneration == requestGeneration) status = if (reset) result.status else status
             }
-            loading = false
+            if (immediateGeneration == requestGeneration) loading = false
         }
     }
 
@@ -130,6 +144,8 @@ fun NewsScreen(vm: WeatherViewModel) {
         debounced = query.trim()
     }
     LaunchedEffect(language.code, region, debounced, attempt) {
+        requestGeneration += 1
+        loadJob?.cancel()
         cursor = null
         articles = emptyList()
         load(reset = true)
@@ -194,6 +210,11 @@ fun NewsScreen(vm: WeatherViewModel) {
                         }
                     }
                 },
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                keyboardActions = KeyboardActions(onSearch = {
+                    val normalized = query.trim().replace(Regex("\\s+"), " ")
+                    if (normalized != debounced) debounced = normalized else attempt++
+                }),
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = MaterialTheme.colorScheme.outline,
                     unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
@@ -208,7 +229,7 @@ fun NewsScreen(vm: WeatherViewModel) {
         Box(Modifier.weight(1f).fillMaxWidth()) {
             when {
                 !available -> NewsMessage(tr("News unavailable"), tr("The news service is not available right now.")) { attempt++ }
-                status == 0 && loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { ExpressiveLoader() }
+                status == 0 && loading -> NewsSkeletonList()
                 status == 0 && articles.isEmpty() -> NewsMessage(tr("News unavailable"), tr("The news service is not available right now.")) { attempt++ }
                 status == 429 -> NewsMessage(tr("Weather news"), tr("Too many requests. Try again later.")) { attempt++ }
                 articles.isEmpty() -> NewsMessage(tr("No meteorological news found"), tr("Try a different search or check again later.")) { attempt++ }
@@ -231,7 +252,7 @@ fun NewsScreen(vm: WeatherViewModel) {
                         item {
                             Box(Modifier.fillMaxWidth().padding(vertical = 18.dp), contentAlignment = Alignment.Center) {
                                 if (loading) {
-                                    CircularProgressIndicator(Modifier.size(26.dp), strokeWidth = 2.dp)
+                                    NewsSkeletonRow()
                                 } else {
                                     TextButton(onClick = { load(reset = false) }) { Text(tr("Retry")) }
                                 }
@@ -244,6 +265,69 @@ fun NewsScreen(vm: WeatherViewModel) {
     }
     selected?.let { article ->
         NewsBrowserDialog(article) { selected = null }
+    }
+}
+
+
+
+@Composable
+internal fun EventNewsSection(event: String, region: String) {
+    val language = I18n.lang
+    val locale = language.locale
+    val scope = rememberCoroutineScope()
+    var articles by remember(event, language.code, region) { mutableStateOf<List<NewsArticle>>(emptyList()) }
+    var selected by remember { mutableStateOf<NewsArticle?>(null) }
+    var loading by remember(event, language.code, region) { mutableStateOf(true) }
+    LaunchedEffect(event, language.code, region) {
+        loading = true
+        when (val result = NewsFeed.event(language.code, region, event)) {
+            is NewsLoad.Success -> articles = result.page.articles.take(10)
+            is NewsLoad.Failure -> articles = emptyList()
+        }
+        loading = false
+    }
+    if (loading) {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(tr("Related meteorological news"), style = MaterialTheme.typography.titleMedium)
+            NewsSkeletonRow()
+        }
+        return
+    }
+    if (articles.isEmpty()) return
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text(tr("Related meteorological news"), style = MaterialTheme.typography.titleMedium)
+        articles.forEach { article ->
+            NewsCard(article, locale, false, onLike = {
+                scope.launch { NewsFeed.like(article.id) }
+            }, onOpen = { selected = article })
+        }
+    }
+    selected?.let { NewsBrowserDialog(it) { selected = null } }
+}
+
+@Composable
+private fun NewsSkeletonList() {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        items(5) { NewsSkeletonRow() }
+    }
+}
+
+@Composable
+private fun NewsSkeletonRow() {
+    Surface(
+        modifier = Modifier.fillMaxWidth().height(128.dp),
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.surfaceContainer
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Box(Modifier.widthIn(max = 150.dp).height(12.dp).clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surfaceVariant))
+            Box(Modifier.fillMaxWidth(0.9f).height(18.dp).clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surfaceVariant))
+            Box(Modifier.fillMaxWidth(0.65f).height(14.dp).clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surfaceVariant))
+        }
     }
 }
 
@@ -319,7 +403,7 @@ private fun NewsCard(
                 if (article.summary.isNotBlank()) {
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        article.summary,
+                        newsDescription(article.summary),
                         color = scheme.onSurfaceVariant,
                         fontSize = 13.sp,
                         lineHeight = 18.sp,

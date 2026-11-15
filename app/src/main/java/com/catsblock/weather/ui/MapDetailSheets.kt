@@ -114,6 +114,13 @@ internal fun MapDetailSheet(detail: MapDetail, onDismiss: () -> Unit) {
                 else -> Header(tr("Municipality details"), null, Color.Unspecified)
             }
             MunicipalityBlock(meta, loading)
+            val event = when (detail.type.lowercase()) {
+                "cyclone", "cyclones", "hurricane", "typhoon" -> "cyclone hurricane typhoon"
+                "drought" -> "drought dryness"
+                "enso", "el_nino", "la_nina", "sst" -> "El Niño La Niña ENSO"
+                else -> null
+            }
+            if (event != null) EventNewsSection(event, data.optString("region"))
         }
     }
 }
@@ -253,6 +260,7 @@ private fun FireBody(d: JSONObject) {
     }
     if (modeled.isNotEmpty()) Note(tr("Values marked ≈ are modeled estimates, not official figures."))
     Note(tr("Source") + ": NASA FIRMS · NIFC")
+    EventNewsSection("wildfire", d.optString("region"))
 }
 
 @Composable

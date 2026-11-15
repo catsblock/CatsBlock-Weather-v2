@@ -64,7 +64,7 @@ import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 import java.util.Locale
 
-enum class Screen { Welcome, Picker, Main, Map, Agent, Settings, IconKit, BackgroundKit, AppIcon, LiveMoon, Privacy, Info, Terms }
+enum class Screen { Welcome, Picker, Main, Map, Agent, News, Settings, IconKit, BackgroundKit, AppIcon, LiveMoon, Privacy, Info, Terms }
 
 sealed interface WeatherState {
     data object Idle : WeatherState
@@ -102,6 +102,7 @@ class WeatherViewModel(private val app: Application) : AndroidViewModel(app) {
     val city = MutableStateFlow<City?>(null)
     val weather = MutableStateFlow<WeatherState>(WeatherState.Idle)
     val summaries = MutableStateFlow<Map<String, CitySummary>>(emptyMap())
+    val citiesOpen = MutableStateFlow(false)
     val settings = store.settings.stateIn(viewModelScope, SharingStarted.Eagerly, AppSettings())
 
     val activityStats = activity.stats.stateIn(viewModelScope, SharingStarted.Eagerly, com.catsblock.weather.data.ActivityStats())
@@ -258,6 +259,19 @@ class WeatherViewModel(private val app: Application) : AndroidViewModel(app) {
 
     fun openAgent() {
         screen.value = Screen.Agent
+    }
+
+    fun openNews() {
+        screen.value = Screen.News
+    }
+
+    fun openCities() {
+        loadSummaries()
+        citiesOpen.value = true
+    }
+
+    fun closeCities() {
+        citiesOpen.value = false
     }
 
     fun openWeather() {

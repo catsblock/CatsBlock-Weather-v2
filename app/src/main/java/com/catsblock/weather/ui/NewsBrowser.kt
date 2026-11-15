@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.OpenInNew
+import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -82,6 +83,7 @@ fun NewsBrowserDialog(article: NewsArticle, onDismiss: () -> Unit) {
     var blocked by remember { mutableStateOf(false) }
     var currentUrl by remember { mutableStateOf(initial) }
     var confirmExternal by remember { mutableStateOf(false) }
+    var securityOpen by remember { mutableStateOf(false) }
     val lifecycleOwner = LocalLifecycleOwner.current
 
     DisposableEffect(lifecycleOwner) {
@@ -149,6 +151,9 @@ fun NewsBrowserDialog(article: NewsArticle, onDismiss: () -> Unit) {
                     IconButton(onClick = { if (currentUrl != null) confirmExternal = true }) {
                         Icon(Icons.Rounded.OpenInNew, contentDescription = tr("Open in browser"), tint = MaterialTheme.colorScheme.onSurface)
                     }
+                    IconButton(onClick = { securityOpen = true }) {
+                        Icon(Icons.Rounded.Menu, contentDescription = tr("Security information"), tint = MaterialTheme.colorScheme.onSurface)
+                    }
                 }
                 if (progress in 0.01f..0.99f) {
                     LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth().height(2.dp))
@@ -160,11 +165,13 @@ fun NewsBrowserDialog(article: NewsArticle, onDismiss: () -> Unit) {
                                 WebView(ctx).apply {
                                     setBackgroundColor(0xFF000000.toInt())
                                     settings.apply {
-                                        javaScriptEnabled = true
-                                        domStorageEnabled = true
+                                        javaScriptEnabled = false
+                                        domStorageEnabled = false
                                         allowFileAccess = false
                                         allowContentAccess = false
                                         setSupportMultipleWindows(false)
+                                        javaScriptCanOpenWindowsAutomatically = false
+                                        setGeolocationEnabled(false)
                                         builtInZoomControls = true
                                         displayZoomControls = false
                                         mediaPlaybackRequiresUserGesture = true
@@ -175,12 +182,18 @@ fun NewsBrowserDialog(article: NewsArticle, onDismiss: () -> Unit) {
                                     webViewClient = object : WebViewClient() {
                                         override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                                             val target = safeHttpUrl(request.url?.toString())
-                                            if (target == null) {
+                                            if (target == null || request.url.scheme?.lowercase() != "https") {
                                                 blocked = true
                                                 return true
                                             }
                                             currentUrl = target
                                             return false
+                                        }
+
+                                        override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): android.webkit.WebResourceResponse? {
+                                            val scheme = request.url.scheme?.lowercase()
+                                            if (scheme != "https") return android.webkit.WebResourceResponse("text/plain", "UTF-8", null)
+                                            return super.shouldInterceptRequest(view, request)
                                         }
 
                                         override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
@@ -246,18 +259,29 @@ fun NewsBrowserDialog(article: NewsArticle, onDismiss: () -> Unit) {
         )
     }
     if (confirmExternal) {
+        val domain = currentUrl?.let { runCatching { Uri.parse(it).host }.getOrNull() }.orEmpty()
         AlertDialog(
             onDismissRequest = { confirmExternal = false },
             title = { Text(tr("Open external browser?")) },
-            text = { Text(tr("This link opens outside CatsBlock Weather.")) },
+            text = { Text(tr("You are about to leave CatsBlock Weather and open domain. The CatsBlock Weather Terms of Service and Privacy Policy cannot apply to third-party websites.").replace("domain", domain)) },
             confirmButton = {
                 TextButton(onClick = {
                     confirmExternal = false
                     val target = safeHttpUrl(currentUrl) ?: return@TextButton
                     runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(target))) }
-                }) { Text(tr("Open")) }
+                }) { Text(tr("Open anyway")) }
             },
             dismissButton = { TextButton(onClick = { confirmExternal = false }) { Text(tr("Cancel")) } }
+        )
+    }
+    if (securityOpen) {
+        val https = currentUrl?.startsWith("https://") == true
+        val domain = currentUrl?.let { runCatching { Uri.parse(it).host }.getOrNull() }.orEmpty()
+        AlertDialog(
+            onDismissRequest = { securityOpen = false },
+            title = { Text(tr("Security information")) },
+            text = { Text("${tr("Domain")}: $domain\n${tr("HTTPS/TLS")}: ${if (https) tr("Verified") else tr("Not verified")}\n${tr("JavaScript")}: ${tr("Disabled")}\n${tr("Permissions")}: ${tr("Denied")}\n${tr("Downloads")}: ${tr("Blocked")}") },
+            confirmButton = { TextButton(onClick = { securityOpen = false }) { Text(tr("Close")) } }
         )
     }
 }

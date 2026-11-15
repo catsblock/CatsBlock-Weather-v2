@@ -1,4 +1,10 @@
 package com.catsblock.weather.ui.detail
+import android.content.Context
+import android.hardware.GeomagneticField
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -29,6 +35,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -36,6 +43,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
@@ -577,6 +585,39 @@ fun WaterGauge(
 }
 
 @Composable
+private fun rememberGeographicHeading(): Float? {
+    val context = LocalContext.current
+    var heading by remember { mutableStateOf<Float?>(null) }
+    DisposableEffect(context) {
+        val manager = context.getSystemService(Context.SENSOR_SERVICE) as? SensorManager
+        val sensor = manager?.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
+        var filtered: Float? = null
+        val listener = object : SensorEventListener {
+            override fun onSensorChanged(event: SensorEvent) {
+                val rotation = FloatArray(9)
+                val orientation = FloatArray(3)
+                SensorManager.getRotationMatrixFromVector(rotation, event.values)
+                SensorManager.getOrientation(rotation, orientation)
+                val magnetic = (Math.toDegrees(orientation[0].toDouble()).toFloat() + 360f) % 360f
+                val field = GeomagneticField(0f, 0f, 0f, System.currentTimeMillis())
+                val geographic = (magnetic + field.declination + 360f) % 360f
+                filtered = filtered?.let { previous ->
+                    var delta = geographic - previous
+                    while (delta > 180f) delta -= 360f
+                    while (delta < -180f) delta += 360f
+                    (previous + delta * 0.18f + 360f) % 360f
+                } ?: geographic
+                heading = filtered
+            }
+            override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
+        }
+        if (manager != null && sensor != null) manager.registerListener(listener, sensor, SensorManager.SENSOR_DELAY_UI)
+        onDispose { manager?.unregisterListener(listener) }
+    }
+    return heading
+}
+
+@Composable
 fun WindCompass(
     fromDegrees: Double,
     letters: List<String>,
@@ -585,7 +626,8 @@ fun WindCompass(
 ) {
     val scheme = MaterialTheme.colorScheme
     val measurer = rememberTextMeasurer()
-    val target = ((fromDegrees + 180.0) % 360.0).toFloat()
+    val heading = rememberGeographicHeading()
+    val target = (((fromDegrees + 180.0) - (heading ?: 0f) + 360.0) % 360.0).toFloat()
     val angle by animateFloatAsState(
         targetValue = target,
         animationSpec = spring(dampingRatio = 0.5f, stiffness = 90f),

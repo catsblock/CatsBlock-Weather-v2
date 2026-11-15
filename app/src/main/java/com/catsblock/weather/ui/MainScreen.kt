@@ -5,6 +5,7 @@ import com.catsblock.weather.ui.detail.MetricKind
 import com.catsblock.weather.ui.components.ExpressiveLoader
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animate
@@ -290,7 +291,8 @@ fun MainScreen(vm: WeatherViewModel) {
             CitySummary(b.current.kind, b.current.isDay, b.current.temp, d.min, d.max, b.current.now.toLocalTime())
         }
     }
-    val progress = (scroll.value / 700f).coerceIn(0f, 1f)
+    val rawProgress = (scroll.value / 700f).coerceIn(0f, 1f)
+    val progress by animateFloatAsState(rawProgress, tween(220, easing = FastOutSlowInEasing), label = "weatherScrollProgress")
     val sky = skyColors(kind, isDay, bundle?.current?.now?.toLocalTime())
     val headerHeight = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 112.dp
 
@@ -602,7 +604,12 @@ private fun WeatherDetails(
                     alpha = heroIn.value
                     translationY = (1f - heroIn.value) * 28.dp.toPx()
                 }
-                .scrollEdgeFade()
+                .graphicsLayer {
+                    val distance = heroHeight.toPx().coerceAtLeast(1f)
+                    val fraction = (scroll.value / distance).coerceIn(0f, 1f)
+                    alpha = 1f - fraction
+                    translationY = -scroll.value * 0.18f
+                }
                 .padding(horizontal = 24.dp, vertical = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Bottom
