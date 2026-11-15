@@ -75,7 +75,6 @@ import com.catsblock.weather.data.LifeItem
 import com.catsblock.weather.data.LifeKind
 import com.catsblock.weather.i18n.tr
 import com.catsblock.weather.ui.glass.cardEntrance
-import com.catsblock.weather.ui.particles.WeatherSurfaceHost
 import kotlinx.coroutines.launch
 import java.time.Duration
 import java.time.LocalDate
@@ -114,15 +113,13 @@ fun GlassCard(
     )
     val surface = if (expressive) modifier.scrollEdgeFade().cardEntrance() else modifier
     val elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-    WeatherSurfaceHost(surface, 32.dp) { cardModifier ->
-        if (onClick != null) {
-            Card(onClick = onClick, modifier = cardModifier, shape = shape, colors = colors, elevation = elevation, border = null) {
-                Column(contentModifier.padding(20.dp), content = content)
-            }
-        } else {
-            Card(modifier = cardModifier, shape = shape, colors = colors, elevation = elevation, border = null) {
-                Column(contentModifier.padding(20.dp), content = content)
-            }
+    if (onClick != null) {
+        Card(onClick = onClick, modifier = surface, shape = shape, colors = colors, elevation = elevation, border = null) {
+            Column(contentModifier.padding(20.dp), content = content)
+        }
+    } else {
+        Card(modifier = surface, shape = shape, colors = colors, elevation = elevation, border = null) {
+            Column(contentModifier.padding(20.dp), content = content)
         }
     }
 }
