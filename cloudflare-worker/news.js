@@ -6,10 +6,9 @@ const MAX_EVENT = 40;
 const MAX_CURSOR = 256;
 const FETCH_TIMEOUT_MS = 12000;
 const MAX_BODY_BYTES = 2048;
-const LIKE_WINDOW_S = 600;
-const LIKE_MAX = 40;
-const REACTION_WINDOW_S = 600;
-const REACTION_MAX = 80;
+const ACTION_WINDOW_S = 120;
+const ACTION_MAX = 14;
+const ACTION_BLOCK_S = 900;
 const REACTION_LIST = ["🤩", "😁", "😭", "⚡", "👍", "👏"];
 const REACTIONS = new Set(REACTION_LIST);
 const REACTION_KEY = "news:reaction:";
@@ -597,42 +596,47 @@ export async function handleNews(request, env, h) {
   return h.jsonResponse({ articles: payload, cursor: next, total: scored.length }, 200, { "Cache-Control": "no-store" });
 }
 
-async function consumeKvBudget(env, key, windowStart, limit) {
-  if (!env.APP_KV) return true;
-  const rateKey = RATE_KEY + "action:" + key + ":" + windowStart;
+async function consumeActionBudget(env, keys, nowMs) {
+  if (!env.NEWS_DB) return { allowed: false, retryAfter: ACTION_BLOCK_S };
+  const now = Math.floor(nowMs / 1000);
+  const windowStart = Math.floor(now / ACTION_WINDOW_S);
+  const retryAfter = ACTION_BLOCK_S;
   try {
-    const used = Number((await env.APP_KV.get(rateKey)) || 0);
-    if (used >= limit) return false;
-    await env.APP_KV.put(rateKey, String(used + 1), { expirationTtl: 1800 });
-    return true;
-  } catch (err) {
-    return true;
-  }
-}
-
-async function consumeActionBudget(env, keys, windowStart, limit) {
-  if (!env.NEWS_DB) return consumeKvBudget(env, keys[0], windowStart, limit);
-  try {
-    let over = false;
     for (const key of keys) {
-      await env.NEWS_DB.prepare(
-        "INSERT INTO news_action_limits(key, window_start, used) VALUES (?, ?, 1) " +
-          "ON CONFLICT(key) DO UPDATE SET " +
-          "used = CASE WHEN news_action_limits.window_start = excluded.window_start THEN news_action_limits.used + 1 ELSE 1 END, " +
-          "window_start = excluded.window_start"
-      ).bind(key, windowStart).run();
       const row = await env.NEWS_DB.prepare(
-        "SELECT used FROM news_action_limits WHERE key = ?"
-      ).bind(key).first();
-      const used = Number(row?.used) || 0;
-      if (used > limit) over = true;
-      if (used === 1) {
-        await env.NEWS_DB.prepare("DELETE FROM news_action_limits WHERE window_start < ?").bind(windowStart - 2).run();
+        "INSERT INTO news_action_limits(key, window_start, used, blocked_until) VALUES (?, ?, 1, 0) " +
+          "ON CONFLICT(key) DO UPDATE SET " +
+          "used = CASE " +
+            "WHEN news_action_limits.blocked_until > ? THEN news_action_limits.used " +
+            "WHEN news_action_limits.window_start = ? AND news_action_limits.used >= ? THEN news_action_limits.used " +
+            "WHEN news_action_limits.window_start = ? THEN news_action_limits.used + 1 " +
+            "ELSE 1 END, " +
+          "window_start = CASE " +
+            "WHEN news_action_limits.blocked_until > ? THEN news_action_limits.window_start " +
+            "WHEN news_action_limits.window_start = ? THEN news_action_limits.window_start " +
+            "ELSE ? END, " +
+          "blocked_until = CASE " +
+            "WHEN news_action_limits.blocked_until > ? THEN news_action_limits.blocked_until " +
+            "WHEN news_action_limits.window_start = ? AND news_action_limits.used >= ? THEN ? " +
+            "ELSE 0 END " +
+          "RETURNING used, blocked_until"
+      ).bind(
+        key, windowStart,
+        now, windowStart, ACTION_MAX, windowStart,
+        now, windowStart, windowStart,
+        now, windowStart, ACTION_MAX, now + ACTION_BLOCK_S
+      ).first();
+      const blockedUntil = Number(row?.blocked_until) || 0;
+      if (blockedUntil > now) {
+        return { allowed: false, retryAfter: Math.max(1, blockedUntil - now) };
       }
     }
-    return !over;
+    await env.NEWS_DB.prepare(
+      "DELETE FROM news_action_limits WHERE blocked_until < ? AND window_start < ?"
+    ).bind(now, windowStart - 2).run();
+    return { allowed: true, retryAfter: 0 };
   } catch (err) {
-    return consumeKvBudget(env, keys[0], windowStart, limit);
+    return { allowed: false, retryAfter };
   }
 }
 
@@ -643,7 +647,7 @@ function budgetKeys(prefix, identity) {
 }
 
 export async function handleNewsReaction(request, env, h) {
-  if (!env.APP_KV) return h.jsonResponse({ error: "unavailable" }, 503);
+  if (!env.APP_KV || !env.NEWS_DB) return h.jsonResponse({ error: "unavailable" }, 503);
   const identity = await h.identify(request, env);
   if (!identity || identity.error) return h.jsonResponse({ error: "bad_request" }, 400);
   const body = await readBody(request);
@@ -654,13 +658,10 @@ export async function handleNewsReaction(request, env, h) {
   const reaction = raw === "" ? "" : REACTIONS.has(raw) ? raw : null;
   if (reaction === null) return h.jsonResponse({ error: "bad_request" }, 400);
   const owner = identity.hasDevice ? identity.deviceHash : identity.ipHash;
-  const windowStart = Math.floor(Date.now() / (REACTION_WINDOW_S * 1000));
-  const allowed = await consumeActionBudget(env, budgetKeys("reaction", identity), windowStart, REACTION_MAX);
-  if (!allowed) return h.jsonResponse({ error: "rate_limited" }, 429);
+  const allowed = await consumeActionBudget(env, budgetKeys("reaction", identity), Date.now());
+  if (!allowed.allowed) return h.jsonResponse({ error: "rate_limited", retryAfterSeconds: allowed.retryAfter }, 429, { "Retry-After": String(allowed.retryAfter), "X-Lockout-Seconds": String(allowed.retryAfter), "Cache-Control": "no-store" });
   try {
-    const result = env.NEWS_DB
-      ? await setReactionWithDatabase(env, articleId, owner, reaction)
-      : await setReactionWithKv(env, articleId, owner, reaction);
+    const result = await setReactionWithDatabase(env, articleId, owner, reaction);
     if (result.error) return h.jsonResponse({ error: result.error }, 503);
     return h.jsonResponse({ id: articleId, reaction: result.reaction, reactions: result.counts }, 200);
   } catch (err) {
@@ -669,7 +670,7 @@ export async function handleNewsReaction(request, env, h) {
 }
 
 export async function handleNewsLike(request, env, h) {
-  if (!env.APP_KV) return h.jsonResponse({ error: "unavailable" }, 503);
+  if (!env.APP_KV || !env.NEWS_DB) return h.jsonResponse({ error: "unavailable" }, 503);
   const identity = await h.identify(request, env);
   if (!identity || identity.error) return h.jsonResponse({ error: "bad_request" }, 400);
   const body = await readBody(request);
@@ -678,13 +679,10 @@ export async function handleNewsLike(request, env, h) {
   if (!ID_PATTERN.test(articleId)) return h.jsonResponse({ error: "bad_request" }, 400);
   const liked = typeof body.liked === "boolean" ? body.liked : body.unlike === true ? false : true;
   const owner = identity.hasDevice ? identity.deviceHash : identity.ipHash;
-  const windowStart = Math.floor(Date.now() / (LIKE_WINDOW_S * 1000));
-  const allowed = await consumeActionBudget(env, budgetKeys("like", identity), windowStart, LIKE_MAX);
-  if (!allowed) return h.jsonResponse({ error: "rate_limited" }, 429);
+  const allowed = await consumeActionBudget(env, budgetKeys("like", identity), Date.now());
+  if (!allowed.allowed) return h.jsonResponse({ error: "rate_limited", retryAfterSeconds: allowed.retryAfter }, 429, { "Retry-After": String(allowed.retryAfter), "X-Lockout-Seconds": String(allowed.retryAfter), "Cache-Control": "no-store" });
   try {
-    const result = env.NEWS_DB
-      ? await setLikeWithDatabase(env, articleId, owner, liked)
-      : await setLikeWithKv(env, articleId, owner, liked);
+    const result = await setLikeWithDatabase(env, articleId, owner, liked);
     if (result.error) return h.jsonResponse({ error: result.error }, 503);
     return h.jsonResponse({ id: articleId, likes: result.likes, liked: result.liked }, 200);
   } catch (err) {

@@ -52,14 +52,14 @@ sealed interface NewsLoad {
 sealed interface NewsLikeResult {
     data class Updated(val likes: Int, val liked: Boolean) : NewsLikeResult
     data object LimitReached : NewsLikeResult
-    data object RateLimited : NewsLikeResult
+    data class RateLimited(val retryAfterSeconds: Long) : NewsLikeResult
     data object Unavailable : NewsLikeResult
     data object Failed : NewsLikeResult
 }
 
 sealed interface NewsReactionResult {
     data class Updated(val reaction: String?, val counts: Map<String, Int>) : NewsReactionResult
-    data object RateLimited : NewsReactionResult
+    data class RateLimited(val retryAfterSeconds: Long) : NewsReactionResult
     data object Unavailable : NewsReactionResult
     data object Failed : NewsReactionResult
 }
@@ -189,7 +189,7 @@ object NewsFeed {
                         val selected = json.optString("reaction").takeIf { Reaction.of(it) != null }
                         NewsReactionResult.Updated(selected, parseCounts(json.optJSONObject("reactions")))
                     }
-                    response.code == 429 -> NewsReactionResult.RateLimited
+                    response.code == 429 -> NewsReactionResult.RateLimited(response.header("Retry-After")?.toLongOrNull()?.coerceAtLeast(1) ?: 900L)
                     response.code == 503 -> NewsReactionResult.Unavailable
                     else -> NewsReactionResult.Failed
                 }
@@ -219,7 +219,7 @@ object NewsFeed {
                         json?.optBoolean("liked", liked) ?: liked
                     )
                     error == "limit_reached" -> NewsLikeResult.LimitReached
-                    error == "rate_limited" -> NewsLikeResult.RateLimited
+                    error == "rate_limited" -> NewsLikeResult.RateLimited(response.header("Retry-After")?.toLongOrNull()?.coerceAtLeast(1) ?: 900L)
                     response.code == 503 -> NewsLikeResult.Unavailable
                     else -> NewsLikeResult.Failed
                 }

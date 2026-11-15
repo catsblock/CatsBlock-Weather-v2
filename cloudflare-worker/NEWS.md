@@ -56,7 +56,7 @@ Body: `{"id": "<article id>", "liked": true}` with `Content-Type: application/js
 
 Response: `200 {"id": "...", "likes": 13, "liked": true}`. `liked` always reports the state that is actually stored, so a client can apply it directly. Both operations are idempotent: repeating the same body leaves the total unchanged and never creates a second vote.
 
-Errors: `400 bad_request` (missing or malformed identifier), `429 rate_limited` (40 actions per ten minutes), `503 unavailable` (storage missing).
+Errors: `400 bad_request` (missing or malformed identifier), `429 rate_limited` (the 15th action within two minutes starts a 15-minute lockout), `503 unavailable` (storage missing). A `429` response includes `Retry-After` and `X-Lockout-Seconds`.
 
 ## POST /v1/news/reaction
 
@@ -74,7 +74,7 @@ Response:
 }
 ```
 
-`reaction` is the state that is actually stored, and `reactions` is the resulting per-emoji tally. Errors: `400 bad_request` (unknown reaction or identifier), `429 rate_limited` (80 actions per ten minutes), `503 unavailable` (storage missing).
+`reaction` is the state that is actually stored, and `reactions` is the resulting per-emoji tally. Errors: `400 bad_request` (unknown reaction or identifier), `429 rate_limited` (the 15th action within two minutes starts a 15-minute lockout), `503 unavailable` (storage missing). A `429` response includes `Retry-After` and `X-Lockout-Seconds`.
 
 ## Counts, consistency and abuse protection
 
@@ -84,7 +84,7 @@ Counters are never stored as separate mutable rows. Each like and each reaction 
 - a total can therefore never drift, double, or lose other reactions, regardless of how many requests arrive at once;
 - every write is a single statement, so no read-modify-write sequence exists to interleave badly.
 
-Rate limits use a fixed ten-minute window stored in D1 and incremented atomically. Two keys are consumed per action: the device identity and the client address, so rotating device identifiers from one address does not multiply the budget. When D1 is unavailable the limiter falls back to the KV counter, which is approximate but still bounded. The app additionally collapses rapid taps into one in-flight request per article, sending only the latest desired state.
+Rate limits use a fixed two-minute window stored in D1. The first 14 valid actions are accepted; the 15th atomically sets `blocked_until` to 15 minutes in the future and is rejected. Every request during that period is rejected without changing the vote. Two keys are enforced per action: the device identity and the client address, so rotating device identifiers from one address does not multiply the budget. The limiter fails closed if D1 is unavailable; it never falls back to a non-atomic KV counter for mutations. The app additionally collapses rapid taps into one in-flight request per article and honors the server's `Retry-After` lockout locally.
 
 ## Sources and caching
 
@@ -93,6 +93,6 @@ Each language is served by a keyless Google News RSS weather query (`hl`/`gl` pe
 ## Requirements
 
 - `APP_KV` must be bound; without it the routes answer `503 unavailable` and the app shows its "news unavailable" state.
-- `NEWS_DB` (D1) must be bound and the migrations in `migrations/` applied (`wrangler d1 migrations apply`). Without the binding the likes and reactions answer `503 unavailable`.
+- `NEWS_DB` (D1) must be bound and the migrations in `migrations/` applied (`wrangler d1 migrations apply`), including `0004_news_action_lockouts.sql`. Without the binding the likes and reactions answer `503 unavailable` rather than using an unsafe KV write path.
 - `node --check news.js` passes; the module has no dependencies beyond the existing KV and D1 bindings.
 - The app only shows the tab content when the build has `CLOUDFLARE_WEBSITE` (https) and `APP_TOKEN` configured.

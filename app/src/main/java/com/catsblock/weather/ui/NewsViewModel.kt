@@ -44,6 +44,8 @@ class NewsViewModel : ViewModel() {
     private val reactionQueues = HashMap<String, LatestSender<String>>()
     private val likeSnapshots = HashMap<String, Pair<Boolean, Int>>()
     private val reactionSnapshots = HashMap<String, Pair<String?, Map<String, Int>>>()
+    private val likeBlockedUntil = HashMap<String, Long>()
+    private val reactionBlockedUntil = HashMap<String, Long>()
 
     fun ensureLoaded(language: String, region: String, query: String) {
         this.language = language
@@ -79,6 +81,7 @@ class NewsViewModel : ViewModel() {
 
     fun setLike(article: NewsArticle, liked: Boolean) {
         val current = _state.value.articles.firstOrNull { it.id == article.id } ?: return
+        if ((likeBlockedUntil[current.id] ?: 0L) > System.currentTimeMillis()) return
         if (current.liked == liked) return
         likeSnapshots.putIfAbsent(current.id, current.liked to current.likes)
         updateArticle(current.id) { it.withLike(liked) }
@@ -87,6 +90,7 @@ class NewsViewModel : ViewModel() {
 
     fun toggleReaction(article: NewsArticle, reaction: Reaction) {
         val current = _state.value.articles.firstOrNull { it.id == article.id } ?: return
+        if ((reactionBlockedUntil[current.id] ?: 0L) > System.currentTimeMillis()) return
         val target = if (current.myReaction == reaction.emoji) null else reaction.emoji
         if (current.myReaction == target) return
         reactionSnapshots.putIfAbsent(current.id, current.myReaction to current.reactions)
@@ -151,6 +155,13 @@ class NewsViewModel : ViewModel() {
                     likeSnapshots[articleId] = result.liked to result.likes
                     updateArticle(articleId) { it.copy(liked = result.liked, likes = result.likes) }
                 }
+                is NewsLikeResult.RateLimited -> {
+                    likeBlockedUntil[articleId] = System.currentTimeMillis() + result.retryAfterSeconds * 1000L
+                    likeSnapshots[articleId]?.let { snapshot ->
+                        updateArticle(articleId) { it.copy(liked = snapshot.first, likes = snapshot.second) }
+                    }
+                    _state.update { it.copy(message = likeMessage(result)) }
+                }
                 else -> {
                     likeSnapshots[articleId]?.let { snapshot ->
                         updateArticle(articleId) { it.copy(liked = snapshot.first, likes = snapshot.second) }
@@ -167,6 +178,13 @@ class NewsViewModel : ViewModel() {
                 is NewsReactionResult.Updated -> {
                     reactionSnapshots[articleId] = result.reaction to result.counts
                     updateArticle(articleId) { it.copy(myReaction = result.reaction, reactions = result.counts) }
+                }
+                is NewsReactionResult.RateLimited -> {
+                    reactionBlockedUntil[articleId] = System.currentTimeMillis() + result.retryAfterSeconds * 1000L
+                    reactionSnapshots[articleId]?.let { snapshot ->
+                        updateArticle(articleId) { it.copy(myReaction = snapshot.first, reactions = snapshot.second) }
+                    }
+                    _state.update { it.copy(message = reactionMessage(result)) }
                 }
                 else -> {
                     reactionSnapshots[articleId]?.let { snapshot ->
@@ -186,13 +204,13 @@ class NewsViewModel : ViewModel() {
 
     private fun likeMessage(result: NewsLikeResult): String = when (result) {
         NewsLikeResult.LimitReached -> tr("Like limit reached")
-        NewsLikeResult.RateLimited -> tr("Too many requests. Try again later.")
+        is NewsLikeResult.RateLimited -> tr("Too many requests. Try again later.")
         NewsLikeResult.Unavailable -> tr("The news service is not available right now.")
         else -> tr("The news service is not available right now.")
     }
 
     private fun reactionMessage(result: NewsReactionResult): String = when (result) {
-        NewsReactionResult.RateLimited -> tr("Too many requests. Try again later.")
+        is NewsReactionResult.RateLimited -> tr("Too many requests. Try again later.")
         else -> tr("The news service is not available right now.")
     }
 }
