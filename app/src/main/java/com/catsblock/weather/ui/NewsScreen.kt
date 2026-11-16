@@ -52,6 +52,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -303,13 +305,28 @@ private fun AccountGateDialog(onCancel: () -> Unit, onSuccess: () -> Unit) {
     var busy by rememberSaveable { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = onCancel,
-        title = { Text("To react to this news, please log in!") },
+        title = { Text(tr(if (register) "Create an account to react" else "Sign in to react")) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("This makes our community safer against bots and DDoS attacks. Read our privacy policy and terms of service.")
-                TextField(value = username, onValueChange = { username = it }, singleLine = true, label = { Text("Username") })
-                TextField(value = password, onValueChange = { password = it }, singleLine = true, label = { Text("Password") })
-                if (register) TextField(value = confirmation, onValueChange = { confirmation = it }, singleLine = true, label = { Text("Confirm password") })
+                Text(tr("Your account keeps likes and reactions fair and helps protect the community from automated abuse."))
+                Text(tr("Read the Privacy Policy and Terms of Service in Settings before creating an account."), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                OutlinedTextField(value = username, onValueChange = { username = it }, singleLine = true, label = { Text(tr("Username")) })
+                OutlinedTextField(
+                    value = password,
+                    onValueChange = { password = it },
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                    label = { Text(tr("Password")) }
+                )
+                if (register) OutlinedTextField(
+                    value = confirmation,
+                    onValueChange = { confirmation = it },
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                    label = { Text(tr("Confirm password")) }
+                )
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             }
         },
@@ -325,10 +342,12 @@ private fun AccountGateDialog(onCancel: () -> Unit, onSuccess: () -> Unit) {
                         is AccountAuth.Result.Failure -> error = result.message
                     }
                 }
-            }) { Text(if (register) "Create account" else "Login") }
+            }) { Text(tr(if (register) "Create account" else "Sign in")) }
         },
         dismissButton = {
-            TextButton(onClick = { register = !register; error = null }) { Text(if (register) "Use login" else "Create account") }
+            TextButton(onClick = { register = !register; error = null }) {
+                Text(tr(if (register) "Already have an account? Sign in" else "Need an account? Create one"))
+            }
         }
     )
 }

@@ -49,7 +49,7 @@ internal object AccountAuth {
     private const val MSG_CREDENTIALS = "Incorrect username or password."
     private const val MSG_EXPIRED = "Your session has expired. Log in again."
     private const val MSG_RATE = "Too many attempts. Try again later."
-    private const val MSG_UNAVAILABLE = "The account service is not available right now."
+    private const val MSG_UNAVAILABLE = "Account service temporarily unavailable. Please try again later."
     private const val MSG_NETWORK = "Check your connection and try again."
     private const val MSG_GENERIC = "Something went wrong. Try again."
 

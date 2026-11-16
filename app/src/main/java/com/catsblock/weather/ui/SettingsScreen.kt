@@ -256,22 +256,22 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
     if (deleteAccountDialog) {
         AlertDialog(
             onDismissRequest = { deleteAccountDialog = false },
-            title = { Text("Delete account permanently?") },
+            title = { Text(tr("Delete account permanently?")) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("This revokes sessions and cannot be undone. Enter your current password.")
-                    OutlinedTextField(value = deletePassword, onValueChange = { deletePassword = it }, singleLine = true, label = { Text("Password") })
+                    Text(tr("This revokes sessions and cannot be undone. Enter your current password."))
+                    OutlinedTextField(value = deletePassword, onValueChange = { deletePassword = it }, singleLine = true, label = { Text(tr("Password")) })
                 }
             },
             confirmButton = {
                 TextButton(onClick = {
                     scope.launch {
                         when (val result = AccountAuth.delete(deletePassword)) {
-                            is AccountAuth.Result.Success -> { deleteAccountDialog = false; deletePassword = ""; accountMessage = "Account deleted." }
+                            is AccountAuth.Result.Success -> { deleteAccountDialog = false; deletePassword = ""; accountMessage = tr("Account deleted.") }
                             is AccountAuth.Result.Failure -> accountMessage = result.message
                         }
                     }
-                }) { Text("Delete") }
+                }) { Text(tr("Delete")) }
             },
             dismissButton = { TextButton(onClick = { deleteAccountDialog = false }) { Text(tr("Cancel")) } }
         )
@@ -470,17 +470,17 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
                 .padding(horizontal = settingsSide, vertical = 8.dp)
                 .padding(bottom = LocalBottomInset.current)
         ) {
-            CategoryTitle("Account")
+            CategoryTitle(tr("Account"))
             Group {
                 Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(if (AccountAuth.loggedIn()) "Logged in as @${AccountAuth.currentUsername()}" else "Not logged in", style = MaterialTheme.typography.titleMedium)
+                    Text(if (AccountAuth.loggedIn()) tr("Logged in as @%s").format(AccountAuth.currentUsername()) else tr("Not logged in"), style = MaterialTheme.typography.titleMedium)
                     accountMessage?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                     if (AccountAuth.loggedIn()) {
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            TextButton(onClick = { scope.launch { AccountAuth.logout(); accountMessage = "Logged out." } }) { Text("Log out") }
-                            TextButton(onClick = { deleteAccountDialog = true }) { Text("Delete account") }
+                            TextButton(onClick = { scope.launch { AccountAuth.logout(); accountMessage = tr("Logged out.") } }) { Text(tr("Log out")) }
+                            TextButton(onClick = { deleteAccountDialog = true }) { Text(tr("Delete account")) }
                         }
-                    } else Text("Use the news engagement dialog to create or access a first-party account.")
+                    } else Text(tr("Use the news engagement dialog to create or access a first-party account."))
                 }
             }
 
@@ -1008,13 +1008,13 @@ private val CustomSwatches = listOf(
 
 private fun colorStyleLabel(style: ColorStyle): String = when (style) {
     ColorStyle.Weather -> tr("Weather")
-    ColorStyle.Material -> "Material"
+    ColorStyle.Material -> tr("Material 3 Expressive")
     ColorStyle.Custom -> tr("Custom")
 }
 
 private fun colorStyleNote(style: ColorStyle): String = when (style) {
     ColorStyle.Weather -> tr("Colors follow the current weather. This is the default.")
-    ColorStyle.Material -> tr("Colors follow your wallpaper on Android 12 and newer.")
+    ColorStyle.Material -> tr("Uses Material 3 Expressive shapes and dynamic colors from your wallpaper on Android 12 and newer.")
     ColorStyle.Custom -> tr("Pick your own accent color.")
 }
 

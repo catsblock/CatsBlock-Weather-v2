@@ -316,16 +316,16 @@ internal val termsStrings: Map<String, Array<out String>> = mapOf(
         "Perubahan ketentuan ini"
     ),
     row(
-        "We may update these terms at any time. Continuing to use the App after an update means you accept it. Last updated: 2026-11-01.",
-        "Podemos atualizar estes termos a qualquer momento. Continuar usando o App após uma atualização significa que você a aceita. Última atualização: 01/11/2026.",
-        "Podemos atualizar estes termos a qualquer momento. Continuar a utilizar a App após uma atualização significa que a aceita. Última atualização: 01/11/2026.",
-        "Podemos actualizar estos términos en cualquier momento. Seguir usando la App tras una actualización significa que la aceptas. Última actualización: 01/11/2026.",
-        "Nous pouvons mettre à jour ces conditions à tout moment. Continuer à utiliser l'App après une mise à jour signifie que vous l'acceptez. Dernière mise à jour : 01/11/2026.",
-        "Мы можем обновлять эти условия в любое время. Продолжая пользоваться Приложением после обновления, вы принимаете его. Последнее обновление: 01.11.2026.",
-        "Wir können diese Bedingungen jederzeit aktualisieren. Wenn du die App nach einer Aktualisierung weiter nutzt, akzeptierst du sie. Zuletzt aktualisiert: 01.11.2026.",
-        "Possiamo aggiornare questi termini in qualsiasi momento. Continuare a usare l'App dopo un aggiornamento significa accettarlo. Ultimo aggiornamento: 01/11/2026.",
-        "약관은 언제든지 업데이트될 수 있습니다. 업데이트 후에도 앱을 계속 사용하면 이를 수락한 것으로 간주됩니다. 최종 업데이트: 2026-11-01.",
-        "Kami dapat memperbarui ketentuan ini kapan saja. Terus menggunakan Aplikasi setelah pembaruan berarti Anda menerimanya. Terakhir diperbarui: 01-11-2026."
+        "We may update these terms at any time. Continuing to use the App after an update means you accept it. Last updated: 2026-11-16.",
+        "Podemos atualizar estes termos a qualquer momento. Continuar usando o App após uma atualização significa que você a aceita. Última atualização: 16/11/2026.",
+        "Podemos atualizar estes termos a qualquer momento. Continuar a utilizar a App após uma atualização significa que a aceita. Última atualização: 16/11/2026.",
+        "Podemos actualizar estos términos en cualquier momento. Seguir usando la App tras una actualización significa que la aceptas. Última actualización: 16/11/2026.",
+        "Nous pouvons mettre à jour ces conditions à tout moment. Continuer à utiliser l'App après une mise à jour signifie que vous l'acceptez. Dernière mise à jour : 16/11/2026.",
+        "Мы можем обновлять эти условия в любое время. Продолжая пользоваться Приложением после обновления, вы принимаете его. Последнее обновление: 16.11.2026.",
+        "Wir können diese Bedingungen jederzeit aktualisieren. Wenn du die App nach einer Aktualisierung weiter nutzt, akzeptierst du sie. Zuletzt aktualisiert: 16.11.2026.",
+        "Possiamo aggiornare questi termini in qualsiasi momento. Continuare a usare l'App dopo un aggiornamento significa accettarlo. Ultimo aggiornamento: 16/11/2026.",
+        "약관은 언제든지 업데이트될 수 있습니다. 업데이트 후에도 앱을 계속 사용하면 이를 수락한 것으로 간주됩니다. 최종 업데이트: 2026-11-16.",
+        "Kami dapat memperbarui ketentuan ini kapan saja. Terus menggunakan Aplikasi setelah pembaruan berarti Anda menerimanya. Terakhir diperbarui: 16-11-2026."
     ),
     row(
         "When the WeatherAPI.com, Visual Crossing or OpenWeather data source or the Agent is used, requests go through a Cloudflare Worker operated by CatsBlock Corporation, which keeps API keys off your device and limits abuse. To apply limits separately to each device, even when several devices share the same network or IP address, the App creates a one-way hash on your device from general hardware characteristics (manufacturer, model, board, processor details, screen size and Android version) and sends only that hash. The Worker combines it with a one-way hash of your IP address, and the counters tied to the result are kept in a Durable Object and Cloudflare KV for at most 24 hours. The original IP address and the raw hardware details are never stored. The hash is not an advertising identifier, is not linked to any account or person, and devices with identical hardware on the same network may share a limit. A network-wide counter, also based on a one-way hash of the IP address, helps prevent abuse. Your country, derived by Cloudflare from the connection, is checked per request and not stored. Weather responses for rounded coordinates are cached for about 15 minutes. Cloudflare may process connection data under its own terms. The Open-Meteo source does not use this proxy.",

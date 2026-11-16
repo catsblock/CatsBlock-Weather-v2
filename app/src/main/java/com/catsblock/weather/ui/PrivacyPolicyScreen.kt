@@ -70,7 +70,7 @@ private val policySections = listOf(
     "No individual support" to
         "CatsBlock Corporation does not provide individual support and offers no contact channel. Requests, questions or messages cannot be answered.",
     "Changes to this policy" to
-        "We may update this policy at any time. Continuing to use the App after an update means you accept it. Last updated: 2026-11-07."
+        "We may update this policy at any time. Continuing to use the App after an update means you accept it. Last updated: 2026-11-16."
 )
 
 @OptIn(ExperimentalMaterial3Api::class)

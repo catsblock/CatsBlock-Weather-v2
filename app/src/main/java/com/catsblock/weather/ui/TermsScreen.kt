@@ -48,7 +48,7 @@ private val termsSections = listOf(
     "Suspension and termination" to
         "We may suspend or block access to the App or the Agent, including for violations of these terms. You can stop using the App at any time by uninstalling it.",
     "Changes to these terms" to
-        "We may update these terms at any time. Continuing to use the App after an update means you accept it. Last updated: 2026-11-01."
+        "We may update these terms at any time. Continuing to use the App after an update means you accept it. Last updated: 2026-11-16."
 )
 
 @OptIn(ExperimentalMaterial3Api::class)

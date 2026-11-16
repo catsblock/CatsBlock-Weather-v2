@@ -70,7 +70,7 @@ jobs:
           fi
           echo "KV_ID=$EXISTING_ID" >> "$GITHUB_ENV"
 
-      - name: Resolve D1 database when permitted
+      - name: Resolve required D1 database
         working-directory: cloudflare-worker
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -86,16 +86,15 @@ jobs:
             if [ "$LIST_STATUS" -eq 0 ]; then
               NEWS_DB_ID=$(node -e "const list=JSON.parse(process.argv[1]); const match=list.find(n=>n.name==='catsblock-weather-news'); process.stdout.write(match ? match.uuid : '')" "$LIST_JSON")
             else
-              echo "::warning::D1 is not available to this Cloudflare token; deploying with the validated KV reaction fallback."
               cat /tmp/wrangler-d1-list.log >&2 || true
             fi
           fi
-          if [ -n "$NEWS_DB_ID" ]; then
-            echo "NEWS_DB_ENABLED=true" >> "$GITHUB_ENV"
-            echo "NEWS_DB_ID=$NEWS_DB_ID" >> "$GITHUB_ENV"
-          else
-            echo "NEWS_DB_ENABLED=false" >> "$GITHUB_ENV"
+          if [ -z "$NEWS_DB_ID" ]; then
+            echo "::error::A D1 database named catsblock-weather-news is required. Set the NEWS_DB_ID repository secret or grant the Cloudflare token D1 read access."
+            exit 1
           fi
+          echo "NEWS_DB_ENABLED=true" >> "$GITHUB_ENV"
+          echo "NEWS_DB_ID=$NEWS_DB_ID" >> "$GITHUB_ENV"
       - name: Write wrangler configuration
         working-directory: cloudflare-worker
         run: |
