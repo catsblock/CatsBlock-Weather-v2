@@ -15,6 +15,7 @@ var LAND_URLS = [
 ];
 var FRONT = {drop:4, none:999, step:3, window:2};
 var frontHits = [], zoneCanvas = null;
+var mapTimeTimer = null;
 
 var requestCache = new Map(), requestQueue = [], requestActive = 0, requestNextStart = 0;
 var REQUEST_CACHE_LIMIT = 48, REQUEST_CONCURRENCY = 1, REQUEST_INTERVAL = 350, REQUEST_TIMEOUT = 15000;
@@ -542,9 +543,14 @@ function rainTileLayer(host, path) {
 function setTime(epochMillis) {
   var next = Number(epochMillis) / 1000;
   if (!isFinite(next)) return;
+  if (Math.abs(next - state.time) < 0.001 && !mapTimeTimer) return;
   state.time = next;
-  if (state.layer === 'precip') startLayer(state.layer);
-  else if (isGrid(state.layer) && state.layer !== 'sea' && state.layer !== 'drought') loadGrid(true);
+  if (mapTimeTimer) clearTimeout(mapTimeTimer);
+  mapTimeTimer = setTimeout(function () {
+    mapTimeTimer = null;
+    if (state.layer === 'precip') startLayer(state.layer);
+    else if (isGrid(state.layer) && state.layer !== 'sea' && state.layer !== 'drought') loadGrid(true);
+  }, 220);
 }
 
 function fmtDelta(c) { return state.f ? Math.round(c * 9 / 5) + '°F' : Math.round(c) + '°C'; }

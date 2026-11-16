@@ -680,9 +680,12 @@ function startLayer(id) {
   setLegend('');
 }
 
-function setLayer(id, title, err, f, labels) {
+function setLayer(id, title, err, f, labels, epochMillis) {
   state.layer = id; state.title = title; state.err = err; state.f = f;
   if (labels) state.labels = typeof labels === 'string' ? JSON.parse(labels) : labels;
+  var selected = Number(epochMillis);
+  if (isFinite(selected)) state.time = selected / 1000;
+  if (mapTimeTimer) { clearTimeout(mapTimeTimer); mapTimeTimer = null; }
   startLayer(id);
 }
 

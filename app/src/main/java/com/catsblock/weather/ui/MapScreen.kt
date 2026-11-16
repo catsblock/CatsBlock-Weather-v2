@@ -426,7 +426,7 @@ fun MapScreen(vm: WeatherViewModel) {
         if (ready) {
             MapHost.run(
                 "MapApi.setLayer(" + JSONObject.quote(layer.id) + "," + JSONObject.quote(tr(layer.label)) + "," +
-                    JSONObject.quote(tr("Map data unavailable")) + "," + settings.fahrenheit + "," + mapLabels() + ")"
+                    JSONObject.quote(tr("Map data unavailable")) + "," + settings.fahrenheit + "," + mapLabels() + "," + selectedTimeMillis + ")"
             )
         }
     }
