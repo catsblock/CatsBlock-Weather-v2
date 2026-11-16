@@ -3,6 +3,7 @@ package com.catsblock.weather.ui.sky
 import androidx.compose.runtime.Stable
 import com.catsblock.weather.data.Condition
 import com.catsblock.weather.data.Solar
+import java.time.ZonedDateTime
 import kotlin.math.cos
 import kotlin.math.max
 import kotlin.math.pow
@@ -130,14 +131,17 @@ fun buildSkyScene(
     atmosphere: SkyAtmosphere,
     fog: Float,
     storm: Float,
-    tier: SkyTier
+    tier: SkyTier,
+    simulatedSolarTime: ZonedDateTime? = null,
+    forceSunny: Boolean = false
 ): SkyScene {
-    val sunPosition = Solar.position(epochMs, latitude, longitude)
+    val sceneEpochMs = simulatedSolarTime?.toInstant()?.toEpochMilli() ?: epochMs
+    val sunPosition = Solar.position(sceneEpochMs, latitude, longitude)
     val sunVector = sunDirection(sunPosition.azimuth, sunPosition.altitude)
     val sx = sunVector[0].toDouble()
     val sy = sunVector[1].toDouble()
     val sz = sunVector[2].toDouble()
-    val moon = SkyAstro.moonView(epochMs, latitude, longitude, sunVector)
+    val moon = SkyAstro.moonView(sceneEpochMs, latitude, longitude, sunVector)
     val moonAltitudeDeg = Math.toDegrees(moon.altitude)
     val yaw = if (latitude >= 0.0) Math.PI else 0.0
     val pitch = Math.toRadians(CAMERA_PITCH_DEG)
@@ -152,7 +156,7 @@ fun buildSkyScene(
         cos(pitch).toFloat(),
         (-cos(yaw) * sin(pitch)).toFloat()
     )
-    val sidereal = SkyAstro.siderealRadians(epochMs, longitude)
+    val sidereal = SkyAstro.siderealRadians(sceneEpochMs, longitude)
     val phi = Math.toRadians(latitude)
     val cloudStyle = skyStyle(cover)
     return SkyScene(
@@ -160,8 +164,8 @@ fun buildSkyScene(
         moonVisible = moonAltitudeDeg > -3.0,
         skyEquatorial = floatArrayOf(sin(phi).toFloat(), cos(phi).toFloat(), sin(sidereal).toFloat(), cos(sidereal).toFloat()),
         gain = (1.0 + 6.0 * smoothstep(0.0, -12.0, Math.toDegrees(sunPosition.altitude))).toFloat(),
-        style = FloatArray(4) { i -> cloudStyle[i] + (STORM_STYLE[i] - cloudStyle[i]) * storm },
-        cirrus = skyCirrus(cover) * (1f - storm) * (1f - fog),
+        style = FloatArray(4) { i -> cloudStyle[i] + (STORM_STYLE[i] - cloudStyle[i]) * if (forceSunny) 0f else storm },
+        cirrus = skyCirrus(if (forceSunny) 0.03f else cover) * (1f - if (forceSunny) 0f else storm) * (1f - if (forceSunny) 0f else fog),
         sunTransmittanceHigh = SkyPhysics.sunTransmittance(sy.coerceAtLeast(0.01)),
         sun = sunVector,
         right = right,
@@ -169,15 +173,15 @@ fun buildSkyScene(
         forward = forward,
         sunTransmittance = SkyPhysics.sunTransmittance(sy.coerceAtLeast(0.0)),
         ambient = SkyPhysics.zenithAmbient(doubleArrayOf(sx, sy, sz), max(tier.atmosphereSteps, 4)),
-        cover = cover,
-        thickness = thickness,
-        shade = atmosphere.shade,
-        grade = atmosphere.grade,
-        contrast = atmosphere.contrast,
-        veil = atmosphere.veil,
-        glow = atmosphere.glow,
+        cover = if (forceSunny) 0.03f else cover,
+        thickness = if (forceSunny) 0.3f else thickness,
+        shade = if (forceSunny) 0f else atmosphere.shade,
+        grade = if (forceSunny) 0f else atmosphere.grade,
+        contrast = if (forceSunny) 0f else atmosphere.contrast,
+        veil = if (forceSunny) 0f else atmosphere.veil,
+        glow = if (forceSunny) max(atmosphere.glow, 0.15f) else atmosphere.glow,
         tint = atmosphere.tint,
-        fog = fog
+        fog = if (forceSunny) 0f else fog
     )
 }
 

@@ -41,10 +41,12 @@ object WidgetUpdater {
 
     suspend fun refresh(context: Context) {
         val app = context.applicationContext
-        val manager = AppWidgetManager.getInstance(app)
-        providers.forEach { (kind, provider) ->
-            val ids = manager.getAppWidgetIds(ComponentName(app, provider))
-            if (ids.isNotEmpty()) render(app, manager, kind, ids)
+        withContext(Dispatchers.IO) {
+            val manager = AppWidgetManager.getInstance(app)
+            providers.forEach { (kind, provider) ->
+                val ids = manager.getAppWidgetIds(ComponentName(app, provider))
+                if (ids.isNotEmpty()) render(app, manager, kind, ids)
+            }
         }
     }
 

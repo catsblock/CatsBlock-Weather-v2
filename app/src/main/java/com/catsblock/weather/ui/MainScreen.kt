@@ -121,7 +121,6 @@ import com.catsblock.weather.data.precipToday
 import com.catsblock.weather.data.uvAdvice
 import com.catsblock.weather.data.windDescription
 import com.catsblock.weather.i18n.tr
-import com.catsblock.weather.ui.sky.SkySimulationInput
 import com.catsblock.weather.sound.WeatherSoundPlayer
 import com.catsblock.weather.ui.glass.EntranceCounter
 import com.catsblock.weather.ui.glass.LocalEntrance
@@ -135,6 +134,8 @@ import dev.chrisbanes.haze.HazeState
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.temporal.ChronoUnit
+import java.time.LocalDate
+import java.time.ZoneId
 import kotlin.math.roundToInt
 
 private fun metricKindOf(sheet: Sheet?): MetricKind? = when (sheet) {
@@ -278,6 +279,32 @@ fun MainScreen(vm: WeatherViewModel) {
     var mode by remember { mutableStateOf(DashboardMode.Temperature) }
 
     val bundle = (state as? WeatherState.Success)?.bundle
+    val isWeatherLoading = state is WeatherState.Loading
+    val loadingZone = remember { ZoneId.systemDefault() }
+    var loadingClockNanos by remember { mutableStateOf<Long?>(null) }
+    var loadingStartNanos by remember { mutableStateOf<Long?>(null) }
+    var loadingDate by remember { mutableStateOf<LocalDate?>(null) }
+    LaunchedEffect(isWeatherLoading) {
+        if (!isWeatherLoading) {
+            loadingClockNanos = null
+            loadingStartNanos = null
+            loadingDate = null
+        } else {
+            val start = System.nanoTime()
+            loadingStartNanos = start
+            loadingDate = LocalDate.now(loadingZone)
+            while (true) {
+                loadingClockNanos = System.nanoTime()
+                delay(100)
+            }
+        }
+    }
+    val simulatedLoadingSkyTime = if (isWeatherLoading) {
+        val start = loadingStartNanos
+        val clock = loadingClockNanos
+        val date = loadingDate
+        if (start != null && clock != null && date != null) loadingSkyTime(start, clock, date, loadingZone) else null
+    } else null
     val kind = bundle?.current?.kind ?: Condition.Clear
     val isDay = bundle?.current?.isDay ?: true
     val lightning = remember { LightningState() }
@@ -327,24 +354,25 @@ fun MainScreen(vm: WeatherViewModel) {
         Box(Modifier.fillMaxSize()) {
             Box(Modifier.fillMaxSize().hazeBackdropSource(hazeState)) {
                 WeatherBackground(
-                    kind,
-                    isDay,
-                    Modifier.fillMaxSize().blur((progress * 30f).dp, BlurredEdgeTreatment.Unbounded),
-                    bundle?.current?.now?.toLocalTime(),
-                    bundle?.current?.cloud ?: -1,
-                    bundle?.current?.windSpeed ?: 0.0,
-                    bundle?.current?.now?.dayOfYear ?: 0,
-                    bundle?.current?.windDir ?: 0.0,
-                    bundle?.current?.pressure ?: Double.NaN,
-                    precipNow,
-                    city?.lat ?: Double.NaN,
-                    city?.lon ?: Double.NaN,
-                    bundle?.let { b ->
+                    if (isWeatherLoading) Condition.Clear else kind,
+                    if (isWeatherLoading) true else isDay,
+                    Modifier.fillMaxSize().blur(if (isWeatherLoading) 0.dp else (progress * 30f).dp, BlurredEdgeTreatment.Unbounded),
+                    simulatedLoadingSkyTime?.toLocalTime() ?: bundle?.current?.now?.toLocalTime(),
+                    if (isWeatherLoading) 0 else bundle?.current?.cloud ?: -1,
+                    if (isWeatherLoading) 0.0 else bundle?.current?.windSpeed ?: 0.0,
+                    simulatedLoadingSkyTime?.dayOfYear ?: bundle?.current?.now?.dayOfYear ?: 0,
+                    if (isWeatherLoading) 0.0 else bundle?.current?.windDir ?: 0.0,
+                    if (isWeatherLoading) 1013.0 else bundle?.current?.pressure ?: Double.NaN,
+                    if (isWeatherLoading) 0.0 else precipNow,
+                    if (isWeatherLoading) city?.lat ?: 0.0 else city?.lat ?: Double.NaN,
+                    if (isWeatherLoading) city?.lon ?: 0.0 else city?.lon ?: Double.NaN,
+                    if (isWeatherLoading) simulatedLoadingSkyTime?.let(::loadingSkyEpochMillis) ?: Long.MIN_VALUE else bundle?.let { b ->
                         b.current.now.toEpochSecond(java.time.ZoneOffset.ofTotalSeconds(b.utcOffsetSeconds)) * 1000L
                     } ?: Long.MIN_VALUE,
-                    bundle?.current?.visibility ?: 10000.0,
-                    skyVisible = progress < 0.98f,
-                    lightningState = lightning
+                    if (isWeatherLoading) 10000.0 else bundle?.current?.visibility ?: 10000.0,
+                    skyVisible = isWeatherLoading || progress < 0.98f,
+                    lightningState = lightning,
+                    forceAtmosphere = isWeatherLoading
                 )
                 AtmosphericPrecipitation(
                     mix = if (bundle == null || effectsOff) {
@@ -734,17 +762,7 @@ private fun WeatherDetails(
     }
 
     if (sheet is Sheet.Sun && city != null) {
-        val simulation = SkySimulationInput(
-            kind = cur.kind,
-            cloud = cur.cloud,
-            windKmh = cur.windSpeed,
-            windDirDeg = cur.windDir,
-            precipMm = bundle.hours.firstOrNull { it.time == cur.now.truncatedTo(ChronoUnit.HOURS) }?.precip ?: -1.0,
-            pressureHpa = cur.pressure,
-            visibilityM = cur.visibility,
-            epochMs = cur.now.toEpochSecond(java.time.ZoneOffset.ofTotalSeconds(bundle.utcOffsetSeconds)) * 1000L
-        )
-        SunScreen(city, bundle.utcOffsetSeconds, cur.now, simulation) { sheet = null }
+        SunScreen(city, bundle.utcOffsetSeconds, cur.now) { sheet = null }
     }
 
     if (sheet is Sheet.Travel) {

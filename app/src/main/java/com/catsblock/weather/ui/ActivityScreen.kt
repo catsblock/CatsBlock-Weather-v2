@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -232,9 +233,8 @@ fun ActivityDialog(stats: ActivityStats, fahrenheit: Boolean, vm: WeatherViewMod
         }
 
         SectionTitle(tr("Observed conditions"))
-        Surface(
-            shape = RoundedCornerShape(24.dp),
-            color = MaterialTheme.colorScheme.surfaceContainer,
+        ExpressiveSurface(
+            shape = WeatherExpressiveShapes.section,
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(Modifier.padding(vertical = 4.dp)) {
@@ -285,9 +285,8 @@ private fun SourcesDialog(onClose: () -> Unit) {
     val context = LocalContext.current
     FullScreenDialog(tr("Data sources and safety"), onClose) {
         SectionTitle(tr("Where the data comes from"), top = 0.dp)
-        Surface(
-            shape = RoundedCornerShape(24.dp),
-            color = MaterialTheme.colorScheme.surfaceContainer,
+        ExpressiveSurface(
+            shape = WeatherExpressiveShapes.section,
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(Modifier.padding(vertical = 4.dp)) {
@@ -313,9 +312,8 @@ private fun SourcesDialog(onClose: () -> Unit) {
 
         SectionTitle(tr("Is this app safe?"))
         safetyParagraphs.forEach { (title, body) ->
-            Surface(
-                shape = RoundedCornerShape(24.dp),
-                color = MaterialTheme.colorScheme.surfaceContainer,
+            ExpressiveSurface(
+                shape = WeatherExpressiveShapes.tile,
                 modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
             ) {
                 Column(Modifier.padding(16.dp)) {
@@ -368,7 +366,9 @@ private fun FullScreenDialog(title: String, onClose: () -> Unit, content: @Compo
                     Modifier
                         .weight(1f)
                         .verticalScroll(rememberScrollState())
-                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                        .align(Alignment.CenterHorizontally)
+                        .widthIn(max = LocalWindowLayout.current.contentMaxWidth)
+                        .padding(horizontal = if (LocalWindowLayout.current.isWide) 24.dp else 16.dp, vertical = 8.dp)
                         .navigationBarsPadding()
                 ) {
                     content()
@@ -382,7 +382,7 @@ private fun FullScreenDialog(title: String, onClose: () -> Unit, content: @Compo
 @Composable
 private fun HeroTile(icon: ImageVector, label: String, value: String, sub: String?) {
     Surface(
-        shape = RoundedCornerShape(32.dp),
+        shape = WeatherExpressiveShapes.hero,
         color = MaterialTheme.colorScheme.primaryContainer,
         modifier = Modifier.fillMaxWidth()
     ) {
@@ -419,7 +419,7 @@ private fun StatTile(
     container: Color = MaterialTheme.colorScheme.surfaceContainerHigh,
     content: Color = MaterialTheme.colorScheme.onSurface
 ) {
-    Surface(shape = RoundedCornerShape(28.dp), color = container, modifier = modifier) {
+    Surface(shape = WeatherExpressiveShapes.tile, color = container, modifier = modifier) {
         Column(Modifier.padding(18.dp)) {
             Icon(icon, null, tint = content, modifier = Modifier.size(22.dp))
             Spacer(Modifier.height(10.dp))
@@ -432,7 +432,7 @@ private fun StatTile(
 
 @Composable
 private fun CountTile(icon: ImageVector, label: String, count: Int, modifier: Modifier = Modifier) {
-    Surface(shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.secondaryContainer, modifier = modifier) {
+    Surface(shape = WeatherExpressiveShapes.inset, color = MaterialTheme.colorScheme.secondaryContainer, modifier = modifier) {
         Column(Modifier.padding(14.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Icon(icon, null, tint = MaterialTheme.colorScheme.onSecondaryContainer, modifier = Modifier.size(22.dp))
             Spacer(Modifier.height(6.dp))

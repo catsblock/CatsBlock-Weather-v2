@@ -7,6 +7,7 @@ import android.graphics.RuntimeShader
 import android.graphics.Shader
 import android.os.Build
 import androidx.annotation.RequiresApi
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -26,6 +27,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.unit.Constraints
+import com.catsblock.weather.ui.ExpressiveMotion
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
@@ -40,10 +42,6 @@ private const val WRAP_KM = 2226.087
 private const val HIGH_LAYER_SPEED_RATIO = 2.0
 
 internal fun upperWindKmh(surfaceKmh: Double): Double = surfaceKmh.coerceAtLeast(0.0) * 1.6 + 6.0
-private const val JANK_NANOS = 30_000_000L
-private const val EVALUATION_FRAMES = 150
-private const val JANK_FRAME_LIMIT = 45
-
 @RequiresApi(Build.VERSION_CODES.TIRAMISU)
 @Composable
 internal fun SkyShaderLayer(
@@ -53,7 +51,8 @@ internal fun SkyShaderLayer(
     windKmh: Double,
     windFromDeg: Double,
     lightning: LightningState?,
-    onJank: () -> Unit,
+    refreshRateHz: Float,
+    probePerformance: Boolean,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -75,32 +74,17 @@ internal fun SkyShaderLayer(
     var tick by remember { mutableLongStateOf(0L) }
     val wind by rememberUpdatedState(windKmh)
     val direction by rememberUpdatedState(windFromDeg)
-    val jank by rememberUpdatedState(onJank)
     val lifecycleOwner = LocalLifecycleOwner.current
     val moving = fade > 0.01f
 
-    LaunchedEffect(lifecycleOwner, tier, moving) {
+    LaunchedEffect(lifecycleOwner, tier, moving, probePerformance) {
         if (!moving) return@LaunchedEffect
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-            val interval = 1_000_000_000L / tier.maxFps - 2_000_000L
-            var previous = 0L
+            val targetFps = if (probePerformance) SkyTier.Ultra.targetFps(refreshRateHz) else tier.targetFps(refreshRateHz)
+            val interval = 1_000_000_000L / targetFps.coerceAtLeast(1)
             var drawn = 0L
-            var frames = 0
-            var slow = 0
-            var windows = 0
             while (true) {
                 val now = withFrameNanos { it }
-                if (previous != 0L) {
-                    frames++
-                    if (now - previous > JANK_NANOS) slow++
-                    if (frames >= EVALUATION_FRAMES) {
-                        if (windows > 0 && slow > JANK_FRAME_LIMIT) jank()
-                        windows++
-                        frames = 0
-                        slow = 0
-                    }
-                }
-                previous = now
                 if (now - drawn >= interval) {
                     val dt = if (drawn == 0L) 0.0 else (now - drawn) / 1e9
                     val toward = Math.toRadians(direction + 180.0)
@@ -117,7 +101,13 @@ internal fun SkyShaderLayer(
         }
     }
 
-    val scale = tier.renderScale
+    val scale by animateFloatAsState(tier.renderScale, ExpressiveMotion.contentChange(), label = "skyQualityScale")
+    val animatedOctaves by animateFloatAsState(tier.octaves.toFloat(), ExpressiveMotion.contentChange(), label = "skyOctaves")
+    val animatedShadowSamples by animateFloatAsState(tier.shadowSamples.toFloat(), ExpressiveMotion.contentChange(), label = "skyShadowSamples")
+    val animatedAtmosphereSteps by animateFloatAsState(tier.atmosphereSteps.toFloat(), ExpressiveMotion.contentChange(), label = "skyAtmosphereSteps")
+    val animatedOpaqueCut by animateFloatAsState(tier.opaqueCut, ExpressiveMotion.contentChange(), label = "skyOpaqueCut")
+    val animatedLiteShadows by animateFloatAsState(if (tier.liteShadows) 1f else 0f, ExpressiveMotion.contentChange(), label = "skyLiteShadows")
+    val animatedCirrus by animateFloatAsState(if (tier.cirrus) 1f else 0f, ExpressiveMotion.contentChange(), label = "skyCirrus")
     val chain = Modifier
         .layout { measurable, constraints ->
             val width = constraints.maxWidth
@@ -150,7 +140,7 @@ internal fun SkyShaderLayer(
             val toward = Math.toRadians(direction + 180.0)
             shader.setFloatUniform("uWindDir", sin(toward).toFloat(), cos(toward).toFloat())
             shader.setFloatUniform("uStyle", scene.style[0], scene.style[1], scene.style[2], scene.style[3])
-            shader.setFloatUniform("uCirrus", if (tier.cirrus) scene.cirrus else 0f)
+            shader.setFloatUniform("uCirrus", scene.cirrus * animatedCirrus)
             shader.setFloatUniform("uShade", scene.shade)
             shader.setFloatUniform("uGrade", scene.grade)
             shader.setFloatUniform("uContrast", scene.contrast)
@@ -166,12 +156,12 @@ internal fun SkyShaderLayer(
             shader.setFloatUniform("uSunTHigh", scene.sunTransmittanceHigh[0], scene.sunTransmittanceHigh[1], scene.sunTransmittanceHigh[2])
             shader.setFloatUniform("uCover", scene.cover)
             shader.setFloatUniform("uThick", scene.thickness)
-            shader.setFloatUniform("uOct", tier.octaves.toFloat())
-            shader.setFloatUniform("uShadow", tier.shadowSamples.toFloat())
+            shader.setFloatUniform("uOct", animatedOctaves)
+            shader.setFloatUniform("uShadow", animatedShadowSamples)
             shader.setFloatUniform("uReach", tier.reachKm)
-            shader.setFloatUniform("uLite", if (tier.liteShadows) 1f else 0f)
-            shader.setFloatUniform("uOpaque", tier.opaqueCut)
-            shader.setFloatUniform("uSteps", tier.atmosphereSteps.toFloat())
+            shader.setFloatUniform("uLite", animatedLiteShadows)
+            shader.setFloatUniform("uOpaque", animatedOpaqueCut)
+            shader.setFloatUniform("uSteps", animatedAtmosphereSteps)
             shader.setFloatUniform("uMie", SkyPhysics.MIE_COEFFICIENT.toFloat())
             shader.setFloatUniform("uFade", fade)
             shader.setFloatUniform("uGain", scene.gain)

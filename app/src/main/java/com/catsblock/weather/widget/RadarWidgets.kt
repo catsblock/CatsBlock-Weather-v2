@@ -52,15 +52,23 @@ abstract class BaseRadarWidget(private val wide: Boolean) : AppWidgetProvider() 
     }
 
     override fun onDisabled(context: Context) {
-        if (!RadarWidgetUpdater.hasWidgets(context)) RadarWidgetWork.cancel(context)
+        val app = context.applicationContext
+        val pending = goAsync()
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                if (!RadarWidgetUpdater.hasWidgets(app)) RadarWidgetWork.cancel(app)
+            } finally {
+                pending.finish()
+            }
+        }
     }
 
     private fun renderAsync(context: Context, manager: AppWidgetManager, ids: IntArray) {
-        RadarWidgetUpdater.showLoadingNow(context.applicationContext, manager, ids, wide)
         val pending = goAsync()
         val app = context.applicationContext
         CoroutineScope(Dispatchers.IO).launch {
             try {
+                RadarWidgetUpdater.showLoadingNow(app, manager, ids, wide)
                 RadarWidgetUpdater.render(app, manager, ids, wide)
             } finally {
                 pending.finish()
@@ -114,10 +122,12 @@ object RadarWidgetUpdater {
 
     suspend fun refresh(context: Context) {
         val app = context.applicationContext
-        val manager = AppWidgetManager.getInstance(app)
-        providers.forEach { (provider, wide) ->
-            val ids = manager.getAppWidgetIds(ComponentName(app, provider))
-            if (ids.isNotEmpty()) render(app, manager, ids, wide, false)
+        withContext(Dispatchers.IO) {
+            val manager = AppWidgetManager.getInstance(app)
+            providers.forEach { (provider, wide) ->
+                val ids = manager.getAppWidgetIds(ComponentName(app, provider))
+                if (ids.isNotEmpty()) render(app, manager, ids, wide, false)
+            }
         }
     }
 

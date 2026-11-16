@@ -338,7 +338,8 @@ half4 main(float2 fc) {
   float dayK = smoothstep(-0.16, 0.35, uSun.y);
   float twi = smoothstep(-0.14, 0.0, uSun.y) * (1.0 - smoothstep(0.0, 0.22, uSun.y));
   float shadeL = clamp(uShade * mix(0.86, 1.0, smoothstep(0.08, 0.6, ry)), 0.0, 0.985);
-  float nightLum = 0.004 + min(dot(uMoonLight, LUMA) * 0.9, 0.01);
+  float nightLum = 0.010 + min(dot(uMoonLight, LUMA) * 1.2, 0.022);
+  float nightBlend = 1.0 - smoothstep(-0.18, 0.12, uSun.y);
   float litK = pow(1.0 - shadeL, 3.0);
   float targetLum = (0.95 * dayK + nightLum * (1.0 - dayK)) * litK;
   float texK = clamp(1.0 + uContrast * (0.45 - cvar) * 1.6, 0.25, 1.8);
@@ -349,10 +350,14 @@ half4 main(float2 fc) {
   float3 kept = col * clamp(lumNew / max(lumOld, 0.0002), 0.0, 6.0);
   col = mix(kept, gtint * lumNew, ocLocal * 0.94);
   float horizonBand = pow(1.0 - clamp(ry, 0.0, 1.0), 2.0);
+  float nightFloor = (0.008 + 0.018 * horizonBand) * nightBlend;
+  col = max(col, float3(nightFloor * 0.50, nightFloor * 0.74, nightFloor * (1.0 + 0.35 * horizonBand)));
   float veilAmt = clamp(uVeil, 0.0, 1.0) * (0.3 + 0.7 * horizonBand);
   col = mix(col, gtint * targetLum * 1.5, veilAmt * oc);
   float sunSide = pow(clamp(cosg * 0.5 + 0.5, 0.0, 1.0), 3.0);
   float horizonEdge = pow(1.0 - clamp(ry, 0.0, 1.0), 5.0);
+  float warmHorizon = twi * (1.0 - smoothstep(0.0, 0.18, uSun.y)) * horizonBand;
+  col += float3(0.014, 0.005, 0.001) * warmHorizon;
   col += float3(1.0, 0.5, 0.22) * uGlow * oc * twi * horizonEdge * sunSide * 0.28 * (1.0 - 0.6 * shadeL);
 
   float ang = acos(clamp(cosg, -1.0, 1.0));

@@ -1,6 +1,13 @@
 package com.catsblock.weather.ui
 
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
+import android.view.FrameMetrics
+import android.view.Window
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -8,6 +15,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.compositionLocalOf
@@ -19,6 +27,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -27,11 +36,15 @@ import androidx.compose.ui.layout.ContentScale
 import coil.compose.AsyncImage
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
+import androidx.lifecycle.LifecycleEventObserver
 import com.catsblock.weather.data.Condition
 import com.catsblock.weather.ui.sky.SkyLightning
 import com.catsblock.weather.ui.sky.LightningState
 import com.catsblock.weather.ui.sky.SkyShaderLayer
 import com.catsblock.weather.ui.sky.SkySoftwareLayer
+import com.catsblock.weather.ui.sky.SkyFrameMetricsCollector
+import com.catsblock.weather.ui.sky.SkyPerformance
 import com.catsblock.weather.ui.sky.SkyWeather
 import com.catsblock.weather.ui.sky.directionAt
 import com.catsblock.weather.ui.sky.rememberSkyAtmosphere
@@ -53,6 +66,12 @@ import kotlin.math.abs
 private const val LIVE_WINDOW_MS = 30 * 60_000L
 private const val CLOCK_TICK_MS = 5_000L
 private const val SNAP_MS = 120_000L
+
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
+}
 
 private enum class SkyPhase { Day, Sunrise, Sunset, Night }
 private const val SUNRISE_START = 5 * 60 + 30
@@ -125,18 +144,30 @@ fun WeatherBackground(
     epochMs: Long = Long.MIN_VALUE,
     visibilityM: Double = 10000.0,
     skyVisible: Boolean = true,
-    lightningState: LightningState? = null
+    lightningState: LightningState? = null,
+    forceAtmosphere: Boolean = false
 ) {
     val context = LocalContext.current
     val version by BackgroundKit.version.collectAsState()
-    val custom = remember(kind, isDay, version) { BackgroundKit.visual(context, kind, isDay) }
+    val custom = remember(kind, isDay, version, forceAtmosphere) {
+        if (forceAtmosphere) null else BackgroundKit.visual(context, kind, isDay)
+    }
     val powerSave = rememberPowerSaveMode()
     var tier by remember(powerSave) { mutableStateOf(detectSkyTier(context, powerSave)) }
+    var hasMeasuredPerformance by remember(powerSave) { mutableStateOf(false) }
+    var recoveryTarget by remember(powerSave) { mutableStateOf(tier) }
+    var recoveryWindows by remember(powerSave) { mutableStateOf(0) }
+    val view = LocalView.current
+    val activity = remember(view) { view.context.findActivity() }
+    val displayRefreshRate =
+        (view.display?.refreshRate ?: activity?.window?.decorView?.display?.refreshRate ?: 60f)
+            .takeIf { it.isFinite() && it > 0f } ?: 60f
+    val expectedFrameIntervalNanos = (1_000_000_000.0 / displayRefreshRate).toLong().coerceAtLeast(1L)
     val skyData = custom == null && usesAtmosphere(kind) &&
         !latitude.isNaN() && !longitude.isNaN() && epochMs != Long.MIN_VALUE
     val shaderSky = skyData && tier.usesShader && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
-    val softwareSky = false
-    val legacyImage = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU && custom == null
+    val softwareSky = skyData && !shaderSky && tier.usesShader
+    val legacyImage = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU && custom == null && !softwareSky
     val atmospheric = shaderSky || softwareSky
 
     val cover by animateFloatAsState(skyCover(kind, cloud), tween(900), label = "skyCover")
@@ -150,6 +181,88 @@ fun WeatherBackground(
     val ownLightning = remember { LightningState() }
     val lightning = lightningState ?: ownLightning
     val lifecycleOwner = LocalLifecycleOwner.current
+    val latestTier = rememberUpdatedState(tier)
+    val monitorActive = atmospheric && skyVisible
+    DisposableEffect(activity?.window, lifecycleOwner, monitorActive, expectedFrameIntervalNanos, powerSave) {
+        val window = activity?.window
+        if (!monitorActive || window == null) {
+            onDispose { }
+        } else {
+            val collector = SkyFrameMetricsCollector(expectedFrameIntervalNanos)
+            val handler = Handler(Looper.getMainLooper())
+            val listener = Window.OnFrameMetricsAvailableListener { _, frameMetrics, _ ->
+                val sample = collector.record(
+                    frameMetrics.getMetric(FrameMetrics.VSYNC_TIMESTAMP),
+                    frameMetrics.getMetric(FrameMetrics.TOTAL_DURATION),
+                    frameMetrics.getMetric(FrameMetrics.GPU_DURATION)
+                )
+                if (sample != null) {
+                    val classified = SkyPerformance.classify(sample)
+                    val target = if (powerSave && classified.ordinal > SkyTier.Medium.ordinal) {
+                        SkyTier.Medium
+                    } else {
+                        classified
+                    }
+                    if (!hasMeasuredPerformance) {
+                        tier = target
+                        hasMeasuredPerformance = true
+                        recoveryTarget = target
+                        recoveryWindows = 0
+                    } else {
+                        val current = latestTier.value
+                        if (target.ordinal < current.ordinal) {
+                            tier = SkyPerformance.nextTier(current, target, sample)
+                            recoveryTarget = target
+                            recoveryWindows = 0
+                        } else if (target.ordinal > current.ordinal) {
+                            val stable = SkyPerformance.isStableForRecovery(sample)
+                            if (target == recoveryTarget && stable) {
+                                recoveryWindows++
+                            } else {
+                                recoveryTarget = target
+                                recoveryWindows = if (stable) 1 else 0
+                            }
+                            val next = SkyPerformance.nextTier(current, target, sample, recoveryWindows >= 2)
+                            if (next.ordinal > current.ordinal) {
+                                tier = next
+                                recoveryWindows = 0
+                            }
+                        } else {
+                            recoveryTarget = target
+                            recoveryWindows = 0
+                        }
+                    }
+                }
+            }
+            var attached = false
+            fun attach() {
+                if (!attached) {
+                    window.addOnFrameMetricsAvailableListener(listener, handler)
+                    attached = true
+                }
+            }
+            fun detach() {
+                if (attached) {
+                    window.removeOnFrameMetricsAvailableListener(listener)
+                    collector.reset()
+                    attached = false
+                }
+            }
+            val observer = LifecycleEventObserver { _, event ->
+                when (event) {
+                    Lifecycle.Event.ON_START, Lifecycle.Event.ON_RESUME -> attach()
+                    Lifecycle.Event.ON_STOP -> detach()
+                    else -> Unit
+                }
+            }
+            lifecycleOwner.lifecycle.addObserver(observer)
+            if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) attach()
+            onDispose {
+                detach()
+                lifecycleOwner.lifecycle.removeObserver(observer)
+            }
+        }
+    }
     var clock by remember { mutableLongStateOf(System.currentTimeMillis()) }
     val live = atmospheric && abs(epochMs - clock) <= LIVE_WINDOW_MS
     LaunchedEffect(live, lifecycleOwner) {
@@ -163,10 +276,10 @@ fun WeatherBackground(
     }
     val targetEpoch = if (live) clock else epochMs
     var shown by remember { mutableLongStateOf(targetEpoch) }
-    LaunchedEffect(targetEpoch, atmospheric) {
+    LaunchedEffect(targetEpoch, atmospheric, forceAtmosphere) {
         val start = shown
         val delta = targetEpoch - start
-        if (!atmospheric || start == Long.MIN_VALUE || targetEpoch == Long.MIN_VALUE || abs(delta) < SNAP_MS) {
+        if (forceAtmosphere || !atmospheric || start == Long.MIN_VALUE || targetEpoch == Long.MIN_VALUE || abs(delta) < SNAP_MS) {
             shown = targetEpoch
             return@LaunchedEffect
         }
@@ -224,7 +337,8 @@ fun WeatherBackground(
                 windKmh = windKmh,
                 windFromDeg = windDirDeg,
                 lightning = lightning,
-                onJank = { tier = tier.lowered() },
+                refreshRateHz = displayRefreshRate,
+                probePerformance = !hasMeasuredPerformance,
                 modifier = Modifier.fillMaxSize()
             )
         }
@@ -236,7 +350,8 @@ fun WeatherBackground(
                 windKmh = windKmh,
                 windFromDeg = windDirDeg,
                 lightning = lightning,
-                onSlow = { tier = tier.lowered() },
+                refreshRateHz = displayRefreshRate,
+                probePerformance = !hasMeasuredPerformance,
                 modifier = Modifier.fillMaxSize()
             )
         }

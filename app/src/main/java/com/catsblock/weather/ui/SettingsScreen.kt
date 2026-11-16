@@ -33,12 +33,10 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import android.net.Uri
 import androidx.compose.foundation.Canvas
@@ -1020,7 +1018,7 @@ private fun UpdateCard(up: UpdateViewModel) {
         color = scheme.surfaceContainer,
         modifier = Modifier
             .fillMaxWidth()
-            .animateContentSize(spring(dampingRatio = Spring.DampingRatioLowBouncy, stiffness = Spring.StiffnessMediumLow))
+            .animateContentSize(ExpressiveMotion.contentChange())
     ) {
         Column(
             Modifier
@@ -1144,25 +1142,24 @@ private fun CategoryTitle(text: String) {
         text,
         style = MaterialTheme.typography.headlineSmall,
         fontWeight = FontWeight.Bold,
-        modifier = Modifier.padding(start = 4.dp, top = 20.dp, bottom = 4.dp)
+        modifier = Modifier.padding(start = 4.dp, top = 24.dp, bottom = 6.dp)
     )
 }
 
 @Composable
 private fun GroupLabel(text: String) {
     Text(
-        text.uppercase(),
-        style = MaterialTheme.typography.labelMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(start = 16.dp, top = 20.dp, bottom = 8.dp)
+        text,
+        style = MaterialTheme.typography.titleSmall,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.padding(start = 12.dp, top = 22.dp, bottom = 8.dp)
     )
 }
 
 @Composable
 private fun Group(content: @Composable ColumnScope.() -> Unit) {
-    Surface(
-        shape = RoundedCornerShape(20.dp),
-        color = MaterialTheme.colorScheme.surfaceContainer,
+    ExpressiveSurface(
+        shape = WeatherExpressiveShapes.section,
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(Modifier.padding(vertical = 4.dp), content = content)

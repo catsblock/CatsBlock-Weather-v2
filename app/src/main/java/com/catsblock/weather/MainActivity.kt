@@ -13,7 +13,8 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.Crossfade
-import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.Spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
@@ -114,7 +115,7 @@ private fun AppRoot(vm: WeatherViewModel) {
     BackHandler(enabled = screen != null && screen != Screen.Main && screen != Screen.Welcome) {
         vm.back()
     }
-    Crossfade(targetState = if (inShell) Screen.Main else screen, animationSpec = tween(320), label = "screen") { target ->
+    Crossfade(targetState = if (inShell) Screen.Main else screen, animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow), label = "screen") { target ->
         when (target) {
             null -> Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background))
             Screen.Welcome -> WelcomeScreen(vm)

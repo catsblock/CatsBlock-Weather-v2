@@ -4,7 +4,7 @@ import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ColorScheme
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MaterialExpressiveTheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
@@ -81,12 +81,12 @@ private val DarkFallback = darkColorScheme(
     surfaceContainerHigh = Color(0xFF1C2A40)
 )
 
-private val ExpressiveShapes = Shapes(
-    extraSmall = RoundedCornerShape(8.dp),
+private val MaterialShapes = Shapes(
+    extraSmall = RoundedCornerShape(6.dp),
     small = RoundedCornerShape(12.dp),
-    medium = RoundedCornerShape(20.dp),
-    large = RoundedCornerShape(28.dp),
-    extraLarge = RoundedCornerShape(40.dp)
+    medium = WeatherExpressiveShapes.inset,
+    large = WeatherExpressiveShapes.section,
+    extraLarge = WeatherExpressiveShapes.hero
 )
 
 private val AmoledBlack = Color.Black
@@ -102,7 +102,7 @@ private fun typographyFor(family: FontFamily): Typography {
         displayMedium = base.displayMedium.copy(fontFamily = family, fontWeight = FontWeight.Light),
         displaySmall = base.displaySmall.copy(fontFamily = family, fontWeight = FontWeight.Light),
         headlineLarge = base.headlineLarge.copy(fontFamily = family, fontWeight = FontWeight.Medium),
-        headlineMedium = TextStyle(fontFamily = family, fontWeight = FontWeight.Bold, fontSize = 28.sp, lineHeight = 34.sp, letterSpacing = (-0.5).sp),
+        headlineMedium = TextStyle(fontFamily = family, fontWeight = FontWeight.Bold, fontSize = 30.sp, lineHeight = 36.sp, letterSpacing = (-0.65).sp),
         headlineSmall = TextStyle(fontFamily = family, fontWeight = FontWeight.SemiBold, fontSize = 24.sp, lineHeight = 30.sp),
         titleLarge = TextStyle(fontFamily = family, fontWeight = FontWeight.SemiBold, fontSize = 22.sp, lineHeight = 28.sp),
         titleMedium = TextStyle(fontFamily = family, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, lineHeight = 22.sp, letterSpacing = 0.1.sp),
@@ -262,9 +262,9 @@ fun WeatherTheme(
     val scaled = remember(density, settings.textScale) {
         Density(density.density, density.fontScale * settings.textScale)
     }
-    MaterialTheme(
+    MaterialExpressiveTheme(
         colorScheme = scheme,
-        shapes = ExpressiveShapes,
+        shapes = MaterialShapes,
         typography = typography
     ) {
         CompositionLocalProvider(LocalDensity provides scaled, content = content)

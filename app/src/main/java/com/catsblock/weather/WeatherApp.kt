@@ -39,7 +39,11 @@ class WeatherApp : Application(), ImageLoaderFactory {
         DailyAlerts.ensureChannels(this)
         CoroutineScope(Dispatchers.IO).launch { runCatching { DailyAlerts.reschedule(this@WeatherApp, replace = false) } }
         BackgroundUpdates.schedule(this)
-        if (RadarWidgetUpdater.hasWidgets(this)) RadarWidgetWork.schedule(this)
+        CoroutineScope(Dispatchers.IO).launch {
+            runCatching {
+                if (RadarWidgetUpdater.hasWidgets(this@WeatherApp)) RadarWidgetWork.schedule(this@WeatherApp)
+            }
+        }
     }
 
     override fun onLowMemory() {

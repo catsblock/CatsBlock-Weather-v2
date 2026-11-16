@@ -95,9 +95,6 @@ import com.catsblock.weather.data.SolarDay
 import com.catsblock.weather.data.compassLabel
 import com.catsblock.weather.i18n.I18n
 import com.catsblock.weather.i18n.tr
-import com.catsblock.weather.ui.sky.SkyDaySimulationDialog
-import com.catsblock.weather.ui.sky.SkySimulationCard
-import com.catsblock.weather.ui.sky.SkySimulationInput
 import com.catsblock.weather.ui.detail.entrance
 import com.catsblock.weather.ui.typography.GoogleSansFlex
 import kotlinx.coroutines.delay
@@ -158,20 +155,20 @@ private fun nextSummerSolstice(today: LocalDate, northern: Boolean): LocalDate {
 }
 
 @Composable
-fun SunScreen(city: City, offsetSeconds: Int, now: LocalDateTime, simulation: SkySimulationInput?, onDismiss: () -> Unit) {
+fun SunScreen(city: City, offsetSeconds: Int, now: LocalDateTime, onDismiss: () -> Unit) {
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
     ) {
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-            SunContent(city, offsetSeconds, now, simulation, onDismiss)
+            SunContent(city, offsetSeconds, now, onDismiss)
         }
     }
 }
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun SunContent(city: City, offsetSeconds: Int, now: LocalDateTime, simulation: SkySimulationInput?, onDismiss: () -> Unit) {
+private fun SunContent(city: City, offsetSeconds: Int, now: LocalDateTime, onDismiss: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
     val locale = I18n.lang.locale
     val today = now.toLocalDate()
@@ -194,7 +191,6 @@ private fun SunContent(city: City, offsetSeconds: Int, now: LocalDateTime, simul
     }
     val percent = if (data.max > 0) (day.daylightMinutes * 100f / data.max).roundToInt() else 0
     val listState = rememberLazyListState()
-    var showSimulation by remember { mutableStateOf(false) }
     val solstice = remember(today, lat) { nextSummerSolstice(today, lat >= 0.0) }
     val solsticeDays = ChronoUnit.DAYS.between(today, solstice).toInt()
     val dateText = if (selected == today) {
@@ -239,13 +235,6 @@ private fun SunContent(city: City, offsetSeconds: Int, now: LocalDateTime, simul
             item {
                 Box(Modifier.entrance(0)) {
                     SunPathCard(day = day, now = now, live = selected == today)
-                }
-            }
-            if (simulation != null) {
-                item {
-                    Box(Modifier.entrance(1)) {
-                        SkySimulationCard { showSimulation = true }
-                    }
                 }
             }
             item {
@@ -312,22 +301,6 @@ private fun SunContent(city: City, offsetSeconds: Int, now: LocalDateTime, simul
             item { Box(Modifier.entrance(5)) { AnnualCard(data, selected) } }
             item { MonthsCard(year, data.max, selected.monthValue, lat, lon, offsetSeconds, locale) }
             item { Spacer(Modifier.navigationBarsPadding().height(32.dp)) }
-        }
-        if (showSimulation && simulation != null) {
-            SkyDaySimulationDialog(
-                kind = simulation.kind,
-                latitude = city.lat,
-                longitude = city.lon,
-                offsetSeconds = offsetSeconds,
-                referenceEpochMs = simulation.epochMs,
-                cloud = simulation.cloud,
-                windKmh = simulation.windKmh,
-                windDirDeg = simulation.windDirDeg,
-                precipMm = simulation.precipMm,
-                pressureHpa = simulation.pressureHpa,
-                visibilityM = simulation.visibilityM,
-                onDismiss = { showSimulation = false }
-            )
         }
         Row(
             Modifier

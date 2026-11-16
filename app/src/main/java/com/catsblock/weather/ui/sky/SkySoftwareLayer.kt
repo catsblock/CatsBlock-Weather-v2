@@ -38,16 +38,15 @@ private const val WRAP_KM = 2226.087
 private const val HIGH_LAYER_SPEED_RATIO = 2.0
 private const val FOCAL = 0.5361f
 private const val SUN_VIEW_RADIUS = 0.07f
-private const val SLOW_RENDER_MS = 48.0
 
 internal class SoftwareQuality(val cloudWidth: Int, val cloudHeight: Int, val fps: Int, val shadowSamples: Int, val octaves: Float) {
     companion object {
-        fun forTier(tier: SkyTier): SoftwareQuality = when {
-            tier.ordinal >= SkyTier.Ultra.ordinal -> SoftwareQuality(144, 82, 24, 2, 4f)
-            tier.ordinal >= SkyTier.High.ordinal -> SoftwareQuality(120, 70, 20, 1, 4f)
-            tier.ordinal >= SkyTier.Medium.ordinal -> SoftwareQuality(104, 60, 18, 1, 3f)
-            tier.ordinal >= SkyTier.Low.ordinal -> SoftwareQuality(88, 50, 15, 1, 3f)
-            else -> SoftwareQuality(72, 42, 12, 0, 2f)
+        fun forTier(tier: SkyTier, refreshRateHz: Float): SoftwareQuality = when (tier) {
+            SkyTier.Ultra -> SoftwareQuality(144, 82, tier.targetFps(refreshRateHz), 2, 4f)
+            SkyTier.High -> SoftwareQuality(120, 70, tier.targetFps(refreshRateHz), 1, 4f)
+            SkyTier.Medium -> SoftwareQuality(104, 60, tier.targetFps(refreshRateHz), 1, 3f)
+            SkyTier.Low -> SoftwareQuality(88, 50, tier.targetFps(refreshRateHz), 1, 3f)
+            SkyTier.VeryLow, SkyTier.Minimal -> SoftwareQuality(72, 42, tier.targetFps(refreshRateHz).coerceAtLeast(12), 0, 2f)
         }
     }
 
@@ -214,11 +213,11 @@ internal fun SkySoftwareLayer(
     windKmh: Double,
     windFromDeg: Double,
     lightning: LightningState?,
-    onSlow: () -> Unit,
+    refreshRateHz: Float,
+    probePerformance: Boolean,
     modifier: Modifier = Modifier
 ) {
-    var reduced by remember(tier) { mutableStateOf(false) }
-    val currentQuality = remember(tier, reduced) { SoftwareQuality.forTier(tier).let { base -> if (reduced) base.lowered() else base } }
+    val currentQuality = remember(tier, refreshRateHz) { SoftwareQuality.forTier(tier, refreshRateHz) }
     val renderer = remember(currentQuality) {
         SkySoftwareRenderer(
             skyWidth = 72,
@@ -241,17 +240,13 @@ internal fun SkySoftwareLayer(
         val toward = Math.toRadians(windFromDeg + 180.0)
         floatArrayOf(sin(toward).toFloat(), cos(toward).toFloat())
     }
-    LaunchedEffect(lifecycleOwner, scene, currentQuality, active) {
+    LaunchedEffect(lifecycleOwner, scene, currentQuality, active, probePerformance) {
         if (!active) return@LaunchedEffect
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-            val cpuBudgetFps = (Runtime.getRuntime().availableProcessors().coerceAtLeast(1) * 8).coerceAtLeast(8)
-            val scheduledFps = minOf(currentQuality.fps, cpuBudgetFps)
+            val scheduledFps = if (probePerformance) SkyTier.Ultra.targetFps(refreshRateHz) else currentQuality.fps
             val interval = 1_000_000_000L / scheduledFps
             var drawn = 0L
             var lastSkySun = Float.NaN
-            var slowFrames = 0
-            var windows = 0
-            var windowFrames = 0
             while (true) {
                 val now = withFrameNanos { it }
                 if (now - drawn < interval) continue
@@ -263,7 +258,6 @@ internal fun SkySoftwareLayer(
                 offsets[1] = ((offsets[1] + cos(toward) * lowKm).mod(WRAP_KM)).toFloat()
                 offsets[2] = ((offsets[2] + sin(toward) * highKm).mod(WRAP_KM)).toFloat()
                 offsets[3] = ((offsets[3] + cos(toward) * highKm).mod(WRAP_KM)).toFloat()
-                val start = System.nanoTime()
                 val needsSky = lastSkySun.isNaN() || abs(scene.sun[1] - lastSkySun) > 0.0015f
                 val lowOffset = floatArrayOf(offsets[0], offsets[1])
                 val highOffset = floatArrayOf(offsets[2], offsets[3])
@@ -292,17 +286,6 @@ internal fun SkySoftwareLayer(
                     }
                 }
                 moonBitmap = renderer.moonBitmap
-                val elapsed = (System.nanoTime() - start) / 1e6
-                windowFrames++
-                if (elapsed > SLOW_RENDER_MS) slowFrames++
-                if (windowFrames >= 45) {
-                    if (windows > 0 && slowFrames > 22 && !reduced) {
-                        reduced = true
-                    }
-                    windows++
-                    windowFrames = 0
-                    slowFrames = 0
-                }
                 drawn = now
                 frame++
             }

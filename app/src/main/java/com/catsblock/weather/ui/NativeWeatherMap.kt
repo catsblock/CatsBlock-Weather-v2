@@ -22,6 +22,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -63,6 +64,7 @@ import org.maplibre.android.maps.Style
 import org.maplibre.android.style.layers.PropertyFactory
 import org.maplibre.android.module.http.HttpRequestUtil
 import java.io.File
+import kotlinx.coroutines.launch
 
 @Composable
 internal fun NativeWeatherMap(
@@ -94,6 +96,9 @@ internal fun NativeWeatherMap(
     var featureOverlay by remember { mutableStateOf<NativeWeatherFeatureOverlay?>(null) }
     var rainParticles by remember { mutableStateOf<List<RadarParticlePoint>>(emptyList()) }
     var loaded by remember { mutableStateOf(false) }
+    var failed by remember { mutableStateOf(false) }
+    var retryCount by remember { mutableIntStateOf(0) }
+    var retryRequest by remember { mutableIntStateOf(0) }
     var centeredCityId by remember { mutableStateOf<String?>(null) }
 
     AndroidView(
@@ -118,7 +123,42 @@ internal fun NativeWeatherMap(
             HttpRequestUtil.setOkHttpClient(client)
             MapView(viewContext).also { nativeView ->
                 nativeView.onCreate(Bundle())
+                nativeView.addOnDidFinishLoadingMapListener {
+                    failed = false
+                    retryCount = 0
+                    currentOnMapReady(true)
+                }
                 mapView = nativeView
+                nativeView.addOnDidFailLoadingMapListener {
+                    loaded = false
+                    currentOnMapReady(false)
+                    if (retryCount < MAX_MAP_RETRIES) {
+                        retryCount++
+                        failed = false
+                        mapScope.launch {
+                            kotlinx.coroutines.delay(700L * retryCount)
+                            overlayManager?.close()
+                            overlayManager = null
+                            gridOverlay?.close()
+                            gridOverlay = null
+                            featureOverlay?.close()
+                            featureOverlay = null
+                            map?.setStyle(Style.Builder().fromJson(baseStyleJson())) { style ->
+                                loaded = true
+                                failed = false
+                                applyMapAppearance(style, dark)
+                                overlayManager = NativeWeatherOverlayManager(style, mapScope)
+                                gridOverlay = NativeWeatherGridOverlay(style, mapScope)
+                                mapView?.context?.applicationContext?.let { context ->
+                                    featureOverlay = NativeWeatherFeatureOverlay(style, mapScope, context)
+                                }
+                            }
+                        }
+                    } else {
+                        failed = true
+                        currentOnMapReady(true)
+                    }
+                }
                 val callback = object : ComponentCallbacks2 {
                     override fun onTrimMemory(level: Int) {
                         if (level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL) nativeView.onLowMemory()
@@ -135,7 +175,7 @@ internal fun NativeWeatherMap(
                     nativeMap.uiSettings.isRotateGesturesEnabled = true
                     nativeMap.setStyle(Style.Builder().fromJson(baseStyleJson())) { style ->
                         loaded = true
-                        currentOnMapReady(true)
+                        failed = false
                         nativeMap.addOnMapClickListener { coordinate ->
                             val point = nativeMap.projection.toScreenLocation(coordinate)
                             currentOnPointSelected(
@@ -222,6 +262,29 @@ internal fun NativeWeatherMap(
         }
     }
 
+    LaunchedEffect(retryRequest, map) {
+        if (retryRequest == 0) return@LaunchedEffect
+        failed = false
+        retryCount = 0
+        loaded = false
+        currentOnMapReady(false)
+        overlayManager?.close()
+        overlayManager = null
+        gridOverlay?.close()
+        gridOverlay = null
+        featureOverlay?.close()
+        featureOverlay = null
+        map?.setStyle(Style.Builder().fromJson(baseStyleJson())) { style ->
+            loaded = true
+            failed = false
+            applyMapAppearance(style, dark)
+            overlayManager = NativeWeatherOverlayManager(style, mapScope)
+            gridOverlay = NativeWeatherGridOverlay(style, mapScope)
+            val context = mapView?.context?.applicationContext
+            if (context != null) featureOverlay = NativeWeatherFeatureOverlay(style, mapScope, context)
+        }
+    }
+
     LaunchedEffect(city?.id, map, loaded) {
         val nativeMap = map ?: return@LaunchedEffect
         cityMarker?.let(nativeMap::removeMarker)
@@ -284,6 +347,19 @@ internal fun NativeWeatherMap(
             RainParticleOverlay(map, rainParticles, Modifier.matchParentSize())
         }
         NativeMapLegend(layer, Modifier.align(Alignment.TopCenter).padding(top = 10.dp))
+        if (failed) {
+            Surface(
+                modifier = Modifier.align(Alignment.Center).clickable { retryRequest++ },
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                tonalElevation = 4.dp
+            ) {
+                Column(Modifier.padding(horizontal = 18.dp, vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(tr("Could not load the weather. Check your connection and try again."), color = MaterialTheme.colorScheme.onSurface)
+                    Text(tr("Retry"), Modifier.padding(top = 6.dp), color = MaterialTheme.colorScheme.primary)
+                }
+            }
+        }
         if (showAttribution) {
             val sourceAttribution = when (layer.id) {
                 "precip" -> "RainViewer" to "https://www.rainviewer.com/"
@@ -449,3 +525,5 @@ private fun baseStyleJson(): String {
         .put("layers", JSONArray().put(layer))
         .toString()
 }
+
+private const val MAX_MAP_RETRIES = 2
