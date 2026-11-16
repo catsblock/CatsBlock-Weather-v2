@@ -52,6 +52,7 @@ internal object AccountAuth {
     private const val MSG_UNCONFIGURED = "Account service is not configured yet. Please try again later."
     private const val MSG_USERNAME_TAKEN = "That username is not available. Try another."
     private const val MSG_DEVICE = "This device could not be verified. Update the app and try again."
+    private const val MSG_APP_UNAUTHORIZED = "This app version is not authorized by the account service. Update the app."
     private const val MSG_NETWORK = "Check your connection and try again."
     private const val MSG_GENERIC = "Something went wrong. Try again."
 
@@ -248,6 +249,7 @@ internal object AccountAuth {
             error == "invalid_request" -> MSG_USERNAME_TAKEN
             error == "client_unidentified" -> MSG_DEVICE
             error == "security_not_configured" || error == "unavailable" -> MSG_UNCONFIGURED
+            error == "unauthorized" -> MSG_APP_UNAUTHORIZED
             reply.code == 401 -> MSG_EXPIRED
             reply.code == 429 -> MSG_RATE
             reply.code == 451 || reply.code in 500..599 -> MSG_UNAVAILABLE
