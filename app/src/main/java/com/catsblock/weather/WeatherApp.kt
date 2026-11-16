@@ -20,6 +20,8 @@ import com.catsblock.weather.alerts.DailyAlerts
 import com.catsblock.weather.alerts.EclipseAlerts
 import com.catsblock.weather.alerts.RainAlerts
 import com.catsblock.weather.alerts.SnowAlerts
+import com.catsblock.weather.data.AccountAuth
+import com.catsblock.weather.data.SecretKeys
 import com.catsblock.weather.ui.developer.AppLog
 import com.catsblock.weather.update.AppUpdates
 import com.catsblock.weather.widget.RadarWidgetUpdater

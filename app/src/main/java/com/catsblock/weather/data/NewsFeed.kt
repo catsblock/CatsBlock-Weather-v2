@@ -1,5 +1,6 @@
 package com.catsblock.weather.data
 
+import com.catsblock.weather.data.AccountAuth
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
