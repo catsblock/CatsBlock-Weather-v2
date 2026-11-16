@@ -135,6 +135,19 @@ function authFail(data, now) {
   return { locked: false, lockSeconds: 0 };
 }
 
+function authPeek(data, now) {
+  if (typeof data.al === "number" && data.al > now) {
+    return { locked: true, lockSeconds: Math.ceil((data.al - now) / 1000) };
+  }
+  return { locked: false, lockSeconds: 0 };
+}
+
+function authReset(data) {
+  delete data.af;
+  delete data.al;
+  return { locked: false, lockSeconds: 0 };
+}
+
 function reservationTotal(data, now) {
   return (Array.isArray(data.ar) ? data.ar : []).reduce((total, item) =>
     item && typeof item.r === "number" && item.r > now && Number.isInteger(item.amount) && item.amount > 0 ? total + item.amount : total,
@@ -349,6 +362,13 @@ export class RateLimiter {
         break;
       case "auth.fail":
         result = authFail(this.data, now);
+        break;
+      case "auth.peek":
+        result = authPeek(this.data, now);
+        mutated = false;
+        break;
+      case "auth.reset":
+        result = authReset(this.data);
         break;
       case "agent.peek":
         result = agentPeek(this.data, now);

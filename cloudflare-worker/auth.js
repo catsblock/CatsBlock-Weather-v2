@@ -1,4 +1,5 @@
 const USERNAME_PATTERN = /^[a-z][a-z0-9_]{2,31}$/;
+const RESERVED_USERNAMES = ["admin", "root", "system", "support", "moderator", "security"];
 const TOKEN_BYTES = 32;
 const ACCESS_SECONDS = 900;
 const REFRESH_SECONDS = 2592000;
@@ -6,6 +7,14 @@ const MAX_BODY_BYTES = 4096;
 const DEVICE_ID_PATTERN = /^[a-f0-9]{64}$/;
 const DUMMY_SALT = "AAAAAAAAAAAAAAAAAAAAAA";
 const DUMMY_HASH = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+const NO_STORE = { "Cache-Control": "no-store" };
+
+class AuthError extends Error {
+  constructor(code, status) {
+    super(code);
+    this.status = status || 400;
+  }
+}
 
 function bytesToBase64(bytes) {
   let binary = "";
@@ -41,12 +50,12 @@ function normalizeUsername(value) {
 
 function validateUsername(value) {
   const username = normalizeUsername(value);
-  if (!USERNAME_PATTERN.test(username) || ["admin", "root", "system", "support", "moderator", "security"].includes(username)) throw new Error("invalid_username");
+  if (!USERNAME_PATTERN.test(username) || RESERVED_USERNAMES.includes(username)) throw new AuthError("invalid_username", 400);
   return username;
 }
 
 function validatePassword(value) {
-  if (typeof value !== "string" || value.length < 10 || value.length > 128) throw new Error("invalid_password");
+  if (typeof value !== "string" || value.length < 10 || value.length > 128) throw new AuthError("invalid_password", 400);
   return value;
 }
 
@@ -118,27 +127,62 @@ function readInstallation(request, body) {
   return header;
 }
 
+function lockResponse(h, verdict) {
+  const retry = Math.max(1, Number(verdict && verdict.lockSeconds) || 1800);
+  return h.jsonResponse({ error: "rate_limited", retryAfterSeconds: retry }, 429, {
+    "Retry-After": String(retry),
+    "X-Lockout-Seconds": String(retry),
+    "Cache-Control": "no-store"
+  });
+}
+
+function limiterReady(h) {
+  return typeof h.identify === "function" && typeof h.limiterCall === "function";
+}
+
 async function authBudget(request, env, h, path, body) {
   if (!/\/(register|login|refresh)$/.test(path)) return null;
-  if (typeof h.identify !== "function" || typeof h.limiterCall !== "function") return h.jsonResponse({ error: "security_not_configured" }, 503);
+  if (!limiterReady(h)) return h.jsonResponse({ error: "security_not_configured" }, 503);
   const identity = await h.identify(request, env);
   if (!identity || identity.error || !identity.ipHash) return h.jsonResponse({ error: "client_unidentified" }, 400);
-  const verdict = await h.limiterCall(env, identity.ipHash, "auth.fail");
-  if (verdict.locked) {
-    const retry = Math.max(1, Number(verdict.lockSeconds) || 1800);
-    return h.jsonResponse({ error: "rate_limited", retryAfterSeconds: retry }, 429, { "Retry-After": String(retry), "X-Lockout-Seconds": String(retry), "Cache-Control": "no-store" });
-  }
+  const verdict = await h.limiterCall(env, identity.ipHash, "auth.peek");
+  if (verdict && verdict.locked) return lockResponse(h, verdict);
   if (path.endsWith("/login")) {
     const username = normalizeUsername(body.username);
     if (username) {
-      const accountVerdict = await h.limiterCall(env, await digest("auth-user|" + username), "auth.fail");
-      if (accountVerdict.locked) {
-        const retry = Math.max(1, Number(accountVerdict.lockSeconds) || 1800);
-        return h.jsonResponse({ error: "rate_limited", retryAfterSeconds: retry }, 429, { "Retry-After": String(retry), "X-Lockout-Seconds": String(retry), "Cache-Control": "no-store" });
-      }
+      const accountVerdict = await h.limiterCall(env, await digest("auth-user|" + username), "auth.peek");
+      if (accountVerdict && accountVerdict.locked) return lockResponse(h, accountVerdict);
     }
   }
   return null;
+}
+
+async function noteAuthFailure(request, env, h, path, body) {
+  if (!/\/(register|login|refresh|delete)$/.test(path) || !limiterReady(h)) return;
+  try {
+    const identity = await h.identify(request, env);
+    if (identity && !identity.error && identity.ipHash) await h.limiterCall(env, identity.ipHash, "auth.fail");
+    const username = path.endsWith("/login") && body ? normalizeUsername(body.username) : "";
+    if (username) await h.limiterCall(env, await digest("auth-user|" + username), "auth.fail");
+  } catch {
+    return;
+  }
+}
+
+async function clearAccountFailures(env, h, username) {
+  if (!username || !limiterReady(h)) return;
+  try {
+    await h.limiterCall(env, await digest("auth-user|" + username), "auth.reset");
+  } catch {
+    return;
+  }
+}
+
+async function bindDevice(env, accountId, installationHash, now) {
+  await env.NEWS_DB.batch([
+    env.NEWS_DB.prepare("DELETE FROM account_devices WHERE account_id = ? OR installation_hash = ?").bind(accountId, installationHash),
+    env.NEWS_DB.prepare("INSERT INTO account_devices(account_id, installation_hash, created_at, updated_at) VALUES (?, ?, ?, ?)").bind(accountId, installationHash, now, now)
+  ]);
 }
 
 async function issueSession(env, accountId, installationHash) {
@@ -146,113 +190,145 @@ async function issueSession(env, accountId, installationHash) {
   const refresh = await randomToken();
   const family = await randomToken();
   const now = Date.now();
-  await env.NEWS_DB.prepare("UPDATE account_sessions SET revoked_at = ? WHERE account_id = ? AND revoked_at = 0").bind(now, accountId).run();
-  await env.NEWS_DB.prepare("UPDATE refresh_sessions SET revoked_at = ? WHERE account_id = ? AND revoked_at = 0").bind(now, accountId).run();
   await env.NEWS_DB.batch([
+    env.NEWS_DB.prepare("UPDATE account_sessions SET revoked_at = ? WHERE account_id = ? AND revoked_at = 0").bind(now, accountId),
+    env.NEWS_DB.prepare("UPDATE refresh_sessions SET revoked_at = ? WHERE account_id = ? AND revoked_at = 0").bind(now, accountId),
     env.NEWS_DB.prepare("INSERT INTO account_sessions(token_hash, session_id, account_id, installation_hash, expires_at, revoked_at) VALUES (?, ?, ?, ?, ?, 0)").bind(await digest(access), await randomToken(), accountId, installationHash, now + ACCESS_SECONDS * 1000),
     env.NEWS_DB.prepare("INSERT INTO refresh_sessions(token_hash, family_id, account_id, installation_hash, expires_at, used_at, revoked_at) VALUES (?, ?, ?, ?, ?, 0, 0)").bind(await digest(refresh), family, accountId, installationHash, now + REFRESH_SECONDS * 1000)
   ]);
   return { accessToken: access, refreshToken: refresh };
 }
 
-export async function handleAuth(request, env, h, path) {
-  if (!env.NEWS_DB) return h.jsonResponse({ error: "unavailable" }, 503);
-  if (request.method !== "POST" && !(path === "/v1/auth/me" && request.method === "GET")) return h.jsonResponse({ error: "method_not_allowed" }, 405);
-  if (path !== "/v1/auth/me" && !/^application\/json/i.test(request.headers.get("Content-Type") || "")) return h.jsonResponse({ error: "unsupported_media_type" }, 415);
-  if (path === "/v1/auth/me") {
-    const session = await authenticateSession(request, env);
-    return session ? h.jsonResponse({ user: { id: session.accountId, username: session.username, role: session.role } }, 200) : h.jsonResponse({ user: null }, 200);
+async function registerAccount(env, body, installation) {
+  const username = validateUsername(body.username);
+  const password = validatePassword(body.password);
+  if (password !== body.passwordConfirmation) throw new AuthError("password_mismatch", 400);
+  const existing = await env.NEWS_DB.prepare("SELECT id FROM accounts WHERE username_normalized = ?").bind(username).first();
+  if (existing) {
+    await derivePassword(password, DUMMY_SALT);
+    throw new AuthError("invalid_request", 400);
   }
-  const body = await parseBody(request);
-  if (!body || typeof body !== "object") return h.jsonResponse({ error: "bad_request" }, 400);
-  const budgetError = await authBudget(request, env, h, path, body);
-  if (budgetError) return budgetError;
-  const installation = readInstallation(request, body);
-  if (!installation) return h.jsonResponse({ error: "client_unidentified" }, 400);
+  const salt = bytesToBase64(crypto.getRandomValues(new Uint8Array(16)));
+  const passwordHash = await derivePassword(password, salt);
+  const now = Date.now();
+  const result = await env.NEWS_DB.prepare("INSERT INTO accounts(username, username_normalized, password_hash, password_salt, role, status, created_at, updated_at) VALUES (?, ?, ?, ?, 'user', 'active', ?, ?) ON CONFLICT(username_normalized) DO NOTHING").bind(username, username, passwordHash, salt, now, now).run();
+  const accountId = Number(result.meta && result.meta.last_row_id);
+  if (!result.meta || !Number(result.meta.changes) || !accountId) {
+    await derivePassword(password, DUMMY_SALT);
+    throw new AuthError("invalid_request", 400);
+  }
+  await bindDevice(env, accountId, installation, now);
+  const tokens = await issueSession(env, accountId, installation);
+  return { user: { id: accountId, username, role: "user" }, ...tokens };
+}
+
+async function loginAccount(env, h, body, installation) {
+  const username = normalizeUsername(body.username);
+  const password = validatePassword(body.password);
+  const account = await env.NEWS_DB.prepare("SELECT * FROM accounts WHERE username_normalized = ? AND status = 'active'").bind(username).first();
+  const candidateHash = await derivePassword(password, account?.password_salt || DUMMY_SALT);
+  const valid = Boolean(account) && constantTimeEqual(candidateHash, account?.password_hash || DUMMY_HASH);
+  if (!valid) throw new AuthError("invalid_credentials", 401);
+  await bindDevice(env, account.id, installation, Date.now());
+  const tokens = await issueSession(env, account.id, installation);
+  await clearAccountFailures(env, h, username);
+  return { user: publicAccount(account), ...tokens };
+}
+
+async function refreshSession(env, body, installation) {
+  const refreshToken = typeof body.refreshToken === "string" ? body.refreshToken : "";
+  if (refreshToken.length < 20) throw new AuthError("refresh_invalid", 401);
+  const hash = await digest(refreshToken);
+  const now = Date.now();
+  const existing = await env.NEWS_DB.prepare("SELECT * FROM refresh_sessions WHERE token_hash = ?").bind(hash).first();
+  if (!existing || !constantTimeEqual(existing.installation_hash, installation) || Number(existing.expires_at) <= now || Number(existing.revoked_at) !== 0) {
+    throw new AuthError("refresh_invalid", 401);
+  }
+  const claimed = await env.NEWS_DB.prepare(
+    "UPDATE refresh_sessions SET used_at = ? WHERE token_hash = ? AND used_at = 0 AND revoked_at = 0 AND expires_at > ? RETURNING *"
+  ).bind(now, hash, now).first();
+  if (!claimed) {
+    await env.NEWS_DB.batch([
+      env.NEWS_DB.prepare("UPDATE refresh_sessions SET revoked_at = ? WHERE family_id = ?").bind(now, existing.family_id),
+      env.NEWS_DB.prepare("UPDATE account_sessions SET revoked_at = ? WHERE account_id = ?").bind(now, existing.account_id)
+    ]);
+    throw new AuthError("refresh_reuse_detected", 401);
+  }
+  const account = await env.NEWS_DB.prepare("SELECT * FROM accounts WHERE id = ? AND status = 'active'").bind(claimed.account_id).first();
+  if (!account) throw new AuthError("account_unavailable", 401);
+  const tokens = await issueSession(env, account.id, claimed.installation_hash);
+  return { user: publicAccount(account), ...tokens };
+}
+
+async function logoutAccount(env, session) {
+  if (session) {
+    const now = Date.now();
+    await env.NEWS_DB.batch([
+      env.NEWS_DB.prepare("UPDATE account_sessions SET revoked_at = ? WHERE account_id = ?").bind(now, session.accountId),
+      env.NEWS_DB.prepare("UPDATE refresh_sessions SET revoked_at = ? WHERE account_id = ? AND revoked_at = 0").bind(now, session.accountId)
+    ]);
+  }
+  return { success: true };
+}
+
+async function deleteAccount(env, session, body) {
+  if (!session) throw new AuthError("unauthorized", 401);
+  const password = validatePassword(body.password);
+  const account = await env.NEWS_DB.prepare("SELECT * FROM accounts WHERE id = ?").bind(session.accountId).first();
+  if (!account || !constantTimeEqual(await derivePassword(password, account.password_salt), account.password_hash)) throw new AuthError("invalid_credentials", 401);
+  const now = Date.now();
+  await env.NEWS_DB.batch([
+    env.NEWS_DB.prepare("UPDATE accounts SET status = 'deleted', username = ?, username_normalized = ?, password_hash = '', password_salt = '', updated_at = ? WHERE id = ?").bind(`deleted_${session.accountId}`, `deleted_${session.accountId}`, now, session.accountId),
+    env.NEWS_DB.prepare("UPDATE account_sessions SET revoked_at = ? WHERE account_id = ?").bind(now, session.accountId),
+    env.NEWS_DB.prepare("UPDATE refresh_sessions SET revoked_at = ? WHERE account_id = ?").bind(now, session.accountId),
+    env.NEWS_DB.prepare("DELETE FROM news_likes WHERE voter_id = ?").bind(String(session.accountId)),
+    env.NEWS_DB.prepare("DELETE FROM news_reaction_votes WHERE voter_id = ?").bind(String(session.accountId)),
+    env.NEWS_DB.prepare("DELETE FROM news_action_limits WHERE key = ?").bind("account:" + session.accountId),
+    env.NEWS_DB.prepare("DELETE FROM account_devices WHERE account_id = ?").bind(session.accountId)
+  ]);
+  return { success: true };
+}
+
+export async function handleAuth(request, env, h, path) {
+  if (!env.NEWS_DB) return h.jsonResponse({ error: "unavailable" }, 503, NO_STORE);
+  if (request.method !== "POST" && !(path === "/v1/auth/me" && request.method === "GET")) return h.jsonResponse({ error: "method_not_allowed" }, 405, NO_STORE);
+  if (path !== "/v1/auth/me" && !/^application\/json/i.test(request.headers.get("Content-Type") || "")) return h.jsonResponse({ error: "unsupported_media_type" }, 415, NO_STORE);
+  let body = null;
   try {
-    if (path === "/v1/auth/register") {
-      const username = validateUsername(body.username);
-      const password = validatePassword(body.password);
-      if (password !== body.passwordConfirmation) return h.jsonResponse({ error: "password_mismatch" }, 400);
-      const existing = await env.NEWS_DB.prepare("SELECT id FROM accounts WHERE username_normalized = ?").bind(username).first();
-      if (existing) {
-        await derivePassword(password, DUMMY_SALT);
-        return h.jsonResponse({ error: "invalid_request" }, 400);
-      }
-      const salt = bytesToBase64(crypto.getRandomValues(new Uint8Array(16)));
-      const passwordHash = await derivePassword(password, salt);
-      const result = await env.NEWS_DB.prepare("INSERT INTO accounts(username, username_normalized, password_hash, password_salt, role, status, created_at, updated_at) VALUES (?, ?, ?, ?, 'user', 'active', ?, ?)").bind(username, username, passwordHash, salt, Date.now(), Date.now()).run();
-      const accountId = Number(result.meta.last_row_id);
-      await env.NEWS_DB.prepare("INSERT INTO account_devices(account_id, installation_hash, created_at, updated_at) VALUES (?, ?, ?, ?)").bind(accountId, installation, Date.now(), Date.now()).run();
-      const tokens = await issueSession(env, accountId, installation);
-      return h.jsonResponse({ user: { id: accountId, username, role: "user" }, ...tokens }, 201);
+    if (path === "/v1/auth/me") {
+      const session = await authenticateSession(request, env);
+      return session ? h.jsonResponse({ user: { id: session.accountId, username: session.username, role: session.role } }, 200, NO_STORE) : h.jsonResponse({ user: null }, 200, NO_STORE);
     }
-    if (path === "/v1/auth/login") {
-      const username = normalizeUsername(body.username);
-      const password = validatePassword(body.password);
-      const account = await env.NEWS_DB.prepare("SELECT * FROM accounts WHERE username_normalized = ? AND status = 'active'").bind(username).first();
-      const candidateHash = await derivePassword(password, account?.password_salt || DUMMY_SALT);
-      const valid = Boolean(account) && constantTimeEqual(candidateHash, account?.password_hash || DUMMY_HASH);
-      if (!valid) return h.jsonResponse({ error: "invalid_credentials" }, 401);
-      await env.NEWS_DB.prepare("DELETE FROM account_devices WHERE account_id = ?").bind(account.id).run();
-      await env.NEWS_DB.prepare("INSERT INTO account_devices(account_id, installation_hash, created_at, updated_at) VALUES (?, ?, ?, ?)").bind(account.id, installation, Date.now(), Date.now()).run();
-      const tokens = await issueSession(env, account.id, installation);
-      return h.jsonResponse({ user: publicAccount(account), ...tokens }, 200);
+    body = await parseBody(request);
+    if (!body) {
+      await noteAuthFailure(request, env, h, path, body);
+      return h.jsonResponse({ error: "bad_request" }, 400, NO_STORE);
     }
-    if (path === "/v1/auth/refresh") {
-      const refreshToken = typeof body.refreshToken === "string" ? body.refreshToken : "";
-      if (refreshToken.length < 20) return h.jsonResponse({ error: "refresh_invalid" }, 401);
-      const hash = await digest(refreshToken);
-      const now = Date.now();
-      const existing = await env.NEWS_DB.prepare("SELECT * FROM refresh_sessions WHERE token_hash = ?").bind(hash).first();
-      if (!existing || !constantTimeEqual(existing.installation_hash, installation) || Number(existing.expires_at) <= now || Number(existing.revoked_at) !== 0) {
-        return h.jsonResponse({ error: "refresh_invalid" }, 401);
-      }
-      const claimed = await env.NEWS_DB.prepare(
-        "UPDATE refresh_sessions SET used_at = ? WHERE token_hash = ? AND used_at = 0 AND revoked_at = 0 AND expires_at > ? RETURNING *"
-      ).bind(now, hash, now).first();
-      if (!claimed) {
-        await env.NEWS_DB.batch([
-          env.NEWS_DB.prepare("UPDATE refresh_sessions SET revoked_at = ? WHERE family_id = ?").bind(now, existing.family_id),
-          env.NEWS_DB.prepare("UPDATE account_sessions SET revoked_at = ? WHERE account_id = ?").bind(now, existing.account_id)
-        ]);
-        return h.jsonResponse({ error: "refresh_reuse_detected" }, 401);
-      }
-      const row = claimed;
-      const account = await env.NEWS_DB.prepare("SELECT * FROM accounts WHERE id = ? AND status = 'active'").bind(row.account_id).first();
-      if (!account) return h.jsonResponse({ error: "account_unavailable" }, 401);
-      const tokens = await issueSession(env, account.id, row.installation_hash);
-      return h.jsonResponse({ user: publicAccount(account), ...tokens }, 200);
+    let budgetError;
+    try {
+      budgetError = await authBudget(request, env, h, path, body);
+    } catch {
+      return h.jsonResponse({ error: "unavailable" }, 503, NO_STORE);
     }
+    if (budgetError) return budgetError;
+    const installation = readInstallation(request, body);
+    if (!installation) {
+      await noteAuthFailure(request, env, h, path, body);
+      return h.jsonResponse({ error: "client_unidentified" }, 400, NO_STORE);
+    }
+    if (path === "/v1/auth/register") return h.jsonResponse(await registerAccount(env, body, installation), 201, NO_STORE);
+    if (path === "/v1/auth/login") return h.jsonResponse(await loginAccount(env, h, body, installation), 200, NO_STORE);
+    if (path === "/v1/auth/refresh") return h.jsonResponse(await refreshSession(env, body, installation), 200, NO_STORE);
     const session = await authenticateSession(request, env);
-    if (path === "/v1/auth/logout") {
-      if (session) {
-        const now = Date.now();
-        await env.NEWS_DB.batch([
-          env.NEWS_DB.prepare("UPDATE account_sessions SET revoked_at = ? WHERE account_id = ?").bind(now, session.accountId),
-          env.NEWS_DB.prepare("UPDATE refresh_sessions SET revoked_at = ? WHERE account_id = ? AND revoked_at = 0").bind(now, session.accountId)
-        ]);
-      }
-      return h.jsonResponse({ success: true }, 200);
+    if (path === "/v1/auth/logout") return h.jsonResponse(await logoutAccount(env, session), 200, NO_STORE);
+    if (path === "/v1/auth/delete") return h.jsonResponse(await deleteAccount(env, session, body), 200, NO_STORE);
+    return h.jsonResponse({ error: "not_found" }, 404, NO_STORE);
+  } catch (error) {
+    if (error instanceof AuthError) {
+      await noteAuthFailure(request, env, h, path, body);
+      return h.jsonResponse({ error: error.message }, error.status, NO_STORE);
     }
-    if (path === "/v1/auth/delete") {
-      if (!session) return h.jsonResponse({ error: "unauthorized" }, 401);
-      const password = validatePassword(body.password);
-      const account = await env.NEWS_DB.prepare("SELECT * FROM accounts WHERE id = ?").bind(session.accountId).first();
-      if (!account || !constantTimeEqual(await derivePassword(password, account.password_salt), account.password_hash)) return h.jsonResponse({ error: "invalid_credentials" }, 401);
-      await env.NEWS_DB.batch([
-        env.NEWS_DB.prepare("UPDATE accounts SET status = 'deleted', username = ?, username_normalized = ?, password_hash = '', password_salt = '', updated_at = ? WHERE id = ?").bind(`deleted_${session.accountId}`, `deleted_${session.accountId}`, Date.now(), session.accountId),
-        env.NEWS_DB.prepare("UPDATE account_sessions SET revoked_at = ? WHERE account_id = ?").bind(Date.now(), session.accountId),
-        env.NEWS_DB.prepare("UPDATE refresh_sessions SET revoked_at = ? WHERE account_id = ?").bind(Date.now(), session.accountId),
-        env.NEWS_DB.prepare("DELETE FROM news_likes WHERE voter_id = ?").bind(String(session.accountId)),
-        env.NEWS_DB.prepare("DELETE FROM news_reaction_votes WHERE voter_id = ?").bind(String(session.accountId)),
-        env.NEWS_DB.prepare("DELETE FROM news_action_limits WHERE key = ?").bind("account:" + session.accountId),
-        env.NEWS_DB.prepare("DELETE FROM account_devices WHERE account_id = ?").bind(session.accountId)
-      ]);
-      return h.jsonResponse({ success: true }, 200);
-    }
-    return h.jsonResponse({ error: "not_found" }, 404);
-  } catch {
-    return h.jsonResponse({ error: "bad_request" }, 400);
+    console.error("auth_unhandled", error && error.message ? String(error.message).slice(0, 200) : "unknown");
+    return h.jsonResponse({ error: "internal_error" }, 500, NO_STORE);
   }
 }
