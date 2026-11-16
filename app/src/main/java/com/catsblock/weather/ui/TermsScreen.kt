@@ -38,7 +38,7 @@ private val termsSections = listOf(
     "Acceptable use" to
         "Do not use the Agent for anything inappropriate, unlawful or against these terms, including crimes, harassment, attempts to bypass its rules or safety measures, and requests unrelated to the weather. Messages that violate these terms are not answered and are marked as a violation. Do not attempt to bypass limits, impersonate other devices, overload the servers or access the service by automated means.",
     "Servers and third-party services" to
-        "The App relies on servers and services operated by CatsBlock Corporation and third parties, including a Cloudflare Worker, Google's Gemini and public weather and map providers, which follow their own terms. Optional first-party accounts are required for news likes and reactions. Each account may hold one like and one reaction per article. The tenth engagement request in a rolling 60-second window starts a 15-minute lockout. We may block or limit access to prevent abuse or to comply with the law.",
+        "The App relies on servers and services operated by CatsBlock Corporation and third parties, including a Cloudflare Worker, Google's Gemini and public weather and map providers, which follow their own terms. This version does not provide account registration, login, news likes or reactions. We may block or limit access to prevent abuse or to comply with the law.",
     "Availability and regions" to
         "The service is provided when available and may change, be interrupted or be unavailable in some regions because of local laws, sanctions and data-transfer rules. We may add, change or remove features, limits and data sources at any time.",
     "Disclaimer" to

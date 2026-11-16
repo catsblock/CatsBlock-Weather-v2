@@ -20,8 +20,6 @@ import com.catsblock.weather.alerts.DailyAlerts
 import com.catsblock.weather.alerts.EclipseAlerts
 import com.catsblock.weather.alerts.RainAlerts
 import com.catsblock.weather.alerts.SnowAlerts
-import com.catsblock.weather.data.AccountAuth
-import com.catsblock.weather.data.SecretKeys
 import com.catsblock.weather.ui.developer.AppLog
 import com.catsblock.weather.update.AppUpdates
 import com.catsblock.weather.widget.RadarWidgetUpdater
@@ -33,7 +31,6 @@ class WeatherApp : Application(), ImageLoaderFactory {
     override fun onCreate() {
         super.onCreate()
         instance = this
-        AccountAuth.configure(this, SecretKeys.baseUrl(), SecretKeys.appToken())
         installLogging()
         RainAlerts.ensureChannel(this)
         EclipseAlerts.ensureChannel(this)

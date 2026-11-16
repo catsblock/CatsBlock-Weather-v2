@@ -2,6 +2,8 @@
 
 Date: 2026-11-16
 
+> **Current implementation note (2026-11-16):** Account registration/login/session endpoints and news likes/reactions described in this historical review have since been removed from the Android app and Cloudflare Worker. Historical D1 migrations remain for schema-history safety; this removal does not erase legacy account or engagement records.
+
 ## Scope
 
 This review covered the Android client, the Cloudflare Worker authentication and request-routing paths, local credential storage, external URL handling, crash diagnostics, repository hygiene, and the existing account/session migrations.

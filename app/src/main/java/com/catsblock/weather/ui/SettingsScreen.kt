@@ -16,7 +16,6 @@ import com.catsblock.weather.data.PrecipUnit
 import com.catsblock.weather.ui.typography.AppFonts
 import kotlin.math.roundToInt
 import com.catsblock.weather.data.SecretKeys
-import com.catsblock.weather.data.AccountAuth
 import com.catsblock.weather.data.WeatherSource
 import com.catsblock.weather.data.WindUnit
 import com.catsblock.weather.data.PressureUnit
@@ -63,7 +62,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -72,7 +70,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.AppShortcut
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CheckCircle
@@ -86,7 +83,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
@@ -104,14 +100,14 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -203,9 +199,6 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
     var keyInput by remember { mutableStateOf("") }
     var notificationsOn by remember { mutableStateOf(notificationsAllowed(ctx)) }
     var openSettingsOnDeny by remember { mutableStateOf(false) }
-    var deleteAccountDialog by remember { mutableStateOf(false) }
-    var deletePassword by remember { mutableStateOf("") }
-    var accountMessage by remember { mutableStateOf<String?>(null) }
     val owner = LocalLifecycleOwner.current
 
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -251,30 +244,6 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
         }
         owner.lifecycle.addObserver(o)
         onDispose { owner.lifecycle.removeObserver(o) }
-    }
-
-    if (deleteAccountDialog) {
-        AlertDialog(
-            onDismissRequest = { deleteAccountDialog = false },
-            title = { Text(tr("Delete account permanently?")) },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(tr("This revokes sessions and cannot be undone. Enter your current password."))
-                    OutlinedTextField(value = deletePassword, onValueChange = { deletePassword = it }, singleLine = true, label = { Text(tr("Password")) })
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    scope.launch {
-                        when (val result = AccountAuth.delete(deletePassword)) {
-                            is AccountAuth.Result.Success -> { deleteAccountDialog = false; deletePassword = ""; accountMessage = tr("Account deleted.") }
-                            is AccountAuth.Result.Failure -> accountMessage = result.message
-                        }
-                    }
-                }) { Text(tr("Delete")) }
-            },
-            dismissButton = { TextButton(onClick = { deleteAccountDialog = false }) { Text(tr("Cancel")) } }
-        )
     }
 
     if (alertsOpen) {
@@ -470,20 +439,6 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
                 .padding(horizontal = settingsSide, vertical = 8.dp)
                 .padding(bottom = LocalBottomInset.current)
         ) {
-            CategoryTitle(tr("Account"))
-            Group {
-                Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(if (AccountAuth.loggedIn()) tr("Logged in as @%s").format(AccountAuth.currentUsername()) else tr("Not logged in"), style = MaterialTheme.typography.titleMedium)
-                    accountMessage?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                    if (AccountAuth.loggedIn()) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            TextButton(onClick = { scope.launch { AccountAuth.logout(); accountMessage = tr("Logged out.") } }) { Text(tr("Log out")) }
-                            TextButton(onClick = { deleteAccountDialog = true }) { Text(tr("Delete account")) }
-                        }
-                    } else Text(tr("Use the news engagement dialog to create or access a first-party account."))
-                }
-            }
-
             CategoryTitle(tr("Appearance"))
 
             GroupLabel(tr("Theme"))

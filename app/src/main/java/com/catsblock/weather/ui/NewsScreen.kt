@@ -10,18 +10,12 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -30,77 +24,47 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.ArrowForward
-import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Clear
-import androidx.compose.material.icons.rounded.Lock
-import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Search
-import androidx.compose.material.icons.rounded.Shield
-import androidx.compose.material.icons.rounded.Visibility
-import androidx.compose.material.icons.rounded.VisibilityOff
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.catsblock.weather.data.NewsArticle
-import com.catsblock.weather.data.AccountAuth
 import com.catsblock.weather.data.NewsFeed
-import com.catsblock.weather.data.NewsLikeResult
 import com.catsblock.weather.data.NewsLoad
-import com.catsblock.weather.data.NewsReactionResult
-import com.catsblock.weather.data.Reaction
-import com.catsblock.weather.data.withLike
-import com.catsblock.weather.data.withReaction
 import com.catsblock.weather.i18n.I18n
 import com.catsblock.weather.i18n.tr
 import com.catsblock.weather.ui.typography.GoogleSansFlex
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 import java.util.Locale
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 
 private const val SEARCH_DEBOUNCE_MS = 2500L
 
@@ -153,12 +117,7 @@ fun NewsScreen(vm: WeatherViewModel) {
         snapshotFlow { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1 }
             .collect { index -> news.loadMoreIfNeeded(index) }
     }
-    LaunchedEffect(state.message) {
-        if (state.message != null) {
-            delay(3200)
-            news.clearMessage()
-        }
-    }
+
 
     val phase = when {
         !state.available -> NewsPhase.Unavailable
@@ -218,20 +177,6 @@ fun NewsScreen(vm: WeatherViewModel) {
                     trackColor = scheme.surfaceContainerHigh
                 )
             }
-            state.message?.let {
-                Spacer(Modifier.height(10.dp))
-                Surface(
-                    shape = CircleShape,
-                    color = scheme.errorContainer.copy(alpha = 0.6f)
-                ) {
-                    Text(
-                        it,
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp),
-                        color = scheme.onErrorContainer,
-                        fontSize = 12.sp
-                    )
-                }
-            }
             Spacer(Modifier.height(8.dp))
         }
         Box(Modifier.weight(1f).fillMaxWidth()) {
@@ -264,8 +209,6 @@ fun NewsScreen(vm: WeatherViewModel) {
                             NewsCard(
                                 article = article,
                                 locale = locale,
-                                onToggleLike = { news.setLike(article, !article.liked) },
-                                onReact = { reaction -> news.toggleReaction(article, reaction) },
                                 onOpen = { openedId = article.id },
                                 modifier = Modifier.animateItem()
                             )
@@ -309,302 +252,21 @@ fun NewsScreen(vm: WeatherViewModel) {
     if (opened != null) {
         NewsBrowserDialog(opened) { openedId = null }
     }
-    if (state.authRequired) {
-        AccountGateDialog(
-            onCancel = news::dismissAuth,
-            onSuccess = news::retryPending
-        )
-    }
-}
 
-@Composable
-private fun AccountGateDialog(onCancel: () -> Unit, onSuccess: () -> Unit) {
-    val scope = rememberCoroutineScope()
-    val scheme = MaterialTheme.colorScheme
-    val scrollState = rememberScrollState()
-    var username by rememberSaveable { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
-    var confirmation by remember { mutableStateOf("") }
-    var register by rememberSaveable { mutableStateOf(false) }
-    var error by rememberSaveable { mutableStateOf<String?>(null) }
-    var busy by rememberSaveable { mutableStateOf(false) }
-    var showPassword by remember { mutableStateOf(false) }
-    var showConfirmation by remember { mutableStateOf(false) }
-
-    fun submit() {
-        if (busy) return
-        busy = true
-        error = null
-        scope.launch {
-            val result = if (register) AccountAuth.register(username, password, confirmation) else AccountAuth.login(username, password)
-            busy = false
-            when (result) {
-                is AccountAuth.Result.Success -> {
-                    password = ""
-                    confirmation = ""
-                    onSuccess()
-                }
-                is AccountAuth.Result.Failure -> error = result.message
-            }
-        }
-    }
-
-    Dialog(
-        onDismissRequest = onCancel,
-        properties = DialogProperties(
-            usePlatformDefaultWidth = false,
-            dismissOnClickOutside = !busy,
-            dismissOnBackPress = !busy
-        )
-    ) {
-        Surface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(max = 720.dp)
-                .padding(horizontal = 16.dp)
-                .imePadding(),
-            shape = MaterialTheme.shapes.extraLarge,
-            color = scheme.surfaceContainerLow,
-            tonalElevation = 4.dp
-        ) {
-            Column(
-                modifier = Modifier
-                    .verticalScroll(scrollState)
-                    .padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(MaterialTheme.shapes.large)
-                        .background(scheme.primaryContainer)
-                        .padding(20.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .offset(x = 30.dp, y = (-34).dp)
-                            .size(116.dp)
-                            .background(scheme.secondary.copy(alpha = 0.22f), CircleShape)
-                    )
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Surface(
-                            modifier = Modifier.size(56.dp),
-                            shape = CircleShape,
-                            color = scheme.primary
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(Icons.Rounded.AutoAwesome, contentDescription = null, tint = scheme.onPrimary)
-                            }
-                        }
-                        Spacer(Modifier.size(14.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text(
-                                tr(if (register) "Create an account to react" else "Sign in to react"),
-                                style = MaterialTheme.typography.headlineSmall,
-                                color = scheme.onPrimaryContainer
-                            )
-                            Spacer(Modifier.height(4.dp))
-                            Text(
-                                tr("Your account keeps likes and reactions fair and helps protect the community from automated abuse."),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = scheme.onPrimaryContainer.copy(alpha = 0.82f)
-                            )
-                        }
-                    }
-                }
-
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = scheme.secondaryContainer),
-                    shape = MaterialTheme.shapes.large
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(Icons.Rounded.Shield, contentDescription = null, tint = scheme.onSecondaryContainer)
-                        Spacer(Modifier.size(12.dp))
-                        Text(
-                            tr("Read the Privacy Policy and Terms of Service in Settings before creating an account."),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = scheme.onSecondaryContainer
-                        )
-                    }
-                }
-
-                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                    SegmentedButton(
-                        selected = !register,
-                        onClick = { register = false; error = null },
-                        shape = SegmentedButtonDefaults.itemShape(0, 2),
-                        icon = { Icon(Icons.Rounded.Lock, contentDescription = null) }
-                    ) { Text(tr("Sign in")) }
-                    SegmentedButton(
-                        selected = register,
-                        onClick = { register = true; error = null },
-                        shape = SegmentedButtonDefaults.itemShape(1, 2),
-                        icon = { Icon(Icons.Rounded.Person, contentDescription = null) }
-                    ) { Text(tr("Create account")) }
-                }
-
-                OutlinedTextField(
-                    modifier = Modifier.fillMaxWidth(),
-                    value = username,
-                    onValueChange = { username = it },
-                    singleLine = true,
-                    label = { Text(tr("Username")) },
-                    leadingIcon = { Icon(Icons.Rounded.Person, contentDescription = null) },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii, imeAction = ImeAction.Next),
-                    shape = MaterialTheme.shapes.medium
-                )
-
-                OutlinedTextField(
-                    modifier = Modifier.fillMaxWidth(),
-                    value = password,
-                    onValueChange = { password = it },
-                    singleLine = true,
-                    label = { Text(tr("Password")) },
-                    leadingIcon = { Icon(Icons.Rounded.Lock, contentDescription = null) },
-                    trailingIcon = {
-                        IconButton(onClick = { showPassword = !showPassword }) {
-                            Icon(
-                                if (showPassword) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
-                                contentDescription = tr(if (showPassword) "Hide password" else "Show password")
-                            )
-                        }
-                    },
-                    supportingText = if (register) {
-                        { Text(tr("Use a password of 10 to 128 characters.")) }
-                    } else null,
-                    visualTransformation = if (showPassword) androidx.compose.ui.text.input.VisualTransformation.None else PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = if (register) ImeAction.Next else ImeAction.Done),
-                    keyboardActions = KeyboardActions(onDone = { submit() }),
-                    shape = MaterialTheme.shapes.medium
-                )
-
-                if (register) {
-                    OutlinedTextField(
-                        modifier = Modifier.fillMaxWidth(),
-                        value = confirmation,
-                        onValueChange = { confirmation = it },
-                        singleLine = true,
-                        label = { Text(tr("Confirm password")) },
-                        leadingIcon = { Icon(Icons.Rounded.Lock, contentDescription = null) },
-                        trailingIcon = {
-                            IconButton(onClick = { showConfirmation = !showConfirmation }) {
-                                Icon(
-                                    if (showConfirmation) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
-                                    contentDescription = tr(if (showConfirmation) "Hide password" else "Show password")
-                                )
-                            }
-                        },
-                        visualTransformation = if (showConfirmation) androidx.compose.ui.text.input.VisualTransformation.None else PasswordVisualTransformation(),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
-                        keyboardActions = KeyboardActions(onDone = { submit() }),
-                        shape = MaterialTheme.shapes.medium
-                    )
-                }
-
-                error?.let {
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = scheme.errorContainer),
-                        shape = MaterialTheme.shapes.medium
-                    ) {
-                        Text(
-                            it,
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = scheme.onErrorContainer
-                        )
-                    }
-                }
-
-                HorizontalDivider(color = scheme.outlineVariant.copy(alpha = 0.7f))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    TextButton(enabled = !busy, onClick = onCancel) {
-                        Text(tr("Cancel"))
-                    }
-                    Button(
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(52.dp),
-                        enabled = !busy,
-                        onClick = ::submit,
-                        shape = MaterialTheme.shapes.large
-                    ) {
-                        if (busy) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(20.dp),
-                                strokeWidth = 2.dp,
-                                color = scheme.onPrimary
-                            )
-                        } else {
-                            Text(tr(if (register) "Create account" else "Sign in"))
-                            Spacer(Modifier.size(8.dp))
-                            Icon(Icons.Rounded.ArrowForward, contentDescription = null)
-                        }
-                    }
-                }
-            }
-        }
-    }
 }
 
 @Composable
 internal fun EventNewsSection(event: String, region: String) {
     val language = I18n.lang
     val locale = language.locale
-    val scope = rememberCoroutineScope()
     var articles by remember(event, language.code, region) { mutableStateOf<List<NewsArticle>>(emptyList()) }
     var selected by remember { mutableStateOf<NewsArticle?>(null) }
     var loading by remember(event, language.code, region) { mutableStateOf(true) }
-    val likeSenders = remember { mutableMapOf<String, LatestSender<Boolean>>() }
-    val reactionSenders = remember { mutableMapOf<String, LatestSender<String>>() }
-    val likeSnapshots = remember { mutableMapOf<String, Pair<Boolean, Int>>() }
-    val reactionSnapshots = remember { mutableMapOf<String, Pair<String?, Map<String, Int>>>() }
-
-    fun update(articleId: String, transform: (NewsArticle) -> NewsArticle) {
-        articles = articles.map { if (it.id == articleId) transform(it) else it }
-    }
-
-    fun likeSender(articleId: String): LatestSender<Boolean> = likeSenders.getOrPut(articleId) {
-        LatestSender(scope) { target ->
-            when (val result = NewsFeed.setLike(articleId, target)) {
-                is NewsLikeResult.Updated -> {
-                    likeSnapshots[articleId] = result.liked to result.likes
-                    update(articleId) { it.copy(liked = result.liked, likes = result.likes) }
-                }
-                else -> likeSnapshots[articleId]?.let { snapshot ->
-                    update(articleId) { it.copy(liked = snapshot.first, likes = snapshot.second) }
-                }
-            }
-        }
-    }
-
-    fun reactionSender(articleId: String): LatestSender<String> = reactionSenders.getOrPut(articleId) {
-        LatestSender(scope) { target ->
-            when (val result = NewsFeed.setReaction(articleId, target.ifEmpty { null })) {
-                is NewsReactionResult.Updated -> {
-                    reactionSnapshots[articleId] = result.reaction to result.counts
-                    update(articleId) { it.copy(myReaction = result.reaction, reactions = result.counts) }
-                }
-                else -> reactionSnapshots[articleId]?.let { snapshot ->
-                    update(articleId) { it.copy(myReaction = snapshot.first, reactions = snapshot.second) }
-                }
-            }
-        }
-    }
-
     LaunchedEffect(event, language.code, region) {
         loading = true
-        when (val result = NewsFeed.event(language.code, region, event)) {
-            is NewsLoad.Success -> articles = result.page.articles.take(10)
-            is NewsLoad.Failure -> articles = emptyList()
+        articles = when (val result = NewsFeed.event(language.code, region, event)) {
+            is NewsLoad.Success -> result.page.articles.take(10)
+            is NewsLoad.Failure -> emptyList()
         }
         loading = false
     }
@@ -619,28 +281,11 @@ internal fun EventNewsSection(event: String, region: String) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(tr("Related meteorological news"), style = MaterialTheme.typography.titleMedium)
         articles.forEach { article ->
-            NewsCard(
-                article = article,
-                locale = locale,
-                onToggleLike = {
-                    val target = !article.liked
-                    likeSnapshots.putIfAbsent(article.id, article.liked to article.likes)
-                    update(article.id) { it.withLike(target) }
-                    likeSender(article.id).submit(target)
-                },
-                onReact = { reaction ->
-                    val target = if (article.myReaction == reaction.emoji) null else reaction.emoji
-                    reactionSnapshots.putIfAbsent(article.id, article.myReaction to article.reactions)
-                    update(article.id) { it.withReaction(target) }
-                    reactionSender(article.id).submit(target.orEmpty())
-                },
-                onOpen = { selected = article }
-            )
+            NewsCard(article = article, locale = locale, onOpen = { selected = article })
         }
     }
     selected?.let { NewsBrowserDialog(it) { selected = null } }
 }
-
 @Composable
 private fun NewsMessage(title: String, body: String, onRetry: () -> Unit) {
     Column(

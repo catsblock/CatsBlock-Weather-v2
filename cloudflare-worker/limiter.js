@@ -121,9 +121,6 @@ function consumeProxy(data, now) {
 }
 
 function authFail(data, now) {
-  if (typeof data.al === "number" && data.al > now) {
-    return { locked: true, lockSeconds: Math.ceil((data.al - now) / 1000) };
-  }
   const window = freshWindow(data.af, now, AUTH_FAIL_WINDOW_MS);
   window.c += 1;
   data.af = window;
@@ -132,19 +129,6 @@ function authFail(data, now) {
     data.af = { c: 0, r: now + AUTH_FAIL_WINDOW_MS };
     return { locked: true, lockSeconds: Math.ceil(AUTH_FAIL_LOCK_MS / 1000) };
   }
-  return { locked: false, lockSeconds: 0 };
-}
-
-function authPeek(data, now) {
-  if (typeof data.al === "number" && data.al > now) {
-    return { locked: true, lockSeconds: Math.ceil((data.al - now) / 1000) };
-  }
-  return { locked: false, lockSeconds: 0 };
-}
-
-function authReset(data) {
-  delete data.af;
-  delete data.al;
   return { locked: false, lockSeconds: 0 };
 }
 
@@ -362,13 +346,6 @@ export class RateLimiter {
         break;
       case "auth.fail":
         result = authFail(this.data, now);
-        break;
-      case "auth.peek":
-        result = authPeek(this.data, now);
-        mutated = false;
-        break;
-      case "auth.reset":
-        result = authReset(this.data);
         break;
       case "agent.peek":
         result = agentPeek(this.data, now);
