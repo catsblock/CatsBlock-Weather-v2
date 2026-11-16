@@ -185,9 +185,6 @@ internal fun MapDetailSheet(detail: MapDetail, fahrenheit: Boolean, windUnit: Wi
 private fun WeatherPointBody(point: MapPointWeather?, data: JSONObject, fahrenheit: Boolean, windUnit: WindUnit, pressureUnit: PressureUnit) {
     val layer = data.optString("layer")
     val title = tr(MapLayer.entries.firstOrNull { it.id == layer }?.label ?: "Weather")
-    val requestedMillis = data.optLong("time", 0L)
-    val requested = Instant.ofEpochMilli(requestedMillis)
-    val status = tr(if (requested.isBefore(Instant.now().truncatedTo(java.time.temporal.ChronoUnit.HOURS))) "Historical model" else "Forecast model")
     Header(title, null, Color.Unspecified)
     if (point == null) {
         Text(tr("Loading details…"), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -195,42 +192,27 @@ private fun WeatherPointBody(point: MapPointWeather?, data: JSONObject, fahrenhe
     }
     if (point.error != null) {
         val message = if (point.error == "no_echo") tr("No measurable radar echo at this pixel.") else tr("No value returned for this point and time.")
-        Block(null) { Text(message, style = MaterialTheme.typography.bodyMedium) }
-        Note("${if (layer == "precip") "RainViewer" else "Open-Meteo"} · $status")
+        Text(message, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         return
     }
-    val timeFormatter = DateTimeFormatter.ofPattern("EEE, MMM d · HH:mm 'UTC'", I18n.lang.locale).withZone(ZoneId.of("UTC"))
-    Block(null) {
-        Field(status, timeFormatter.format(point.actualTime))
-        when (layer) {
-            "temp" -> point.values["temperature_2m"]?.let { Field(tr("Temperature"), tempText(it, fahrenheit)) }
-            "clouds" -> point.values["cloud_cover"]?.let { Field(tr("Cloudiness"), "${it.roundToInt()}%") }
-            "humidity" -> point.values["relative_humidity_2m"]?.let { Field(tr("Humidity"), "${it.roundToInt()}%") }
-            "wind" -> {
-                point.values["wind_speed_10m"]?.let { Field(tr("Wind speed"), windText(it, windUnit)) }
-                point.values["wind_direction_10m"]?.let {
-                    val degrees = (it.roundToInt() % 360 + 360) % 360
-                    Field(tr("From"), "${com.catsblock.weather.data.compassLabel(it)} · $degrees°")
-                }
-                point.values["wind_gusts_10m"]?.let { Field(tr("Wind gusts"), windText(it, windUnit)) }
-            }
-            "pressure" -> point.values["pressure_msl"]?.let { Field(tr("Pressure"), "${pressureNumber(it, pressureUnit)} ${pressureUnit.label}") }
-            "dew" -> point.values["dew_point_2m"]?.let { Field(tr("Dew point"), tempText(it, fahrenheit)) }
-            "uv" -> point.values["uv_index"]?.let { Field(tr("UV index"), decimal(it, 1)) }
-            "aqi" -> point.values["us_aqi"]?.let { Field(tr("Air quality"), "${it.roundToInt()} US AQI") }
-            "sea" -> point.values["sea_level_height_msl"]?.let { Field(tr("Sea level"), "${decimal(it, 2)} m") }
-            "precip" -> point.reflectivityDbz?.let {
-                Field(tr("Reflectivity"), "${decimal(it, 0)} dBZ")
-                point.values["rain_rate_mm_h"]?.let { rate -> Field(tr("Estimated rain rate"), "${decimal(rate, 1)} mm/h") }
-                point.values["rain_15m_mm"]?.let { amount -> Field(tr("Estimated 15-minute amount"), "${decimal(amount, 2)} mm") }
-            }
-        }
-        Field(tr("Selected point"), "${decimal(point.selectedLatitude, 5)}, ${decimal(point.selectedLongitude, 5)}")
-        if (layer != "precip") Field(tr("Nearest model cell"), "${decimal(point.gridLatitude, 3)}, ${decimal(point.gridLongitude, 3)}")
+    val measurement = when (layer) {
+        "temp" -> point.values["temperature_2m"]?.let { tempText(it, fahrenheit) }
+        "clouds" -> point.values["cloud_cover"]?.let { "${it.roundToInt()}%" }
+        "humidity" -> point.values["relative_humidity_2m"]?.let { "${it.roundToInt()}%" }
+        "wind" -> point.values["wind_speed_10m"]?.let { windText(it, windUnit) }
+        "pressure" -> point.values["pressure_msl"]?.let { "${pressureNumber(it, pressureUnit)} ${pressureUnit.label}" }
+        "dew" -> point.values["dew_point_2m"]?.let { tempText(it, fahrenheit) }
+        "uv" -> point.values["uv_index"]?.let { decimal(it, 1) }
+        "aqi" -> point.values["us_aqi"]?.let { "${it.roundToInt()} US AQI" }
+        "sea" -> point.values["sea_level_height_msl"]?.let { "${decimal(it, 2)} m" }
+        "precip" -> point.values["rain_rate_mm_h"]?.let { "≈ ${decimal(it, 1)} mm/h" }
+        else -> null
     }
-    Note(if (layer == "precip") "RainViewer · ${tr("Reflectivity")} · dBZ" else "Open-Meteo · ${tr("Hourly model grid")}")
-    if (layer == "precip") Note(tr("RainViewer pixel sample; resolution varies by location."))
-    if (layer != "precip") Note(tr("Model grid estimate; the returned cell may be offset from the selected point."))
+    Text(
+        text = measurement ?: tr("No value returned for this point and time."),
+        style = MaterialTheme.typography.headlineMedium,
+        color = MaterialTheme.colorScheme.onSurface
+    )
 }
 
 @Composable

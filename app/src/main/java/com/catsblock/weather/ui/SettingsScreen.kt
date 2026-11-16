@@ -251,7 +251,7 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
     }
 
     if (activityOpen) {
-        ActivityDialog(activityStats, settings.fahrenheit) { activityOpen = false }
+        ActivityDialog(activityStats, settings.fahrenheit, vm) { activityOpen = false }
     }
 
     if (developerOpen) {
@@ -903,6 +903,13 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
                     tr("Terms of Service"),
                     tr("The rules for using CatsBlock Weather and the Agent."),
                     { vm.openTerms() }
+                )
+                GroupDivider()
+                NavRow(
+                    Icons.Rounded.Info,
+                    tr("License"),
+                    tr("Open-source licenses and third-party attributions."),
+                    { vm.openLicense() }
                 )
                 GroupDivider()
                 ListItem(

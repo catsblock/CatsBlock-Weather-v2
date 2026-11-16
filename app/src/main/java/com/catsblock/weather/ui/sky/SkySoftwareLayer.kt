@@ -235,7 +235,6 @@ internal fun SkySoftwareLayer(
     val moonKey = remember { floatArrayOf(Float.NaN, Float.NaN, Float.NaN, Float.NaN) }
     val wind by rememberUpdatedState(windKmh)
     val direction by rememberUpdatedState(windFromDeg)
-    val slow by rememberUpdatedState(onSlow)
     val lifecycleOwner = LocalLifecycleOwner.current
     val active = fade > 0.01f
     val windVector = remember(windFromDeg) {
@@ -245,7 +244,9 @@ internal fun SkySoftwareLayer(
     LaunchedEffect(lifecycleOwner, scene, currentQuality, active) {
         if (!active) return@LaunchedEffect
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-            val interval = 1_000_000_000L / currentQuality.fps
+            val cpuBudgetFps = (Runtime.getRuntime().availableProcessors().coerceAtLeast(1) * 8).coerceAtLeast(8)
+            val scheduledFps = minOf(currentQuality.fps, cpuBudgetFps)
+            val interval = 1_000_000_000L / scheduledFps
             var drawn = 0L
             var lastSkySun = Float.NaN
             var slowFrames = 0
@@ -297,7 +298,6 @@ internal fun SkySoftwareLayer(
                 if (windowFrames >= 45) {
                     if (windows > 0 && slowFrames > 22 && !reduced) {
                         reduced = true
-                        slow()
                     }
                     windows++
                     windowFrames = 0

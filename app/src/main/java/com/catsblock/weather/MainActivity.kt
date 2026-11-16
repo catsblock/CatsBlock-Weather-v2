@@ -24,7 +24,9 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
@@ -44,6 +46,7 @@ import com.catsblock.weather.ui.IconKitScreen
 import com.catsblock.weather.ui.InfoScreen
 import com.catsblock.weather.ui.LiveMoonScreen
 import com.catsblock.weather.ui.PrivacyPolicyScreen
+import com.catsblock.weather.ui.LicenseScreen
 import com.catsblock.weather.ui.LocalWindowLayout
 import com.catsblock.weather.ui.RegionGate
 import com.catsblock.weather.ui.Screen
@@ -64,7 +67,10 @@ class MainActivity : ComponentActivity() {
             val current = (weather as? WeatherState.Success)?.bundle?.current
             WeatherTheme(settings, current?.kind, current?.isDay ?: true) {
                 I18n.lang = settings.language
-                CompositionLocalProvider(LocalWindowLayout provides rememberWindowLayout()) {
+                CompositionLocalProvider(
+                    LocalWindowLayout provides rememberWindowLayout(),
+                    LocalLayoutDirection provides if (settings.language.isRightToLeft) LayoutDirection.Rtl else LayoutDirection.Ltr
+                ) {
                     key(settings.language) { RegionGate { AppRoot(vm) } }
                 }
             }
@@ -121,6 +127,7 @@ private fun AppRoot(vm: WeatherViewModel) {
             Screen.AppIcon -> AdaptivePage { AppIconScreen(vm) }
             Screen.LiveMoon -> LiveMoonScreen(vm)
             Screen.Privacy -> AdaptivePage { PrivacyPolicyScreen(vm) }
+            Screen.License -> AdaptivePage { LicenseScreen(vm) }
             Screen.Info -> AdaptivePage { InfoScreen(vm) }
         }
     }

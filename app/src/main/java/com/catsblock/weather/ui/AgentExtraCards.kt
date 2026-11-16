@@ -1,13 +1,5 @@
 package com.catsblock.weather.ui
 
-import android.annotation.SuppressLint
-import android.view.MotionEvent
-import android.view.View
-import android.webkit.WebResourceRequest
-import android.webkit.WebResourceResponse
-import android.webkit.WebSettings
-import android.webkit.WebView
-import android.webkit.WebViewClient
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
@@ -17,7 +9,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -30,19 +21,16 @@ import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.foundation.isSystemInDarkTheme
 import com.catsblock.weather.data.AgentCard
 import com.catsblock.weather.data.AgentMetric
 import com.catsblock.weather.data.AppSettings
-import com.catsblock.weather.data.FireHotspots
+import com.catsblock.weather.data.City
 import com.catsblock.weather.data.ThemeMode
 import com.catsblock.weather.i18n.tr
-import org.json.JSONObject
-import java.io.ByteArrayInputStream
+import org.maplibre.android.geometry.LatLng
 import kotlin.math.roundToInt
 
-private const val MapMinZoom = 1.0
 private val MapHeight = 320.dp
 
 private fun metricText(metric: AgentMetric, value: Double, settings: AppSettings): String = when (metric) {
@@ -134,7 +122,6 @@ private fun MetricChart(card: AgentCard.Metric, content: Color) {
     }
 }
 
-@SuppressLint("SetJavaScriptEnabled", "ClickableViewAccessibility")
 @Composable
 internal fun AgentMapCard(card: AgentCard.MapView, settings: AppSettings, content: Color) {
     val systemDark = isSystemInDarkTheme()
@@ -144,72 +131,22 @@ internal fun AgentMapCard(card: AgentCard.MapView, settings: AppSettings, conten
         ThemeMode.Dark -> true
     }
     val layer = MapLayer.entries.firstOrNull { it.id == card.layer } ?: MapLayer.None
-    val fahrenheit = settings.fahrenheit
     val title = tr(if (layer == MapLayer.None) "Weather map" else layer.label)
-    val initJson = remember(card, dark, fahrenheit, title) {
-        JSONObject()
-            .put("dark", dark)
-            .put("top", 0.0)
-            .put("bottom", 0.0)
-            .put("hasCity", true)
-            .put("round", true)
-            .put("minZoom", MapMinZoom)
-            .put("lat", card.lat)
-            .put("lon", card.lon)
-            .put("centerLat", card.centerLat)
-            .put("centerLon", card.centerLon)
-            .put("zoom", card.zoom)
-            .put("layer", layer.id)
-            .put("title", tr(layer.label))
-            .put("err", tr("Map data unavailable"))
-            .put("f", fahrenheit)
-            .put("labels", mapLabels())
-            .toString()
-    }
+    val city = remember(card) { City(card.place, "", "", "", card.lat, card.lon) }
 
     CardPanel(content) {
         CardTitle(title, card.place, content)
-        key(initJson) {
-            AndroidView(
-                modifier = Modifier.fillMaxWidth().height(MapHeight),
-                factory = { ctx ->
-                    WebView(ctx).also { web ->
-                        web.settings.javaScriptEnabled = true
-                        web.settings.domStorageEnabled = true
-                        web.settings.cacheMode = WebSettings.LOAD_DEFAULT
-                        web.setLayerType(View.LAYER_TYPE_HARDWARE, null)
-                        web.isVerticalScrollBarEnabled = false
-                        web.isHorizontalScrollBarEnabled = false
-                        web.overScrollMode = View.OVER_SCROLL_NEVER
-                        web.setBackgroundColor(android.graphics.Color.TRANSPARENT)
-                        web.setOnTouchListener { view, event ->
-                            when (event.actionMasked) {
-                                MotionEvent.ACTION_DOWN -> view.parent?.requestDisallowInterceptTouchEvent(true)
-                                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> view.parent?.requestDisallowInterceptTouchEvent(false)
-                            }
-                            false
-                        }
-                        web.webViewClient = object : WebViewClient() {
-                            override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
-                                val url = request?.url?.toString().orEmpty()
-                                if (!url.endsWith("__fires.json")) return null
-                                val data = FireHotspots.json(ctx.applicationContext)
-                                val headers = mapOf("Access-Control-Allow-Origin" to "*")
-                                return if (data != null) {
-                                    WebResourceResponse("application/json", "utf-8", 200, "OK", headers, ByteArrayInputStream(data))
-                                } else {
-                                    WebResourceResponse("application/json", "utf-8", 503, "Unavailable", headers, ByteArrayInputStream(ByteArray(0)))
-                                }
-                            }
-                        }
-                        web.loadDataWithBaseURL(MapPage.BASE_URL, MapPage.page(initJson), "text/html", "utf-8", null)
-                    }
-                },
-                onRelease = { web ->
-                    web.stopLoading()
-                    web.destroy()
-                }
-            )
-        }
+        NativeWeatherMap(
+            city = city,
+            layer = layer,
+            dark = dark,
+            focusRequest = 0,
+            radarTileTemplate = null,
+            onPointSelected = { _, _, _, _ -> },
+            onMapReady = {},
+            initialCenter = LatLng(card.centerLat, card.centerLon),
+            initialZoom = card.zoom,
+            modifier = Modifier.fillMaxWidth().height(MapHeight)
+        )
     }
 }

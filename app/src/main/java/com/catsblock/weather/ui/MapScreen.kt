@@ -1,22 +1,5 @@
 package com.catsblock.weather.ui
 
-import android.annotation.SuppressLint
-import android.content.Context
-import android.os.Handler
-import android.os.Looper
-import android.util.Log
-import android.view.View
-import android.view.ViewGroup
-import android.widget.FrameLayout
-import android.webkit.ConsoleMessage
-import android.webkit.JavascriptInterface
-import android.webkit.WebChromeClient
-import android.webkit.WebResourceError
-import android.webkit.WebResourceRequest
-import android.webkit.WebResourceResponse
-import android.webkit.WebSettings
-import android.webkit.WebView
-import android.webkit.WebViewClient
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
@@ -37,8 +20,6 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -46,7 +27,6 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
@@ -105,25 +85,18 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.path
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.catsblock.weather.data.MapFeeds
-import com.catsblock.weather.data.RainViewerPalette
 import com.catsblock.weather.data.ThemeMode
 import com.catsblock.weather.i18n.I18n
 import com.catsblock.weather.i18n.tr
 import com.catsblock.weather.ui.components.ExpressiveLoader
-import com.catsblock.weather.ui.components.ExpressiveProgressBar
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import org.json.JSONObject
-import java.io.ByteArrayInputStream
 
 private val CycloneIcon: ImageVector by lazy {
     ImageVector.Builder(
@@ -171,152 +144,6 @@ internal enum class MapLayer(val id: String, val label: String, val icon: ImageV
     Drought("drought", "Drought & dryness", Icons.Rounded.Landscape)
 }
 
-@SuppressLint("SetJavaScriptEnabled")
-internal object MapHost {
-    private var view: WebView? = null
-
-    private var appContext: Context? = null
-
-    var progress by mutableIntStateOf(0)
-        private set
-
-    var ready by mutableStateOf(false)
-        private set
-
-    var failed by mutableStateOf(false)
-        private set
-
-    var layer by mutableStateOf(MapLayer.None)
-
-    var selected by mutableStateOf<MapDetail?>(null)
-
-    var cityKey: String? = null
-
-    fun obtain(context: Context, background: Int, init: String): WebView {
-        view?.let { return it }
-        appContext = context.applicationContext
-        val web = WebView(context.applicationContext)
-        web.settings.javaScriptEnabled = true
-        web.settings.domStorageEnabled = true
-        web.settings.cacheMode = WebSettings.LOAD_DEFAULT
-        web.isVerticalScrollBarEnabled = false
-        web.isHorizontalScrollBarEnabled = false
-        web.overScrollMode = View.OVER_SCROLL_NEVER
-        web.setBackgroundColor(background)
-        web.addJavascriptInterface(object {
-            @JavascriptInterface
-            fun detail(type: String, json: String, x: Float, y: Float) {
-                val parsed = runCatching { JSONObject(json) }.getOrNull() ?: return
-                Handler(Looper.getMainLooper()).post { this@MapHost.selected = MapDetail(type, parsed, x.toDouble(), y.toDouble()) }
-            }
-        }, "MapBridge")
-        web.webViewClient = object : WebViewClient() {
-            override fun shouldInterceptRequest(webView: WebView?, request: WebResourceRequest?): WebResourceResponse? {
-                val uri = request?.url ?: return null
-                if (!MapFeeds.handles(uri)) return null
-                val data = appContext?.let { runCatching { MapFeeds.serve(it, uri) }.getOrNull() }
-                val headers = mapOf("Access-Control-Allow-Origin" to "*")
-                return if (data != null) {
-                    WebResourceResponse("application/json", "utf-8", 200, "OK", headers, ByteArrayInputStream(data))
-                } else {
-                    WebResourceResponse("application/json", "utf-8", 503, "Unavailable", headers, ByteArrayInputStream(ByteArray(0)))
-                }
-            }
-
-            override fun onPageFinished(webView: WebView?, url: String?) {
-                webView?.let { probe(it, 0) }
-            }
-
-            override fun onReceivedError(webView: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
-                if (request?.isForMainFrame == true) {
-                    ready = false
-                    failed = true
-                }
-            }
-        }
-        web.webChromeClient = object : WebChromeClient() {
-            override fun onConsoleMessage(message: ConsoleMessage?): Boolean {
-                Log.d("WeatherMap", message?.message().orEmpty())
-                return true
-            }
-
-            override fun onProgressChanged(webView: WebView?, newProgress: Int) {
-                progress = newProgress
-            }
-        }
-        view = web
-        pageInit = init
-        load(web)
-        return web
-    }
-
-    private var pageInit = "{}"
-
-    private fun probe(web: WebView, attempt: Int) {
-        web.evaluateJavascript("typeof window.MapApi") { result ->
-            val ok = result?.contains("object") == true
-            when {
-                ok -> {
-                    ready = true
-                    failed = false
-                }
-                attempt < 40 -> web.postDelayed({ probe(web, attempt + 1) }, 250)
-                else -> {
-                    ready = false
-                    failed = true
-                }
-            }
-        }
-    }
-
-    private fun load(web: WebView) {
-        ready = false
-        failed = false
-        progress = 0
-        cityKey = null
-        web.loadDataWithBaseURL(MapPage.BASE_URL, MapPage.page(pageInit), "text/html", "utf-8", null)
-    }
-
-    fun reload() {
-        view?.let { load(it) }
-    }
-
-    fun run(script: String) {
-        if (ready) view?.evaluateJavascript(script, null)
-    }
-
-    fun release(frame: FrameLayout) {
-        val web = frame.getChildAt(0) as? WebView ?: return
-        if (web.parent === frame) {
-            frame.removeView(web)
-            web.onPause()
-        }
-    }
-}
-
-internal fun mapLabels(): JSONObject = JSONObject()
-    .put("td", tr("Tropical depression"))
-    .put("ts", tr("Tropical storm"))
-    .put("c1", tr("Category 1"))
-    .put("c2", tr("Category 2"))
-    .put("c3", tr("Category 3"))
-    .put("c4", tr("Category 4"))
-    .put("c5", tr("Category 5"))
-    .put("winds", tr("Max winds"))
-    .put("fire", tr("Wildfire"))
-    .put("hotspots", tr("Hotspots"))
-    .put("none", tr("No active storms right now"))
-    .put("d0", tr("Slightly dry"))
-    .put("d4", tr("Extreme dry"))
-    .put("lvWarn", tr("Warning"))
-    .put("lvAlert", tr("Alert"))
-    .put("lvDanger", tr("Danger"))
-    .put("noAlerts", tr("No active alerts right now"))
-    .put("stKey", tr("Blue: active now · Gray: already passed"))
-    .put("stReach", tr("Storm winds reach"))
-    .put("radarSamples", RainViewerPalette.samplesJson())
-    .put("radarStops", RainViewerPalette.targetStopsJson())
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MapScreen(vm: WeatherViewModel) {
@@ -328,43 +155,13 @@ fun MapScreen(vm: WeatherViewModel) {
         ThemeMode.Light -> false
         ThemeMode.Dark -> true
     }
-    val context = LocalContext.current
-    val colorScheme = MaterialTheme.colorScheme
-    val surface = colorScheme.surface.toArgb()
-    val mapPalette = remember(
-        colorScheme.surface, colorScheme.onSurface, colorScheme.surfaceContainerHigh,
-        colorScheme.onSurfaceVariant, colorScheme.outlineVariant
-    ) {
-        JSONObject()
-            .put("bg", String.format("#%06X", colorScheme.surface.toArgb() and 0xFFFFFF))
-            .put("fg", String.format("#%06X", colorScheme.onSurface.toArgb() and 0xFFFFFF))
-            .put("chip", String.format("#%06X", colorScheme.surfaceContainerHigh.toArgb() and 0xFFFFFF))
-            .put("sub", String.format("#%06X", colorScheme.onSurfaceVariant.toArgb() and 0xFFFFFF))
-            .put("edge", String.format("#%06X", colorScheme.outlineVariant.toArgb() and 0xFFFFFF))
-            .toString()
-    }
-    val layer = MapHost.layer
-    val ready = MapHost.ready
-    val topInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    var layer by remember { mutableStateOf(MapLayer.None) }
+    var selectedDetail by remember { mutableStateOf<MapDetail?>(null) }
+    var animatedDetail by remember { mutableStateOf<MapDetail?>(null) }
+    var ready by remember { mutableStateOf(false) }
+    var focusRequest by remember { mutableIntStateOf(0) }
     val bottomInset = LocalBottomInset.current
     val scope = rememberCoroutineScope()
-    val initJson = remember(dark, topInset, bottomInset, city?.id, layer, settings.fahrenheit, settings.language, mapPalette) {
-        val target = city
-        JSONObject()
-            .put("dark", dark)
-            .put("palette", JSONObject(mapPalette))
-            .put("top", topInset.value.toDouble())
-            .put("bottom", bottomInset.value.toDouble())
-            .put("hasCity", target != null)
-            .put("lat", target?.lat ?: 0.0)
-            .put("lon", target?.lon ?: 0.0)
-            .put("layer", layer.id)
-            .put("title", tr(layer.label))
-            .put("err", tr("Map data unavailable"))
-            .put("f", settings.fahrenheit)
-            .put("labels", mapLabels())
-            .toString()
-    }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var sheetOpen by remember { mutableStateOf(false) }
     val locate = remember { Animatable(0f) }
@@ -382,14 +179,28 @@ fun MapScreen(vm: WeatherViewModel) {
     val radarSet by produceState<RadarSet?>(initialValue = null, key1 = layer) {
         value = if (layer.timeline == MapTimeline.RadarFrames) RadarLoader.load() else null
     }
-    val radarFrames = radarSet?.frames.orEmpty()
+    val radarFrames = remember(radarSet) {
+        val now = System.currentTimeMillis() / 1000L
+        val frames = radarSet?.frames.orEmpty()
+        buildList {
+            frames.filter { it.observed && it.time <= now }.maxByOrNull { it.time }?.let(::add)
+            addAll(frames.filter { !it.observed && it.time >= now }.sortedBy { it.time })
+        }
+    }
     var radarIndex by remember(radarSet) {
         mutableIntStateOf(radarFrames.indices.minByOrNull { kotlin.math.abs(radarFrames[it].time - System.currentTimeMillis() / 1000L) } ?: 0)
     }
+    val selectedRadarFrame = radarFrames.getOrNull(radarIndex)
+    val radarTileTemplate = selectedRadarFrame?.let { frame ->
+        radarSet?.host?.plus(frame.path)?.plus("/256/{z}/{x}/{y}/2/1_1.png")
+    }
     var radarPlaying by remember { mutableStateOf(false) }
     LaunchedEffect(layer) {
-        MapHost.selected = null
+        selectedDetail = null
         radarPlaying = false
+    }
+    LaunchedEffect(selectedDetail) {
+        selectedDetail?.let { animatedDetail = it }
     }
     LaunchedEffect(radarPlaying, layer, radarFrames.size) {
         while (radarPlaying && layer.timeline == MapTimeline.RadarFrames && radarFrames.size > 1) {
@@ -397,9 +208,10 @@ fun MapScreen(vm: WeatherViewModel) {
             radarIndex = if (radarIndex >= radarFrames.lastIndex) 0 else radarIndex + 1
         }
     }
-    val selectedRadarFrame = radarFrames.getOrNull(radarIndex)
     val selectedWeatherTimeMillis = remember(layer, forecastOffset, forecastHour, clockHour) {
-        clockHour.atZone(java.time.ZoneOffset.UTC).plusDays(forecastOffset.toLong()).withHour(forecastHour).toInstant().toEpochMilli()
+        val currentHour = clockHour.atZone(java.time.ZoneOffset.UTC).hour
+        val nextDay = if (forecastOffset == 0 && forecastHour < currentHour) 1L else 0L
+        clockHour.atZone(java.time.ZoneOffset.UTC).plusDays(forecastOffset.toLong() + nextDay).withHour(forecastHour).toInstant().toEpochMilli()
     }
     val staticTimeMillis = remember(layer) { System.currentTimeMillis() }
     val selectedTimeMillis = when (layer.timeline) {
@@ -408,56 +220,36 @@ fun MapScreen(vm: WeatherViewModel) {
         MapTimeline.Static -> staticTimeMillis
     }
 
-    LaunchedEffect(ready, dark, mapPalette) {
-        if (ready) MapHost.run("MapApi.setTheme(" + dark + "," + mapPalette + ")")
-    }
-    LaunchedEffect(ready, topInset, bottomInset) {
-        if (ready) MapHost.run("MapApi.setInsets(" + topInset.value + "," + bottomInset.value + ")")
-    }
-    LaunchedEffect(ready, city?.id) {
-        val target = city
-        if (ready && target != null && MapHost.cityKey != target.id) {
-            val animate = MapHost.cityKey != null
-            MapHost.cityKey = target.id
-            MapHost.run("MapApi.setCity(" + target.lat + "," + target.lon + "," + animate + ")")
-        }
-    }
-    LaunchedEffect(ready, layer, settings.fahrenheit, settings.language) {
-        if (ready) {
-            MapHost.run(
-                "MapApi.setLayer(" + JSONObject.quote(layer.id) + "," + JSONObject.quote(tr(layer.label)) + "," +
-                    JSONObject.quote(tr("Map data unavailable")) + "," + settings.fahrenheit + "," + mapLabels() + "," + selectedTimeMillis + ")"
-            )
-        }
-    }
-    LaunchedEffect(ready, layer, selectedTimeMillis) {
-        if (ready) MapHost.run("MapApi.setTime($selectedTimeMillis)")
-    }
-
     Box(Modifier.fillMaxSize().clipToBounds().background(MaterialTheme.colorScheme.surface)) {
-        AndroidView(
-            modifier = Modifier.fillMaxSize().clipToBounds(),
-            factory = { ctx ->
-                val web = MapHost.obtain(ctx, surface, initJson)
-                web.setLayerType(View.LAYER_TYPE_HARDWARE, null)
-                (web.parent as? ViewGroup)?.removeView(web)
-                FrameLayout(ctx).also { frame ->
-                    frame.addView(web, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
-                    web.onResume()
+        NativeWeatherMap(
+            city = city,
+            layer = layer,
+            dark = dark,
+            focusRequest = focusRequest,
+            radarTileTemplate = radarTileTemplate,
+            selectedTimeMillis = selectedTimeMillis,
+            onPointSelected = { latitude, longitude, x, y ->
+                if (layer.id in setOf("precip", "temp", "clouds", "wind", "pressure", "humidity", "dew", "uv", "aqi", "sea")) {
+                    selectedDetail = MapDetail(
+                        "weather-point",
+                        JSONObject()
+                            .put("lat", latitude)
+                            .put("lon", longitude)
+                            .put("layer", layer.id)
+                            .put("time", selectedTimeMillis),
+                        x.toDouble(),
+                        y.toDouble()
+                    )
+                } else {
+                    selectedDetail = null
                 }
             },
-            onRelease = { MapHost.release(it) }
+            onMapReady = { ready = it },
+            modifier = Modifier.fillMaxSize().clipToBounds()
         )
 
-        if (MapHost.progress < 100 && !MapHost.failed) {
-            ExpressiveProgressBar(
-                progress = { MapHost.progress / 100f },
-                modifier = Modifier.fillMaxWidth().padding(top = topInset)
-            )
-        }
-
         AnimatedVisibility(
-            visible = !ready && !MapHost.failed,
+            visible = !ready,
             modifier = Modifier.align(Alignment.Center),
             enter = fadeIn(tween(200)) + scaleIn(initialScale = 0.9f),
             exit = fadeOut(tween(200)) + scaleOut(targetScale = 0.9f)
@@ -466,19 +258,6 @@ fun MapScreen(vm: WeatherViewModel) {
                 ExpressiveLoader(size = 28.dp)
                 Spacer(Modifier.width(12.dp))
                 Text(tr("Loading map…"), style = MaterialTheme.typography.titleSmall)
-            }
-        }
-
-        AnimatedVisibility(
-            visible = MapHost.failed,
-            modifier = Modifier.align(Alignment.Center),
-            enter = fadeIn(tween(200)) + scaleIn(initialScale = 0.9f),
-            exit = fadeOut(tween(200)) + scaleOut(targetScale = 0.9f)
-        ) {
-            StatusPill {
-                Text(tr("Map data unavailable"), style = MaterialTheme.typography.titleSmall)
-                Spacer(Modifier.width(8.dp))
-                TextButton(onClick = MapHost::reload) { Text(tr("Retry")) }
             }
         }
 
@@ -508,7 +287,7 @@ fun MapScreen(vm: WeatherViewModel) {
             SmallFloatingActionButton(
                 onClick = {
                     city?.let {
-                        MapHost.run("MapApi.locate()")
+                        focusRequest++
                         scope.launch {
                             locate.snapTo(0f)
                             locate.animateTo(1f, tween(700))
@@ -538,7 +317,7 @@ fun MapScreen(vm: WeatherViewModel) {
             MapTimelineControl(
                 layer = layer,
                 offsetDays = forecastOffset,
-                onOffsetDays = { forecastOffset = it.coerceIn(-14, 14) },
+                onOffsetDays = { forecastOffset = it.coerceIn(0, 14) },
                 hour = forecastHour,
                 onHour = { forecastHour = it.coerceIn(0, 23) },
                 frames = radarFrames,
@@ -554,8 +333,14 @@ fun MapScreen(vm: WeatherViewModel) {
         }
     }
 
-    MapHost.selected?.let { detail ->
-        if (detail.type == "weather-point") {
+    AnimatedVisibility(
+        visible = selectedDetail?.type == "weather-point",
+        modifier = Modifier.fillMaxSize(),
+        enter = fadeIn(tween(180)) + scaleIn(initialScale = 0.92f),
+        exit = fadeOut(tween(140)) + scaleOut(targetScale = 0.96f)
+    ) {
+        animatedDetail?.let { detail ->
+            if (detail.type == "weather-point") {
             BoxWithConstraints(Modifier.fillMaxSize()) {
                 val popupWidth = (maxWidth - 24.dp).coerceAtMost(340.dp).coerceAtLeast(220.dp)
                 val popupHeight = (maxHeight - 100.dp).coerceAtMost(360.dp).coerceAtLeast(160.dp)
@@ -570,12 +355,13 @@ fun MapScreen(vm: WeatherViewModel) {
                     settings.fahrenheit,
                     settings.windUnit,
                     settings.pressureUnit,
-                    { MapHost.selected = null },
+                    { selectedDetail = null },
                     Modifier.offset(left, top).width(popupWidth).heightIn(max = popupHeight)
                 )
             }
-        } else {
-            MapDetailSheet(detail, settings.fahrenheit, settings.windUnit, settings.pressureUnit) { MapHost.selected = null }
+            } else {
+                MapDetailSheet(detail, settings.fahrenheit, settings.windUnit, settings.pressureUnit) { selectedDetail = null }
+            }
         }
     }
 
@@ -600,7 +386,8 @@ fun MapScreen(vm: WeatherViewModel) {
                 )
                 MapLayer.entries.forEach { item ->
                     LayerRow(item, item == layer) {
-                        MapHost.layer = item
+                        layer = item
+                        selectedDetail = null
                         scope.launch {
                             sheetState.hide()
                             sheetOpen = false
@@ -633,9 +420,7 @@ private fun MapTimelineControl(
     val status = if (layer.timeline == MapTimeline.RadarFrames) {
         tr(if (frame?.observed != false) "Observed" else "Forecast")
     } else {
-        val selectedHour = java.time.Instant.ofEpochMilli(selectedTimeMillis)
-        val currentHour = java.time.Instant.now().truncatedTo(java.time.temporal.ChronoUnit.HOURS)
-        tr(if (selectedHour.isBefore(currentHour)) "Historical model" else "Forecast model")
+        tr("Forecast model")
     }
     Surface(
         modifier = modifier,
@@ -666,8 +451,8 @@ private fun MapTimelineControl(
                 onValueChange = {
                     if (layer.timeline == MapTimeline.RadarFrames) onFrameIndex(it.toInt()) else onOffsetDays(it.toInt())
                 },
-                valueRange = if (layer.timeline == MapTimeline.RadarFrames) 0f..frames.lastIndex.coerceAtLeast(1).toFloat() else -14f..14f,
-                steps = if (layer.timeline == MapTimeline.RadarFrames) (frames.size - 2).coerceAtLeast(0) else 27,
+                valueRange = if (layer.timeline == MapTimeline.RadarFrames) 0f..frames.lastIndex.coerceAtLeast(1).toFloat() else 0f..14f,
+                steps = if (layer.timeline == MapTimeline.RadarFrames) (frames.size - 2).coerceAtLeast(0) else 13,
                 enabled = layer.timeline != MapTimeline.RadarFrames || frames.size > 1,
                 colors = SliderDefaults.colors(
                     thumbColor = MaterialTheme.colorScheme.primary,
@@ -679,7 +464,7 @@ private fun MapTimelineControl(
                 val edgeFormatter = java.time.format.DateTimeFormatter.ofPattern("HH:mm 'UTC'", I18n.lang.locale).withZone(java.time.ZoneOffset.UTC)
                 val firstFrame = frames.firstOrNull()?.time?.let { edgeFormatter.format(java.time.Instant.ofEpochSecond(it)) }
                 val lastFrame = frames.lastOrNull()?.time?.let { edgeFormatter.format(java.time.Instant.ofEpochSecond(it)) }
-                Text(firstFrame ?: "−14 d", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(firstFrame ?: tr("Today"), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(lastFrame ?: "+14 d", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             if (layer.timeline == MapTimeline.WeatherModel) {
@@ -757,7 +542,7 @@ private fun LayerRow(item: MapLayer, selected: Boolean, onClick: () -> Unit) {
                 color = if (selected) scheme.onSecondaryContainer else scheme.onSurface
             )
             if (item.timeline != MapTimeline.Static) {
-                val note = if (item.timeline == MapTimeline.RadarFrames) tr("Radar frames") else "${tr("Past model")} · ${tr("Forecast model")}"
+                val note = if (item.timeline == MapTimeline.RadarFrames) tr("Radar frames") else tr("Forecast model")
                 Text(note, style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant)
             }
         }

@@ -17,6 +17,8 @@ internal object SkyPhysics {
     private const val OZONE_HEIGHT = 15000.0
     private val rayleigh = doubleArrayOf(5.8e-6, 13.5e-6, 33.1e-6)
     private val ozone = doubleArrayOf(0.65e-6, 1.881e-6, 0.085e-6)
+    private var ambientCacheKey = Long.MIN_VALUE
+    private var ambientCache = FloatArray(3)
 
     private fun airmass(cosZenith: Double): Double {
         val c = cosZenith.coerceIn(0.0, 1.0)
@@ -33,7 +35,11 @@ internal object SkyPhysics {
         }
     }
 
+    @Synchronized
     fun zenithAmbient(sun: DoubleArray, steps: Int): FloatArray {
+        val sunKey = (sun[1] * 10000.0).toLong()
+        val key = (sunKey shl 8) xor steps.toLong()
+        if (key == ambientCacheKey) return ambientCache.clone()
         val originY = EARTH_RADIUS + 2.0
         val length = -originY + sqrt(originY * originY - (originY * originY - ATMOSPHERE_RADIUS * ATMOSPHERE_RADIUS))
         val mu = sun[1]
@@ -71,8 +77,11 @@ internal object SkyPhysics {
                 sumM[c] += attenuation * hm
             }
         }
-        return FloatArray(3) { c ->
+        val result = FloatArray(3) { c ->
             (20.0 * (sumR[c] * rayleigh[c] * rayleighPhase + sumM[c] * MIE_COEFFICIENT * miePhase) * EXPOSURE).toFloat()
         }
+        ambientCacheKey = key
+        ambientCache = result
+        return result.clone()
     }
 }

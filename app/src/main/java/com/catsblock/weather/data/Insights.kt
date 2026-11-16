@@ -39,6 +39,13 @@ private val compassId = arrayOf(
     "S", "SBD", "BD", "BBD", "B", "BBL", "BL", "UBL"
 )
 
+private val compassAr = arrayOf("ش", "ش ش ق", "ش ق", "ق ش ق", "ق", "ق ج ق", "ج ق", "ج ج ق", "ج", "ج ج غ", "ج غ", "غ ج غ", "غ", "غ ش غ", "ش غ", "ش ش غ")
+private val compassEl = arrayOf("Β", "ΒΒΑ", "ΒΑ", "ΑΒΑ", "Α", "ΑΝΑ", "ΝΑ", "ΝΝΑ", "Ν", "ΝΝΔ", "ΝΔ", "ΔΝΔ", "Δ", "ΔΒΔ", "ΒΔ", "ΒΒΔ")
+private val compassNl = arrayOf("N", "NNO", "NO", "ONO", "O", "OZO", "ZO", "ZZO", "Z", "ZZW", "ZW", "WZW", "W", "WNW", "NW", "NNW")
+private val compassRo = arrayOf("N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSV", "SV", "VSV", "V", "VNV", "NV", "NNV")
+private val compassVi = arrayOf("B", "BĐB", "ĐB", "ĐĐB", "Đ", "ĐĐN", "ĐN", "NĐN", "N", "NTN", "TN", "TTN", "T", "TTB", "TB", "BTB")
+private val compassZh = arrayOf("北", "北东北", "东北", "东东北", "东", "东东南", "东南", "南东南", "南", "南西南", "西南", "西西南", "西", "西西北", "西北", "北西北")
+
 private fun compass(): Array<String> = when (I18n.lang) {
     AppLanguage.English -> compassEn
     AppLanguage.PtBR, AppLanguage.PtPT -> compassPt
@@ -47,6 +54,13 @@ private fun compass(): Array<String> = when (I18n.lang) {
     AppLanguage.German -> compassDe
     AppLanguage.Korean -> compassKo
     AppLanguage.Indonesian -> compassId
+    AppLanguage.Hindi, AppLanguage.Polish, AppLanguage.Filipino -> compassEn
+    AppLanguage.Arabic -> compassAr
+    AppLanguage.Greek -> compassEl
+    AppLanguage.Dutch -> compassNl
+    AppLanguage.Romanian -> compassRo
+    AppLanguage.Vietnamese -> compassVi
+    AppLanguage.ChineseSimplified -> compassZh
 }
 
 fun compassLabel(deg: Double): String {

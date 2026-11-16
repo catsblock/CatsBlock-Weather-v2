@@ -24,6 +24,7 @@ import kotlin.math.pow
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
 import kotlin.math.tan
+import java.util.LinkedHashMap
 
 enum class StormIntensity { Light, Moderate, Severe, Extreme }
 
@@ -120,6 +121,21 @@ object RadarFrames {
     internal fun http(): OkHttpClient = client
 }
 
+internal data class RadarParticlePoint(val latitude: Double, val longitude: Double, val dbz: Int)
+
+internal fun radarPixelToLatLon(zoom: Int, tileX: Int, tileY: Int, pixelX: Int, pixelY: Int): Pair<Double, Double> {
+    require(zoom in 0..18)
+    val tileCount = 1 shl zoom
+    require(tileX in 0 until tileCount && tileY in 0 until tileCount)
+    require(pixelX in 0 until 256 && pixelY in 0 until 256)
+    val worldSize = 256.0 * tileCount
+    val worldX = (tileX * 256.0 + pixelX + 0.5) / worldSize
+    val worldY = (tileY * 256.0 + pixelY + 0.5) / worldSize
+    val longitude = worldX * 360.0 - 180.0
+    val latitude = Math.toDegrees(Math.atan(Math.sinh(Math.PI * (1.0 - 2.0 * worldY))))
+    return latitude to longitude
+}
+
 object RadarProbe {
 
     private const val ZOOM = 7
@@ -137,6 +153,8 @@ object RadarProbe {
     private const val HORIZON_MINUTES = 360.0
     private const val MAX_RANGE_KM = 320.0
     private const val MAX_PALETTE_DISTANCE = 900
+    private const val PARTICLE_ZOOM = 1
+    private const val MAX_PARTICLES = 320
 
     private val palette = RainViewerPalette.trackingColors
 
@@ -160,6 +178,7 @@ object RadarProbe {
 
     @Volatile
     private var last: Cached? = null
+    private val particleCache = LinkedHashMap<Long, List<RadarParticlePoint>>(16, 0.75f, true)
 
     suspend fun read(lat: Double, lon: Double): RadarReading? = withContext(Dispatchers.IO) {
         val set = RadarFrames.set() ?: return@withContext null
@@ -237,6 +256,44 @@ object RadarProbe {
         dbz.takeIf { it >= ECHO_DBZ }?.toDouble()
     }
 
+    internal suspend fun sampleParticles(frameEpoch: Long): List<RadarParticlePoint> = withContext(Dispatchers.IO) {
+        val set = RadarFrames.set() ?: return@withContext emptyList()
+        val frame = set.frames.minByOrNull { abs(it.time - frameEpoch) } ?: return@withContext emptyList()
+        if (abs(frame.time - frameEpoch) > 180L) return@withContext emptyList()
+        val cached = synchronized(particleCache) { particleCache[frame.time] }
+        if (cached != null) return@withContext cached
+
+        val tileCount = 1 shl PARTICLE_ZOOM
+        val tiles = coroutineScope {
+            (0 until tileCount).flatMap { y ->
+                (0 until tileCount).map { x ->
+                    async { Triple(x, y, loadTile(set.host, frame.path, PARTICLE_ZOOM, x, y)) }
+                }
+            }.awaitAll()
+        }
+        if (tiles.none { it.third != null }) return@withContext emptyList()
+
+        val points = ArrayList<RadarParticlePoint>()
+        for ((tileX, tileY, pixels) in tiles) {
+            if (pixels == null) continue
+            for (pixelY in 0 until TILE step 2) {
+                for (pixelX in 0 until TILE step 2) {
+                    val dbz = RainViewerPalette.dbzOf(pixels[pixelY * TILE + pixelX]) ?: continue
+                    if (dbz < ECHO_DBZ) continue
+                    val (latitude, longitude) = radarPixelToLatLon(PARTICLE_ZOOM, tileX, tileY, pixelX, pixelY)
+                    points += RadarParticlePoint(latitude, longitude, dbz)
+                }
+            }
+        }
+        val stride = (points.size + MAX_PARTICLES - 1) / MAX_PARTICLES
+        val result = if (stride <= 1) points.toList() else points.filterIndexed { index, _ -> index % stride == 0 }.take(MAX_PARTICLES)
+        synchronized(particleCache) {
+            particleCache[frame.time] = result
+            while (particleCache.size > 16) particleCache.entries.iterator().run { next(); remove() }
+        }
+        result
+    }
+
     private fun geometry(lat: Double, lon: Double): Geometry {
         val n = 2.0.pow(ZOOM)
         val latRad = Math.toRadians(lat.coerceIn(-85.0, 85.0))
@@ -286,9 +343,11 @@ object RadarProbe {
         grid
     }
 
-    private fun loadTile(host: String, path: String, x: Int, y: Int): IntArray? =
+    private fun loadTile(host: String, path: String, x: Int, y: Int): IntArray? = loadTile(host, path, ZOOM, x, y)
+
+    private fun loadTile(host: String, path: String, zoom: Int, x: Int, y: Int): IntArray? =
         try {
-            val request = Request.Builder().url(RadarFrames.reflectivityTileUrl(host, path, ZOOM, x, y)).build()
+            val request = Request.Builder().url(RadarFrames.reflectivityTileUrl(host, path, zoom, x, y)).build()
             RadarFrames.http().newCall(request).execute().use { response ->
                 if (!response.isSuccessful) return@use null
                 val bytes = response.body?.bytes() ?: return@use null

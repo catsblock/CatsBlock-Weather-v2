@@ -1,7 +1,10 @@
 package com.catsblock.weather.ui
 
+import android.Manifest
 import android.content.Intent
 import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -41,6 +44,9 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -99,8 +105,22 @@ private val safetyParagraphs = listOf(
 )
 
 @Composable
-fun ActivityDialog(stats: ActivityStats, fahrenheit: Boolean, onClose: () -> Unit) {
+fun ActivityDialog(stats: ActivityStats, fahrenheit: Boolean, vm: WeatherViewModel, onClose: () -> Unit) {
     var sourcesOpen by remember { mutableStateOf(false) }
+    var activityCitySearch by remember { mutableStateOf("") }
+    var locationMessage by remember { mutableStateOf<String?>(null) }
+    val activityCity by vm.activityCity.collectAsState()
+    val cityResults by vm.activityCityResults.collectAsState()
+    val currentWeatherCity by vm.city.collectAsState()
+    val locationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
+        if (grants.values.any { it }) {
+            vm.setActivityCityFromDevice { success ->
+                locationMessage = tr(if (success) "Activity location saved." else "Could not determine activity location. Try again or choose a city.")
+            }
+        } else {
+            locationMessage = tr("Location permission is required.")
+        }
+    }
     if (sourcesOpen) {
         SourcesDialog { sourcesOpen = false }
     }
@@ -108,6 +128,56 @@ fun ActivityDialog(stats: ActivityStats, fahrenheit: Boolean, onClose: () -> Uni
         val today = LocalDate.now()
         val installed = stats.installedAtMillis.takeIf { it > 0L }
             ?.let { Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).toLocalDate() }
+
+        SectionTitle(tr("Activity city"), top = 0.dp)
+        Text(
+            tr("Set activity location separately from the current weather city. Activity counts only when both cities match."),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 8.dp)
+        )
+        Spacer(Modifier.height(8.dp))
+        Text("${tr("Current weather city")}: ${currentWeatherCity?.name ?: tr("Unknown")}", style = MaterialTheme.typography.bodyMedium)
+        Text("${tr("Activity city")}: ${activityCity?.name ?: tr("No activity city selected")}", style = MaterialTheme.typography.bodyMedium)
+        OutlinedTextField(
+            value = activityCitySearch,
+            onValueChange = {
+                activityCitySearch = it
+                vm.searchActivityCities(it)
+            },
+            label = { Text(tr("Search for an activity city")) },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth()
+        )
+        cityResults.take(6).forEach { candidate ->
+            TextButton(
+                onClick = {
+                    vm.setActivityCity(candidate)
+                    activityCitySearch = ""
+                    vm.searchActivityCities("")
+                    locationMessage = tr("Activity location saved.")
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(Modifier.fillMaxWidth()) {
+                    Text(candidate.name, style = MaterialTheme.typography.bodyLarge)
+                    val detail = listOf(candidate.region, candidate.country).filter(String::isNotBlank).joinToString(" · ")
+                    if (detail.isNotEmpty()) Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
+        Button(
+            onClick = {
+                locationPermission.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
+            },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(tr("Use device location for activity"))
+        }
+        locationMessage?.let {
+            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Spacer(Modifier.height(8.dp))
 
         HeroTile(
             icon = Icons.Rounded.CalendarMonth,

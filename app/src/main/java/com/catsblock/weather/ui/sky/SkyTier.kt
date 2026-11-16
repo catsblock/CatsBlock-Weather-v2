@@ -1,8 +1,8 @@
 package com.catsblock.weather.ui.sky
 
-import android.app.ActivityManager
 import android.content.Context
 import android.os.Build
+import android.os.PowerManager
 
 enum class SkyTier(
     val octaves: Int,
@@ -27,22 +27,19 @@ enum class SkyTier(
     fun lowered(): SkyTier = if (ordinal <= VeryLow.ordinal) this else entries[ordinal - 1]
 }
 
-private const val BYTES_PER_GB = 1024.0 * 1024.0 * 1024.0
-
 fun detectSkyTier(context: Context, powerSave: Boolean): SkyTier {
-    val manager = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
-        ?: return SkyTier.Low
-    val info = ActivityManager.MemoryInfo().also { manager.getMemoryInfo(it) }
-    val ramGb = info.totalMem / BYTES_PER_GB
-    val heap = manager.memoryClass
-    var base = when {
-        manager.isLowRamDevice || ramGb < 2.8 || heap < 128 -> SkyTier.VeryLow
-        ramGb < 3.8 || heap < 192 -> SkyTier.Low
-        ramGb < 5.8 -> SkyTier.Medium
-        ramGb < 9.0 -> SkyTier.High
-        else -> SkyTier.Ultra
-    }
-    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU && base.ordinal > SkyTier.Medium.ordinal) base = SkyTier.Medium
-    if (Runtime.getRuntime().availableProcessors() <= 4) base = base.lowered()
-    return if (powerSave && base.ordinal > SkyTier.Low.ordinal) SkyTier.Low else base
+    var base = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) SkyTier.High else SkyTier.Medium
+    val thermalLimit = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        val manager = context.getSystemService(Context.POWER_SERVICE) as? PowerManager
+        manager?.currentThermalStatus?.let { status ->
+            when {
+                status >= PowerManager.THERMAL_STATUS_SEVERE -> SkyTier.Low
+                status >= PowerManager.THERMAL_STATUS_MODERATE -> SkyTier.Medium
+                else -> null
+            }
+        }
+    } else null
+    if (thermalLimit != null && base.ordinal > thermalLimit.ordinal) base = thermalLimit
+    if (powerSave && base.ordinal > SkyTier.Low.ordinal) base = SkyTier.Low
+    return base
 }

@@ -12,7 +12,18 @@ enum class AppLanguage(val code: String, val label: String, val locale: Locale) 
     German("de", "Deutsch", Locale.GERMAN),
     Italian("it", "Italiano", Locale.ITALIAN),
     Korean("ko", "한국어", Locale.KOREAN),
-    Indonesian("id", "Bahasa Indonesia", Locale("id", "ID"));
+    Indonesian("id", "Bahasa Indonesia", Locale("id", "ID")),
+    Hindi("hi", "हिन्दी", Locale("hi", "IN")),
+    Polish("pl", "Polski", Locale("pl", "PL")),
+    Arabic("ar", "العربية", Locale("ar", "SA")),
+    Filipino("fil", "Filipino", Locale("fil", "PH")),
+    Greek("el", "Ελληνικά", Locale("el", "GR")),
+    Dutch("nl", "Nederlands", Locale("nl", "NL")),
+    Romanian("ro", "Română", Locale("ro", "RO")),
+    Vietnamese("vi", "Tiếng Việt", Locale("vi", "VN")),
+    ChineseSimplified("zh-CN", "简体中文", Locale.SIMPLIFIED_CHINESE);
+
+    val isRightToLeft: Boolean get() = this == Arabic
 
     companion object {
         fun from(code: String?) = entries.firstOrNull { it.code == code } ?: system()
@@ -28,6 +39,15 @@ enum class AppLanguage(val code: String, val label: String, val locale: Locale) 
                 "it" -> Italian
                 "ko" -> Korean
                 "in", "id" -> Indonesian
+                "hi" -> Hindi
+                "pl" -> Polish
+                "ar" -> Arabic
+                "fil", "tl" -> Filipino
+                "el" -> Greek
+                "nl" -> Dutch
+                "ro" -> Romanian
+                "vi" -> Vietnamese
+                "zh" -> ChineseSimplified
                 else -> English
             }
         }
@@ -42,6 +62,11 @@ object I18n {
 fun tr(key: String): String {
     val lang = I18n.lang
     if (lang == AppLanguage.English) return englishText[key] ?: key
+    if (lang.ordinal > AppLanguage.Indonesian.ordinal) {
+        return additionalLanguageStrings[key]?.getOrNull(lang.ordinal - AppLanguage.Indonesian.ordinal - 1)
+            ?: englishText[key]?.let { additionalLanguageStrings[it]?.getOrNull(lang.ordinal - AppLanguage.Indonesian.ordinal - 1) }
+            ?: englishText[key] ?: key
+    }
     return table[key]?.getOrNull(lang.ordinal - 1)?.takeIf { it.isNotEmpty() } ?: englishText[key] ?: key
 }
 

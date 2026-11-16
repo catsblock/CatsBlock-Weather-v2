@@ -131,6 +131,8 @@ internal object RainViewerPalette {
         targetStops.forEach { put(org.json.JSONArray().put(it.first).put(it.second)) }
     }
 
+    fun particleColorForDbz(dbz: Int): Int = 0xFF000000.toInt() or colorAt(dbz.coerceIn(targetStops.first().first, targetStops.last().first))
+
     fun dbzOf(argb: Int): Int? {
         if ((argb ushr 24) < 16) return null
         val rgb = argb and 0xFFFFFF

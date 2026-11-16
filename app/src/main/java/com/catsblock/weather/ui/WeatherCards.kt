@@ -213,6 +213,19 @@ private fun SunFact(icon: ImageVector, label: String, value: String, modifier: M
     }
 }
 
+private fun conditionAccent(condition: Condition, dark: Boolean): Color = when (condition) {
+    Condition.Clear, Condition.FewClouds -> Color(0xFF18B9D5)
+    Condition.PartlyCloudy -> Color(0xFF8DBFD8)
+    Condition.MoreClouds -> if (dark) Color(0xFFD7DEE5) else Color(0xFFE8EBEF)
+    Condition.Cloudy, Condition.Fog -> if (dark) Color(0xFFB9C0C8) else Color(0xFFD7DADF)
+    Condition.Drizzle -> if (dark) Color(0xFFB4BCC6) else Color(0xFFD1D5DB)
+    Condition.Rain, Condition.ScatteredShowers -> if (dark) Color(0xFF929BA6) else Color(0xFFB5BBC3)
+    Condition.HeavyRain, Condition.Storm, Condition.ScatteredStorms, Condition.IsolatedStorms, Condition.StrongStorms -> if (dark) Color(0xFF323841) else Color(0xFF4B515A)
+    Condition.Hail -> if (dark) Color(0xFFE0E3E7) else Color(0xFFD0D4D9)
+    Condition.Snow, Condition.HeavySnow, Condition.Blizzard, Condition.Flurries, Condition.BlowingSnow, Condition.ScatteredSnow, Condition.SnowShowers -> if (dark) Color(0xFFE2E8EF) else Color(0xFFE5E8EC)
+    else -> if (dark) Color(0xFF92C7D8) else Color(0xFF43B9D2)
+}
+
 private fun durationLabel(minutes: Int): String = "${minutes / 60}h ${(minutes % 60).toString().padStart(2, '0')}m"
 
 @Composable
@@ -291,10 +304,12 @@ private fun LiquidLevelCard(
     modifier: Modifier,
     icon: ImageVector,
     color: Color,
-    onClick: (() -> Unit)?
+    onClick: (() -> Unit)?,
+    condition: Condition
 ) {
     val progress by animateFloatAsState(fraction.coerceIn(0f, 1f), tween(500), label = "liquidLevel")
     val orientation = rememberDeviceOrientation()
+    val liquidColor = conditionAccent(condition, androidx.compose.foundation.isSystemInDarkTheme())
     val motion = rememberInfiniteTransition(label = "liquidSurface")
     val wave by motion.animateFloat(0f, (2.0 * PI).toFloat(), infiniteRepeatable(tween(2400, easing = LinearEasing)), label = "liquidWave")
     GlassCard(
@@ -304,7 +319,7 @@ private fun LiquidLevelCard(
         background = {
             Canvas(Modifier.matchParentSize()) {
                 val radius = 32.dp.toPx()
-                drawRoundRect(color.copy(alpha = 0.055f), cornerRadius = CornerRadius(radius))
+                drawRoundRect(liquidColor.copy(alpha = 0.055f), cornerRadius = CornerRadius(radius))
                 if (progress > 0f) {
                     val surfaceMoves = progress in 0.01f..0.99f
                     val tilt = Math.toRadians(if (surfaceMoves) (-orientation.roll * 0.65f).coerceIn(-24f, 24f).toDouble() else 0.0)
@@ -329,8 +344,8 @@ private fun LiquidLevelCard(
                     surface.lineTo(size.width, size.height)
                     surface.lineTo(0f, size.height)
                     surface.close()
-                    drawPath(surface, Brush.verticalGradient(listOf(color.copy(alpha = 0.38f), color.copy(alpha = 0.24f))))
-                    drawPath(surfaceLine, color.copy(alpha = 0.54f), style = Stroke(width = 1.5.dp.toPx(), cap = StrokeCap.Round))
+                    drawPath(surface, Brush.verticalGradient(listOf(liquidColor.copy(alpha = 0.38f), liquidColor.copy(alpha = 0.24f))))
+                    drawPath(surfaceLine, liquidColor.copy(alpha = 0.54f), style = Stroke(width = 1.5.dp.toPx(), cap = StrokeCap.Round))
                 }
             }
         }
@@ -484,7 +499,8 @@ fun CardsDashboard(
             modifier = Modifier.weight(1f).then(tall),
             icon = Icons.Rounded.Umbrella,
             color = Color(0xFF42A5F5),
-            onClick = { onOpen("Precip") }
+            onClick = { onOpen("Precip") },
+            condition = cur.kind
         )
         WindCardV2(cur.windSpeed, cur.windDir, city, Modifier.weight(1f).then(tall)) { onOpen("Wind") }
     }
@@ -507,7 +523,8 @@ fun CardsDashboard(
             modifier = Modifier.weight(1f),
             icon = Icons.Rounded.WaterDrop,
             color = Color(0xFF29B6F6),
-            onClick = { onOpen("Humidity") }
+            onClick = { onOpen("Humidity") },
+            condition = cur.kind
         )
         PressureCardV2(cur.pressure, Modifier.weight(1f).then(tall)) { onOpen("Pressure") }
     }

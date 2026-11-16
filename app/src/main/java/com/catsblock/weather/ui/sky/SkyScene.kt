@@ -154,12 +154,13 @@ fun buildSkyScene(
     )
     val sidereal = SkyAstro.siderealRadians(epochMs, longitude)
     val phi = Math.toRadians(latitude)
+    val cloudStyle = skyStyle(cover)
     return SkyScene(
         moon = moon,
         moonVisible = moonAltitudeDeg > -3.0,
         skyEquatorial = floatArrayOf(sin(phi).toFloat(), cos(phi).toFloat(), sin(sidereal).toFloat(), cos(sidereal).toFloat()),
         gain = (1.0 + 6.0 * smoothstep(0.0, -12.0, Math.toDegrees(sunPosition.altitude))).toFloat(),
-        style = FloatArray(4) { i -> skyStyle(cover)[i] + (STORM_STYLE[i] - skyStyle(cover)[i]) * storm },
+        style = FloatArray(4) { i -> cloudStyle[i] + (STORM_STYLE[i] - cloudStyle[i]) * storm },
         cirrus = skyCirrus(cover) * (1f - storm) * (1f - fog),
         sunTransmittanceHigh = SkyPhysics.sunTransmittance(sy.coerceAtLeast(0.01)),
         sun = sunVector,

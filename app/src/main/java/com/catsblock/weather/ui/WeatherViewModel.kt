@@ -53,6 +53,7 @@ import kotlinx.coroutines.delay
 import android.os.SystemClock
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
@@ -64,7 +65,7 @@ import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 import java.util.Locale
 
-enum class Screen { Welcome, Picker, Main, Map, Agent, News, Settings, IconKit, BackgroundKit, AppIcon, LiveMoon, Privacy, Info, Terms }
+enum class Screen { Welcome, Picker, Main, Map, Agent, News, Settings, IconKit, BackgroundKit, AppIcon, LiveMoon, Privacy, Info, Terms, License }
 
 sealed interface WeatherState {
     data object Idle : WeatherState
@@ -106,6 +107,8 @@ class WeatherViewModel(private val app: Application) : AndroidViewModel(app) {
     val settings = store.settings.stateIn(viewModelScope, SharingStarted.Eagerly, AppSettings())
 
     val activityStats = activity.stats.stateIn(viewModelScope, SharingStarted.Eagerly, com.catsblock.weather.data.ActivityStats())
+    val activityCity = activity.configuredCity.stateIn(viewModelScope, SharingStarted.Eagerly, null)
+    val activityCityResults = MutableStateFlow<List<City>>(emptyList())
 
     init {
         viewModelScope.launch {
@@ -118,7 +121,15 @@ class WeatherViewModel(private val app: Application) : AndroidViewModel(app) {
 
     init {
         viewModelScope.launch { settings.collect { UserKeys.update(it.apiKeys) } }
-        viewModelScope.launch { runCatching { activity.checkIn() } }
+        viewModelScope.launch {
+            combine(city, activityCity) { globalCity, configuredCity -> globalCity to configuredCity }
+                .distinctUntilChanged()
+                .collectLatest { (globalCity, configuredCity) ->
+                    if (globalCity != null && configuredCity != null) {
+                        runCatching { activity.checkIn(globalCity) }
+                    }
+                }
+        }
     }
     val savedCities = store.savedCities.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
@@ -244,6 +255,10 @@ class WeatherViewModel(private val app: Application) : AndroidViewModel(app) {
         screen.value = Screen.Terms
     }
 
+    fun openLicense() {
+        screen.value = Screen.License
+    }
+
     fun openInfo(from: Screen) {
         infoReturn = from
         screen.value = Screen.Info
@@ -293,6 +308,7 @@ class WeatherViewModel(private val app: Application) : AndroidViewModel(app) {
             Screen.Privacy -> privacyReturn
             Screen.Info -> infoReturn
             Screen.Terms -> Screen.Settings
+            Screen.License -> Screen.Settings
             Screen.IconKit, Screen.BackgroundKit, Screen.AppIcon -> Screen.Settings
             else -> screen.value
         }
@@ -322,6 +338,33 @@ class WeatherViewModel(private val app: Application) : AndroidViewModel(app) {
         val seconds = agentUsedSeconds.value
         agentUnsaved = 0
         viewModelScope.launch { store.setAgentUsage(day, seconds) }
+    }
+
+    fun searchActivityCities(query: String) {
+        viewModelScope.launch {
+            activityCityResults.value = if (query.trim().length < 2) emptyList() else
+                runCatching { repo.searchCities(query.trim()) }.getOrDefault(emptyList())
+        }
+    }
+
+    fun setActivityCity(selected: City) {
+        viewModelScope.launch { activity.setConfiguredCity(selected) }
+    }
+
+    @SuppressLint("MissingPermission")
+    fun setActivityCityFromDevice(onComplete: (Boolean) -> Unit) {
+        viewModelScope.launch {
+            val located = runCatching {
+                val client = LocationServices.getFusedLocationProviderClient(app)
+                val position = client.getCurrentLocation(Priority.PRIORITY_BALANCED_POWER_ACCURACY, null).await()
+                    ?: client.lastLocation.await() ?: return@launch onComplete(false)
+                reverse(position.latitude, position.longitude)
+            }.getOrNull()
+            if (located != null && located.code.length == 2 && located.region.isNotBlank()) {
+                activity.setConfiguredCity(located)
+                onComplete(true)
+            } else onComplete(false)
+        }
     }
 
     fun selectCity(selected: City) {

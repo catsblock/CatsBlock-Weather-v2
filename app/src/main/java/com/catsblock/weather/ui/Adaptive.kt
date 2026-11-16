@@ -28,8 +28,9 @@ data class WindowLayout(
 ) {
     val isWide: Boolean get() = width != WindowWidth.Compact
     val useRail: Boolean get() = isWide
-    val twoColumns: Boolean get() = isWide
-    val contentMaxWidth: Dp get() = if (width == WindowWidth.Expanded) 1120.dp else 880.dp
+    val usableWidthDp: Int get() = (widthDp - if (useRail) 96 else 0).coerceAtLeast(0)
+    val twoColumns: Boolean get() = usableWidthDp >= 720
+    val contentMaxWidth: Dp get() = minOf(usableWidthDp.dp, if (width == WindowWidth.Expanded) 1120.dp else 880.dp)
 }
 
 val LocalWindowLayout = compositionLocalOf {
@@ -58,7 +59,7 @@ fun rememberWindowLayout(): WindowLayout {
 @Composable
 fun detailSidePadding(maxContent: Dp = 760.dp, base: Dp = 16.dp): Dp {
     val layout = LocalWindowLayout.current
-    return if (layout.isWide) ((layout.widthDp.dp - maxContent) / 2).coerceAtLeast(base) else base
+    return if (layout.isWide) ((layout.usableWidthDp.dp - maxContent) / 2).coerceAtLeast(base) else base
 }
 
 @Composable
@@ -71,6 +72,6 @@ fun AdaptivePage(maxWidth: Dp = 720.dp, content: @Composable () -> Unit) {
         Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
         contentAlignment = Alignment.TopCenter
     ) {
-        Box(Modifier.widthIn(max = maxWidth).fillMaxHeight()) { content() }
+        Box(Modifier.widthIn(max = minOf(maxWidth, LocalWindowLayout.current.usableWidthDp.dp)).fillMaxHeight()) { content() }
     }
 }

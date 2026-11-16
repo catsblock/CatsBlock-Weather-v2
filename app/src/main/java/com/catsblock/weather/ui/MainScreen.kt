@@ -566,7 +566,7 @@ private fun WeatherDetails(
     val screenHeight = LocalConfiguration.current.screenHeightDp
     val heroFactor = (if (settings.compactHero) 0.46f else 0.66f) * (if (layout.isWide && layout.landscape) 0.78f else 1f)
     val heroHeight = ((screenHeight * heroFactor).dp - headerHeight)
-        .coerceAtLeast(if (settings.compactHero) 240.dp else 320.dp)
+        .coerceIn(if (settings.compactHero) 240.dp else 320.dp, if (layout.isWide) 480.dp else 620.dp)
     val tempSize = when {
         !layout.isWide -> 150.sp
         layout.landscape -> 168.sp
