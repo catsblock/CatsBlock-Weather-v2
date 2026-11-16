@@ -187,7 +187,7 @@ private fun WeatherPointBody(point: MapPointWeather?, data: JSONObject, fahrenhe
     val title = tr(MapLayer.entries.firstOrNull { it.id == layer }?.label ?: "Weather")
     val requestedMillis = data.optLong("time", 0L)
     val requested = Instant.ofEpochMilli(requestedMillis)
-    val status = tr(if (requested.isBefore(Instant.now())) "Historical model" else "Forecast model")
+    val status = tr(if (requested.isBefore(Instant.now().truncatedTo(java.time.temporal.ChronoUnit.HOURS))) "Historical model" else "Forecast model")
     Header(title, null, Color.Unspecified)
     if (point == null) {
         Text(tr("Loading details…"), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)

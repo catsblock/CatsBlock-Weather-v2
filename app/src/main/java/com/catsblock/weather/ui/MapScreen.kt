@@ -633,7 +633,9 @@ private fun MapTimelineControl(
     val status = if (layer.timeline == MapTimeline.RadarFrames) {
         tr(if (frame?.observed != false) "Observed" else "Forecast")
     } else {
-        tr(if (offsetDays < 0) "Historical model" else "Forecast model")
+        val selectedHour = java.time.Instant.ofEpochMilli(selectedTimeMillis)
+        val currentHour = java.time.Instant.now().truncatedTo(java.time.temporal.ChronoUnit.HOURS)
+        tr(if (selectedHour.isBefore(currentHour)) "Historical model" else "Forecast model")
     }
     Surface(
         modifier = modifier,
