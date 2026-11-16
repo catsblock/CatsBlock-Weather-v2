@@ -19,7 +19,7 @@ const KEY_QUOTA_DOWN_S = 3600;
 
 const USER_KEY_PATTERN = /^[A-Za-z0-9_-]{16,64}$/;
 const PUBLIC_PATHS = new Set(["/", "/v1/health", "/v1/region"]);
-const PROTECTED_PATHS = new Set(["/v1/news/event", "/v1/weather", "/v1/visual", "/v1/openweather", "/v1/agent", "/v1/agent/status", "/v1/agent/feedback", "/v1/news", "/v1/news/like", "/v1/news/reaction"]);
+const PROTECTED_PATHS = new Set(["/v1/news/event", "/v1/weather", "/v1/visual", "/v1/openweather", "/v1/agent", "/v1/agent/status", "/v1/agent/feedback", "/v1/news", "/v1/news/like", "/v1/news/reaction", "/v1/auth/register", "/v1/auth/login", "/v1/auth/refresh", "/v1/auth/me", "/v1/auth/logout", "/v1/auth/delete"]);
 const BROWSER_HEADERS = ["Origin", "Sec-Fetch-Mode", "Sec-Fetch-Site", "Sec-Fetch-Dest"];
 const COORD_PATTERN = /^-?\d{1,3}(\.\d{1,10})?$/;
 
@@ -1688,7 +1688,8 @@ async function handleRequest(request, env, ctx) {
       return jsonResponse({ error: "region_blocked", message: REGION_MESSAGE }, 451);
     }
     if (path.startsWith("/v1/auth/")) {
-      return await handleAuth(request, env, { jsonResponse }, path);
+      if (!(await authorized(request, env))) return jsonResponse({ error: "unauthorized" }, 401);
+      return await handleAuth(request, env, { jsonResponse, identify, limiterCall }, path);
     }
 
     if (ADMIN_PATHS.has(path)) {
