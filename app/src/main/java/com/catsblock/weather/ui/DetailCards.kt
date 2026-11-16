@@ -250,7 +250,10 @@ fun HoursCard(
                     DayChip(d, today, fahrenheit, selected == i) {
                         val index = hours.indexOfFirst { it.time.toLocalDate() == d.date }.coerceAtLeast(0)
                         scope.launch {
-                            scrollState.animateScrollTo(with(density) { (HourStep * index).roundToPx() })
+                            val chipTarget = with(density) { ((DayChipWidth + DayChipGap) * i).roundToPx() }
+                            chipScroll.animateScrollTo(chipTarget)
+                            val hourTarget = with(density) { (HourStep * index).roundToPx() }
+                            scrollState.animateScrollTo(hourTarget)
                         }
                     }
                 }
