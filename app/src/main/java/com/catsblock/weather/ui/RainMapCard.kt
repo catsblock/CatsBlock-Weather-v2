@@ -97,6 +97,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
+import okhttp3.Request
 
 data class RadarFrame(val time: Long, val path: String, val observed: Boolean)
 

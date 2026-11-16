@@ -179,7 +179,7 @@ fun DayDetailSheet(
                         color = scheme.onSurfaceVariant
                     )
                 } else {
-                    DayBody(day, dayHours, fahrenheit, now, live)
+                    DayBody(day, dayHours, fahrenheit, now, live, city)
                 }
             }
             Row(
@@ -283,7 +283,7 @@ private fun DayHero(day: Day, fahrenheit: Boolean) {
 }
 
 @Composable
-private fun DayBody(day: Day, dayHours: List<Hour>, fahrenheit: Boolean, now: LocalDateTime, live: Boolean) {
+private fun DayBody(day: Day, dayHours: List<Hour>, fahrenheit: Boolean, now: LocalDateTime, live: Boolean, city: City?) {
     val windPeak = dayHours.maxBy { it.windSpeed }
     val aqiMax = dayHours.mapNotNull { it.aqi }.maxOrNull()
     val humidity = dayHours.map { it.humidity }.average().roundToInt()
