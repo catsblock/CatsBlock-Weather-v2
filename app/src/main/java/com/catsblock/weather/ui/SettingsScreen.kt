@@ -16,6 +16,7 @@ import com.catsblock.weather.data.PrecipUnit
 import com.catsblock.weather.ui.typography.AppFonts
 import kotlin.math.roundToInt
 import com.catsblock.weather.data.SecretKeys
+import com.catsblock.weather.data.AccountAuth
 import com.catsblock.weather.data.WeatherSource
 import com.catsblock.weather.data.WindUnit
 import com.catsblock.weather.data.PressureUnit
@@ -202,6 +203,9 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
     var keyInput by remember { mutableStateOf("") }
     var notificationsOn by remember { mutableStateOf(notificationsAllowed(ctx)) }
     var openSettingsOnDeny by remember { mutableStateOf(false) }
+    var deleteAccountDialog by remember { mutableStateOf(false) }
+    var deletePassword by remember { mutableStateOf("") }
+    var accountMessage by remember { mutableStateOf<String?>(null) }
     val owner = LocalLifecycleOwner.current
 
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -247,6 +251,30 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
         }
         owner.lifecycle.addObserver(o)
         onDispose { owner.lifecycle.removeObserver(o) }
+    }
+
+    if (deleteAccountDialog) {
+        AlertDialog(
+            onDismissRequest = { deleteAccountDialog = false },
+            title = { Text("Delete account permanently?") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("This revokes sessions and cannot be undone. Enter your current password.")
+                    OutlinedTextField(value = deletePassword, onValueChange = { deletePassword = it }, singleLine = true, label = { Text("Password") })
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    scope.launch {
+                        when (val result = AccountAuth.delete(deletePassword)) {
+                            is AccountAuth.Result.Success -> { deleteAccountDialog = false; deletePassword = ""; accountMessage = "Account deleted." }
+                            is AccountAuth.Result.Failure -> accountMessage = result.message
+                        }
+                    }
+                }) { Text("Delete") }
+            },
+            dismissButton = { TextButton(onClick = { deleteAccountDialog = false }) { Text(tr("Cancel")) } }
+        )
     }
 
     if (alertsOpen) {
@@ -442,6 +470,20 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
                 .padding(horizontal = settingsSide, vertical = 8.dp)
                 .padding(bottom = LocalBottomInset.current)
         ) {
+            CategoryTitle("Account")
+            Group {
+                Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(if (AccountAuth.loggedIn()) "Logged in as @${AccountAuth.currentUsername()}" else "Not logged in", style = MaterialTheme.typography.titleMedium)
+                    accountMessage?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                    if (AccountAuth.loggedIn()) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            TextButton(onClick = { scope.launch { AccountAuth.logout(); accountMessage = "Logged out." } }) { Text("Log out") }
+                            TextButton(onClick = { deleteAccountDialog = true }) { Text("Delete account") }
+                        }
+                    } else Text("Use the news engagement dialog to create or access a first-party account.")
+                }
+            }
+
             CategoryTitle(tr("Appearance"))
 
             GroupLabel(tr("Theme"))

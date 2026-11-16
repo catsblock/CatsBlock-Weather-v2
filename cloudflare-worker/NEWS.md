@@ -44,7 +44,11 @@ Response:
 }
 ```
 
-`liked`, `reactions` and `myReaction` describe the reader identified by `X-Device-Id`. `myReaction` is an empty string when the reader has no reaction, and every reaction key is always present, including the ones with zero votes. Pages contain 15 articles. Ordering is by likes, then regional relevance, then publication time. Summaries and images are omitted (empty string) when the upstream feed does not provide them; nothing is invented.
+`liked`, `reactions` and `myReaction` describe the authenticated account identified by the bearer session. Reading the feed remains public after the app token check. `myReaction` is an empty string when the account has no reaction, and every reaction key is always present, including the ones with zero votes. Pages contain 15 articles. Ordering is by likes, then regional relevance, then publication time. Summaries and images are omitted (empty string) when the upstream feed does not provide them; nothing is invented.
+
+## Account routes
+
+`POST /v1/auth/register` and `POST /v1/auth/login` create first-party username/password accounts. `GET /v1/auth/me` returns the current account. `POST /v1/auth/logout` revokes the current access session and `POST /v1/auth/delete` permanently disables the account after password confirmation. Passwords are stored as PBKDF2-SHA-256 verifiers; plaintext passwords never appear in responses. A new login revokes previous sessions and replaces the active device.
 
 ## GET /v1/news/event
 
@@ -56,7 +60,7 @@ Body: `{"id": "<article id>", "liked": true}` with `Content-Type: application/js
 
 Response: `200 {"id": "...", "likes": 13, "liked": true}`. `liked` always reports the state that is actually stored, so a client can apply it directly. Both operations are idempotent: repeating the same body leaves the total unchanged and never creates a second vote.
 
-Errors: `400 bad_request` (missing or malformed identifier), `429 rate_limited` (the 15th action within two minutes starts a 15-minute lockout), `503 unavailable` (storage missing). A `429` response includes `Retry-After` and `X-Lockout-Seconds`.
+Errors: `401 authentication_required`, `400 bad_request` (missing or malformed identifier), `429 rate_limited` (the 10th action within 60 seconds starts a 15-minute lockout), `503 unavailable` (storage missing). A `429` response includes `Retry-After` and `X-Lockout-Seconds`.
 
 ## POST /v1/news/reaction
 
@@ -74,7 +78,7 @@ Response:
 }
 ```
 
-`reaction` is the state that is actually stored, and `reactions` is the resulting per-emoji tally. Errors: `400 bad_request` (unknown reaction or identifier), `429 rate_limited` (the 15th action within two minutes starts a 15-minute lockout), `503 unavailable` (storage missing). A `429` response includes `Retry-After` and `X-Lockout-Seconds`.
+`reaction` is the state that is actually stored, and `reactions` is the resulting per-emoji tally. Errors: `401 authentication_required`, `400 bad_request` (unknown reaction or identifier), `429 rate_limited` (the 10th action within 60 seconds starts a 15-minute lockout), `503 unavailable` (storage missing). A `429` response includes `Retry-After` and `X-Lockout-Seconds`.
 
 ## Counts, consistency and abuse protection
 
@@ -84,7 +88,7 @@ Counters are never stored as separate mutable rows. Each like and each reaction 
 - a total can therefore never drift, double, or lose other reactions, regardless of how many requests arrive at once;
 - every write is a single statement, so no read-modify-write sequence exists to interleave badly.
 
-Rate limits use a fixed two-minute window stored in D1. The first 14 valid actions are accepted; the 15th atomically sets `blocked_until` to 15 minutes in the future and is rejected. Every request during that period is rejected without changing the vote. Two keys are enforced per action: the device identity and the client address, so rotating device identifiers from one address does not multiply the budget. The limiter fails closed if D1 is unavailable; it never falls back to a non-atomic KV counter for mutations. The app additionally collapses rapid taps into one in-flight request per article and honors the server's `Retry-After` lockout locally.
+Rate limits use a fixed 60-second window stored in D1. The first 9 valid actions are accepted; the 10th atomically sets `blocked_until` to 15 minutes in the future and is rejected. Every request during that period is rejected without changing the vote. The budget key is the authenticated account, so changing devices, IP addresses, sessions or articles cannot multiply the budget. The limiter fails closed if D1 is unavailable; it never falls back to a non-atomic KV counter for mutations. The app additionally collapses rapid taps into one in-flight request per article and honors the server's `Retry-After` lockout locally.
 
 ## Sources and caching
 
@@ -93,6 +97,6 @@ Each language is served by a keyless Google News RSS weather query (`hl`/`gl` pe
 ## Requirements
 
 - `APP_KV` must be bound; without it the routes answer `503 unavailable` and the app shows its "news unavailable" state.
-- `NEWS_DB` (D1) must be bound and the migrations in `migrations/` applied (`wrangler d1 migrations apply`), including `0004_news_action_lockouts.sql`. Without the binding the likes and reactions answer `503 unavailable` rather than using an unsafe KV write path.
+- `NEWS_DB` (D1) must be bound and the migrations in `migrations/` applied (`wrangler d1 migrations apply`), including `0004_news_action_lockouts.sql` and `0005_first_party_accounts.sql`. Without the binding the likes, reactions and account routes answer `503 unavailable` rather than using an unsafe KV write path.
 - `node --check news.js` passes; the module has no dependencies beyond the existing KV and D1 bindings.
 - The app only shows the tab content when the build has `CLOUDFLARE_WEBSITE` (https) and `APP_TOKEN` configured.

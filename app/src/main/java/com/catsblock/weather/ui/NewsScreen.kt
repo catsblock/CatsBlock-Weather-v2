@@ -29,6 +29,7 @@ import androidx.compose.material.icons.rounded.Clear
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -36,6 +37,7 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -56,6 +58,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.catsblock.weather.data.NewsArticle
+import com.catsblock.weather.data.AccountAuth
 import com.catsblock.weather.data.NewsFeed
 import com.catsblock.weather.data.NewsLikeResult
 import com.catsblock.weather.data.NewsLoad
@@ -281,6 +284,53 @@ fun NewsScreen(vm: WeatherViewModel) {
     if (opened != null) {
         NewsBrowserDialog(opened) { openedId = null }
     }
+    if (state.authRequired) {
+        AccountGateDialog(
+            onCancel = news::dismissAuth,
+            onSuccess = news::retryPending
+        )
+    }
+}
+
+@Composable
+private fun AccountGateDialog(onCancel: () -> Unit, onSuccess: () -> Unit) {
+    val scope = rememberCoroutineScope()
+    var username by rememberSaveable { mutableStateOf("") }
+    var password by rememberSaveable { mutableStateOf("") }
+    var confirmation by rememberSaveable { mutableStateOf("") }
+    var register by rememberSaveable { mutableStateOf(false) }
+    var error by rememberSaveable { mutableStateOf<String?>(null) }
+    var busy by rememberSaveable { mutableStateOf(false) }
+    AlertDialog(
+        onDismissRequest = onCancel,
+        title = { Text("To react to this news, please log in!") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("This makes our community safer against bots and DDoS attacks. Read our privacy policy and terms of service.")
+                TextField(value = username, onValueChange = { username = it }, singleLine = true, label = { Text("Username") })
+                TextField(value = password, onValueChange = { password = it }, singleLine = true, label = { Text("Password") })
+                if (register) TextField(value = confirmation, onValueChange = { confirmation = it }, singleLine = true, label = { Text("Confirm password") })
+                error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = !busy, onClick = {
+                busy = true
+                error = null
+                scope.launch {
+                    val result = if (register) AccountAuth.register(username, password, confirmation) else AccountAuth.login(username, password)
+                    busy = false
+                    when (result) {
+                        is AccountAuth.Result.Success -> onSuccess()
+                        is AccountAuth.Result.Failure -> error = result.message
+                    }
+                }
+            }) { Text(if (register) "Create account" else "Login") }
+        },
+        dismissButton = {
+            TextButton(onClick = { register = !register; error = null }) { Text(if (register) "Use login" else "Create account") }
+        }
+    )
 }
 
 @Composable

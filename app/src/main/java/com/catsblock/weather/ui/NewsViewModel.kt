@@ -3,6 +3,7 @@ package com.catsblock.weather.ui
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.catsblock.weather.data.NewsArticle
+import com.catsblock.weather.data.AccountAuth
 import com.catsblock.weather.data.NewsFeed
 import com.catsblock.weather.data.NewsLikeResult
 import com.catsblock.weather.data.NewsLoad
@@ -26,7 +27,8 @@ data class NewsUiState(
     val failed: Boolean = false,
     val status: Int = 0,
     val message: String? = null,
-    val available: Boolean = NewsFeed.available()
+    val available: Boolean = NewsFeed.available(),
+    val authRequired: Boolean = false
 )
 
 class NewsViewModel : ViewModel() {
@@ -39,6 +41,8 @@ class NewsViewModel : ViewModel() {
     private var language = "en"
     private var region = "US"
     private var query = ""
+    private var pendingLike: Pair<String, Boolean>? = null
+    private var pendingReaction: Pair<String, String>? = null
 
     private val likeQueues = HashMap<String, LatestSender<Boolean>>()
     private val reactionQueues = HashMap<String, LatestSender<String>>()
@@ -79,8 +83,33 @@ class NewsViewModel : ViewModel() {
         _state.update { it.copy(message = null) }
     }
 
+    fun dismissAuth() {
+        pendingLike = null
+        pendingReaction = null
+        _state.update { it.copy(authRequired = false) }
+    }
+
+    fun retryPending() {
+        val like = pendingLike
+        val reaction = pendingReaction
+        pendingLike = null
+        pendingReaction = null
+        _state.update { it.copy(authRequired = false) }
+        if (like != null) setLikeById(like.first, like.second)
+        if (reaction != null) setReactionById(reaction.first, reaction.second)
+    }
+
     fun setLike(article: NewsArticle, liked: Boolean) {
-        val current = _state.value.articles.firstOrNull { it.id == article.id } ?: return
+        if (!AccountAuth.loggedIn()) {
+            pendingLike = article.id to liked
+            _state.update { it.copy(authRequired = true) }
+            return
+        }
+        setLikeById(article.id, liked)
+    }
+
+    private fun setLikeById(articleId: String, liked: Boolean) {
+        val current = _state.value.articles.firstOrNull { it.id == articleId } ?: return
         if ((likeBlockedUntil[current.id] ?: 0L) > System.currentTimeMillis()) return
         if (current.liked == liked) return
         likeSnapshots.putIfAbsent(current.id, current.liked to current.likes)
@@ -89,9 +118,18 @@ class NewsViewModel : ViewModel() {
     }
 
     fun toggleReaction(article: NewsArticle, reaction: Reaction) {
-        val current = _state.value.articles.firstOrNull { it.id == article.id } ?: return
+        if (!AccountAuth.loggedIn()) {
+            pendingReaction = article.id to reaction.emoji
+            _state.update { it.copy(authRequired = true) }
+            return
+        }
+        setReactionById(article.id, if (article.myReaction == reaction.emoji) "" else reaction.emoji)
+    }
+
+    private fun setReactionById(articleId: String, emoji: String) {
+        val current = _state.value.articles.firstOrNull { it.id == articleId } ?: return
         if ((reactionBlockedUntil[current.id] ?: 0L) > System.currentTimeMillis()) return
-        val target = if (current.myReaction == reaction.emoji) null else reaction.emoji
+        val target = emoji.takeIf { it.isNotEmpty() }
         if (current.myReaction == target) return
         reactionSnapshots.putIfAbsent(current.id, current.myReaction to current.reactions)
         updateArticle(current.id) { it.withReaction(target) }
@@ -162,6 +200,7 @@ class NewsViewModel : ViewModel() {
                     }
                     _state.update { it.copy(message = likeMessage(result)) }
                 }
+                NewsLikeResult.AuthenticationRequired -> _state.update { it.copy(authRequired = true) }
                 else -> {
                     likeSnapshots[articleId]?.let { snapshot ->
                         updateArticle(articleId) { it.copy(liked = snapshot.first, likes = snapshot.second) }
@@ -186,6 +225,7 @@ class NewsViewModel : ViewModel() {
                     }
                     _state.update { it.copy(message = reactionMessage(result)) }
                 }
+                NewsReactionResult.AuthenticationRequired -> _state.update { it.copy(authRequired = true) }
                 else -> {
                     reactionSnapshots[articleId]?.let { snapshot ->
                         updateArticle(articleId) { it.copy(myReaction = snapshot.first, reactions = snapshot.second) }

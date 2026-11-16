@@ -6,8 +6,8 @@ const MAX_EVENT = 40;
 const MAX_CURSOR = 256;
 const FETCH_TIMEOUT_MS = 12000;
 const MAX_BODY_BYTES = 2048;
-const ACTION_WINDOW_S = 120;
-const ACTION_MAX = 14;
+const ACTION_WINDOW_S = 60;
+const ACTION_MAX = 9;
 const ACTION_BLOCK_S = 900;
 const REACTION_LIST = ["🤩", "😁", "😭", "⚡", "👍", "👏"];
 const REACTIONS = new Set(REACTION_LIST);
@@ -530,13 +530,7 @@ async function readBody(request) {
 export async function handleNews(request, env, h) {
   if (!env.APP_KV) return h.jsonResponse({ error: "unavailable" }, 503);
   const url = new URL(request.url);
-  let owner = "";
-  try {
-    const identity = await h.identify(request, env);
-    if (identity && !identity.error) owner = identity.hasDevice ? identity.deviceHash : identity.ipHash;
-  } catch (err) {
-    owner = "";
-  }
+  const owner = h.session ? String(h.session.accountId) : "";
   const rawLang = url.searchParams.get("lang") || "en";
   const lang = LANG_PATTERN.test(rawLang) ? rawLang : "en";
   const rawRegion = url.searchParams.get("region") || "";
@@ -648,8 +642,7 @@ function budgetKeys(prefix, identity) {
 
 export async function handleNewsReaction(request, env, h) {
   if (!env.APP_KV || !env.NEWS_DB) return h.jsonResponse({ error: "unavailable" }, 503);
-  const identity = await h.identify(request, env);
-  if (!identity || identity.error) return h.jsonResponse({ error: "bad_request" }, 400);
+  if (!h.session) return h.jsonResponse({ error: "authentication_required" }, 401);
   const body = await readBody(request);
   if (!body) return h.jsonResponse({ error: "bad_request" }, 400);
   const articleId = typeof body.id === "string" ? body.id.trim().toLowerCase() : "";
@@ -657,8 +650,8 @@ export async function handleNewsReaction(request, env, h) {
   const raw = typeof body.reaction === "string" ? body.reaction : "";
   const reaction = raw === "" ? "" : REACTIONS.has(raw) ? raw : null;
   if (reaction === null) return h.jsonResponse({ error: "bad_request" }, 400);
-  const owner = identity.hasDevice ? identity.deviceHash : identity.ipHash;
-  const allowed = await consumeActionBudget(env, budgetKeys("reaction", identity), Date.now());
+  const owner = String(h.session.accountId);
+  const allowed = await consumeActionBudget(env, ["account:" + owner], Date.now());
   if (!allowed.allowed) return h.jsonResponse({ error: "rate_limited", retryAfterSeconds: allowed.retryAfter }, 429, { "Retry-After": String(allowed.retryAfter), "X-Lockout-Seconds": String(allowed.retryAfter), "Cache-Control": "no-store" });
   try {
     const result = await setReactionWithDatabase(env, articleId, owner, reaction);
@@ -671,15 +664,14 @@ export async function handleNewsReaction(request, env, h) {
 
 export async function handleNewsLike(request, env, h) {
   if (!env.APP_KV || !env.NEWS_DB) return h.jsonResponse({ error: "unavailable" }, 503);
-  const identity = await h.identify(request, env);
-  if (!identity || identity.error) return h.jsonResponse({ error: "bad_request" }, 400);
+  if (!h.session) return h.jsonResponse({ error: "authentication_required" }, 401);
   const body = await readBody(request);
   if (!body) return h.jsonResponse({ error: "bad_request" }, 400);
   const articleId = typeof body.id === "string" ? body.id.trim().toLowerCase() : "";
   if (!ID_PATTERN.test(articleId)) return h.jsonResponse({ error: "bad_request" }, 400);
   const liked = typeof body.liked === "boolean" ? body.liked : body.unlike === true ? false : true;
-  const owner = identity.hasDevice ? identity.deviceHash : identity.ipHash;
-  const allowed = await consumeActionBudget(env, budgetKeys("like", identity), Date.now());
+  const owner = String(h.session.accountId);
+  const allowed = await consumeActionBudget(env, ["account:" + owner], Date.now());
   if (!allowed.allowed) return h.jsonResponse({ error: "rate_limited", retryAfterSeconds: allowed.retryAfter }, 429, { "Retry-After": String(allowed.retryAfter), "X-Lockout-Seconds": String(allowed.retryAfter), "Cache-Control": "no-store" });
   try {
     const result = await setLikeWithDatabase(env, articleId, owner, liked);

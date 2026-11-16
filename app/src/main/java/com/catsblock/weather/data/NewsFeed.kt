@@ -55,6 +55,7 @@ sealed interface NewsLikeResult {
     data class RateLimited(val retryAfterSeconds: Long) : NewsLikeResult
     data object Unavailable : NewsLikeResult
     data object Failed : NewsLikeResult
+    data object AuthenticationRequired : NewsLikeResult
 }
 
 sealed interface NewsReactionResult {
@@ -62,6 +63,7 @@ sealed interface NewsReactionResult {
     data class RateLimited(val retryAfterSeconds: Long) : NewsReactionResult
     data object Unavailable : NewsReactionResult
     data object Failed : NewsReactionResult
+    data object AuthenticationRequired : NewsReactionResult
 }
 
 object NewsFeed {
@@ -117,6 +119,7 @@ object NewsFeed {
         .header("X-App-Token", SecretKeys.appToken())
         .header("X-Device-Id", DeviceFingerprint.id)
         .header("X-Client-Platform", "android")
+        .apply { AccountAuth.accessToken().takeIf { it.isNotBlank() }?.let { header("Authorization", "Bearer $it") } }
 
     suspend fun page(language: String, region: String, query: String, cursor: String): NewsLoad =
         withContext(Dispatchers.IO) {
@@ -185,6 +188,7 @@ object NewsFeed {
             client.newCall(call).execute().use { response ->
                 val json = runCatching { JSONObject(response.body?.string().orEmpty()) }.getOrNull()
                 when {
+                    response.code == 401 -> NewsReactionResult.AuthenticationRequired
                     response.isSuccessful && json != null -> {
                         val selected = json.optString("reaction").takeIf { Reaction.of(it) != null }
                         NewsReactionResult.Updated(selected, parseCounts(json.optJSONObject("reactions")))
@@ -214,6 +218,7 @@ object NewsFeed {
                 val error = json?.optString("error").orEmpty()
                 val likes = json?.optInt("likes", -1) ?: -1
                 when {
+                    response.code == 401 -> NewsLikeResult.AuthenticationRequired
                     response.isSuccessful && likes >= 0 -> NewsLikeResult.Updated(
                         likes.coerceIn(0, MAX_LIKES),
                         json?.optBoolean("liked", liked) ?: liked

@@ -31,6 +31,7 @@ class WeatherApp : Application(), ImageLoaderFactory {
     override fun onCreate() {
         super.onCreate()
         instance = this
+        AccountAuth.configure(this, SecretKeys.baseUrl(), SecretKeys.appToken())
         installLogging()
         RainAlerts.ensureChannel(this)
         EclipseAlerts.ensureChannel(this)
