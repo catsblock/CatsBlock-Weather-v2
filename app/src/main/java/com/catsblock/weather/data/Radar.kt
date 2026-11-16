@@ -59,7 +59,7 @@ fun stormIntensityOf(rateMmh: Double): StormIntensity = when {
     else -> StormIntensity.Extreme
 }
 
-data class RadarFrameRef(val time: Long, val path: String)
+data class RadarFrameRef(val time: Long, val path: String, val observed: Boolean = true)
 
 class RadarFrameSet(val host: String, val frames: List<RadarFrameRef>)
 
@@ -86,12 +86,20 @@ object RadarFrames {
                     if (!response.isSuccessful) return@use null
                     val json = JSONObject(response.body?.string() ?: return@use null)
                     val host = json.getString("host")
-                    val past = json.getJSONObject("radar").getJSONArray("past")
+                    val radar = json.getJSONObject("radar")
+                    val past = radar.getJSONArray("past")
+                    val nowcast = radar.optJSONArray("nowcast")
                     if (past.length() == 0) return@use null
-                    val frames = (0 until past.length()).map {
-                        val item = past.getJSONObject(it)
-                        RadarFrameRef(item.getLong("time"), item.getString("path"))
-                    }.sortedBy { it.time }
+                    val frames = buildList {
+                        for (index in 0 until past.length()) {
+                            val item = past.getJSONObject(index)
+                            add(RadarFrameRef(item.getLong("time"), item.getString("path"), true))
+                        }
+                        if (nowcast != null) for (index in 0 until nowcast.length()) {
+                            val item = nowcast.getJSONObject(index)
+                            add(RadarFrameRef(item.getLong("time"), item.getString("path"), false))
+                        }
+                    }.distinctBy { it.time }.sortedBy { it.time }
                     RadarFrameSet(host, frames)
                 }
         }.getOrNull()
@@ -102,7 +110,7 @@ object RadarFrames {
         fresh ?: cached
     }
 
-    suspend fun base(): String? = set()?.let { it.host + it.frames.last().path }
+    suspend fun base(): String? = set()?.let { frames -> frames.frames.lastOrNull { it.observed }?.let { frames.host + it.path } }
 
     fun tileUrl(base: String, zoom: Int, x: Int, y: Int): String = "$base/256/$zoom/$x/$y/2/1_1.png"
 
@@ -130,14 +138,7 @@ object RadarProbe {
     private const val MAX_RANGE_KM = 320.0
     private const val MAX_PALETTE_DISTANCE = 900
 
-    private val palette = intArrayOf(
-        0x88ddee, 0x6cd1eb, 0x51c5e8, 0x36bae5, 0x1baee2, 0x00a3e0, 0x009ad5, 0x0091ca, 0x0088bf, 0x007fb4,
-        0x0077aa, 0x0070a3, 0x00699c, 0x006295, 0x005b8e, 0x005588, 0x005180, 0x004e78, 0x004a70, 0x004768,
-        0xffee00, 0xffe000, 0xffd200, 0xffc500, 0xffb700, 0xffaa00, 0xff9f00, 0xff9500, 0xff8b00, 0xff8100,
-        0xff4400, 0xf23600, 0xe62800, 0xd91b00, 0xcd0d00, 0xc10000, 0xa80000, 0x8f0000, 0x760000, 0x5d0000,
-        0xffaaff, 0xff9fff, 0xff95ff, 0xff8bff, 0xff81ff, 0xff77ff, 0xff6cff, 0xff62ff, 0xff58ff, 0xff4eff,
-        0xffffff
-    )
+    private val palette = RainViewerPalette.trackingColors
 
     private class Geometry(
         val originX: Int,
@@ -162,7 +163,7 @@ object RadarProbe {
 
     suspend fun read(lat: Double, lon: Double): RadarReading? = withContext(Dispatchers.IO) {
         val set = RadarFrames.set() ?: return@withContext null
-        val latest = set.frames.lastOrNull() ?: return@withContext null
+        val latest = set.frames.lastOrNull { it.observed } ?: return@withContext null
         val nowEpoch = System.currentTimeMillis() / 1000L
         val age = nowEpoch - latest.time
         if (age > STALE_SECONDS) return@withContext null
@@ -170,7 +171,7 @@ object RadarProbe {
         last?.takeIf { it.key == key }?.let { return@withContext it.reading }
 
         val past = set.frames
-            .filter { latest.time - it.time in 540L..1200L }
+            .filter { it.observed && latest.time - it.time in 540L..1200L }
             .minByOrNull { abs((latest.time - it.time) - 750L) }
         val geometry = geometry(lat, lon)
         val grids = coroutineScope {
@@ -217,6 +218,23 @@ object RadarProbe {
         )
         last = Cached(key, reading)
         reading
+    }
+
+    suspend fun sampleReflectivity(lat: Double, lon: Double, frameEpoch: Long): Double? = withContext(Dispatchers.IO) {
+        if (!lat.isFinite() || !lon.isFinite() || lat !in -85.0..85.0) return@withContext null
+        val set = RadarFrames.set() ?: return@withContext null
+        val frame = set.frames.minByOrNull { abs(it.time - frameEpoch) } ?: return@withContext null
+        if (abs(frame.time - frameEpoch) > 180L) return@withContext null
+        val geo = geometry(lat, lon)
+        val n = 1 shl ZOOM
+        val tileX = Math.floorMod(geo.originX + RADIUS, n)
+        val tileY = geo.originY + RADIUS
+        if (tileY !in 0 until n) return@withContext null
+        val pixels = loadTile(set.host, frame.path, tileX, tileY) ?: return@withContext null
+        val x = (geo.cityX - RADIUS * TILE).toInt().coerceIn(0, TILE - 1)
+        val y = (geo.cityY - RADIUS * TILE).toInt().coerceIn(0, TILE - 1)
+        val dbz = RainViewerPalette.dbzOf(pixels[y * TILE + x]) ?: return@withContext null
+        dbz.takeIf { it >= ECHO_DBZ }?.toDouble()
     }
 
     private fun geometry(lat: Double, lon: Double): Geometry {

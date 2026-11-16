@@ -5,9 +5,11 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.rounded.Explore
 import androidx.compose.material.icons.rounded.NightsStay
@@ -63,9 +65,7 @@ import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -78,17 +78,17 @@ import com.catsblock.weather.data.compassLabel
 import com.catsblock.weather.data.humidityLabel
 import com.catsblock.weather.data.precipToday
 import com.catsblock.weather.data.uvLevel
-import com.catsblock.weather.i18n.AppLanguage
-import com.catsblock.weather.i18n.I18n
 import com.catsblock.weather.i18n.tr
 import com.catsblock.weather.data.isWet
 import java.time.Duration
 import java.time.LocalDateTime
 import kotlin.math.PI
+import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlin.math.sin
+import kotlin.math.tan
 
 @Composable
 fun SunCardV2(
@@ -281,6 +281,69 @@ private fun GradientBarCard(
     }
 }
 
+@Composable
+private fun LiquidLevelCard(
+    title: String,
+    value: String,
+    description: String,
+    footer: String,
+    fraction: Float,
+    modifier: Modifier,
+    icon: ImageVector,
+    color: Color,
+    onClick: (() -> Unit)?
+) {
+    val progress by animateFloatAsState(fraction.coerceIn(0f, 1f), tween(500), label = "liquidLevel")
+    val orientation = rememberDeviceOrientation()
+    val motion = rememberInfiniteTransition(label = "liquidSurface")
+    val wave by motion.animateFloat(0f, (2.0 * PI).toFloat(), infiniteRepeatable(tween(2400, easing = LinearEasing)), label = "liquidWave")
+    GlassCard(
+        modifier.height(176.dp),
+        onClick,
+        Modifier.fillMaxSize(),
+        background = {
+            Canvas(Modifier.matchParentSize()) {
+                val radius = 32.dp.toPx()
+                drawRoundRect(color.copy(alpha = 0.055f), cornerRadius = CornerRadius(radius))
+                if (progress > 0f) {
+                    val surfaceMoves = progress in 0.01f..0.99f
+                    val tilt = Math.toRadians(if (surfaceMoves) (-orientation.roll * 0.65f).coerceIn(-24f, 24f).toDouble() else 0.0)
+                    val slope = tan(tilt).toFloat() * size.width * 0.5f
+                    val pitchOffset = if (surfaceMoves) orientation.pitch.coerceIn(-60f, 60f) / 60f * size.height * 0.035f else 0f
+                    val amplitude = if (progress in 0.02f..0.98f) 2.2.dp.toPx() else 0f
+                    val surface = Path()
+                    val surfaceLine = Path()
+                    for (step in 0..48) {
+                        val fractionX = step / 48f
+                        val x = size.width * fractionX
+                        val y = (size.height * (1f - progress) + pitchOffset + slope * (0.5f - fractionX) + sin(fractionX * 2f * PI.toFloat() + wave) * amplitude)
+                            .coerceIn(-4f, size.height + 4f)
+                        if (step == 0) {
+                            surface.moveTo(x, y)
+                            surfaceLine.moveTo(x, y)
+                        } else {
+                            surface.lineTo(x, y)
+                            surfaceLine.lineTo(x, y)
+                        }
+                    }
+                    surface.lineTo(size.width, size.height)
+                    surface.lineTo(0f, size.height)
+                    surface.close()
+                    drawPath(surface, Brush.verticalGradient(listOf(color.copy(alpha = 0.38f), color.copy(alpha = 0.24f))))
+                    drawPath(surfaceLine, color.copy(alpha = 0.54f), style = Stroke(width = 1.5.dp.toPx(), cap = StrokeCap.Round))
+                }
+            }
+        }
+    ) {
+        CardHeader(icon, title)
+        Spacer(Modifier.height(8.dp))
+        Text(value, style = MaterialTheme.typography.displaySmall.copy(fontWeight = FontWeight.Light, fontSize = 38.sp, lineHeight = 44.sp), maxLines = 1)
+        Text(description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        Spacer(Modifier.weight(1f))
+        Text(footer, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+    }
+}
+
 private fun visibilityGrade(km: Double): String = tr(
     when {
         km < 1.0 -> "Poor"
@@ -320,68 +383,37 @@ fun AirCardV2(aqi: Double?, description: String, modifier: Modifier = Modifier, 
     )
 }
 
-private fun compassLetters(): List<String> = when (I18n.lang) {
-    AppLanguage.PtBR, AppLanguage.PtPT -> listOf("N", "L", "S", "O")
-    AppLanguage.Spanish, AppLanguage.French, AppLanguage.Italian -> listOf("N", "E", "S", "O")
-    AppLanguage.Russian -> listOf("С", "В", "Ю", "З")
-    AppLanguage.German -> listOf("N", "O", "S", "W")
-    AppLanguage.Korean -> listOf("북", "동", "남", "서")
-    AppLanguage.Indonesian -> listOf("U", "T", "S", "B")
-    else -> listOf("N", "E", "S", "W")
-}
-
 @Composable
-fun WindCardV2(speedKmh: Double, fromDeg: Double, modifier: Modifier = Modifier, onClick: (() -> Unit)? = null) {
-    val going = ((fromDeg + 180.0) % 360.0).toFloat()
-    val rot by animateFloatAsState(going, tween(900), label = "windRot")
-    val ink = MaterialTheme.colorScheme.onSurface
-    val arrow = if (LocalGlass.current) Color.White else MaterialTheme.colorScheme.primary
-    val measurer = rememberTextMeasurer()
-    val labelStyle = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold)
-    val letters = compassLetters()
+fun WindCardV2(speedKmh: Double, fromDeg: Double, city: City? = null, modifier: Modifier = Modifier, onClick: (() -> Unit)? = null) {
+    val orientation = rememberDeviceOrientation()
+    val declination = remember(city?.lat, city?.lon) { city?.let { magneticDeclination(it.lat, it.lon) } ?: 0f }
+    val trueHeading = if (orientation.available) (orientation.heading + declination + 360f) % 360f else 0f
+    val target = shortestAngle(fromDeg.toFloat() - trueHeading)
+    val rot by animateFloatAsState(target, tween(120), label = "windRot")
     GlassCard(modifier, onClick, Modifier.fillMaxSize()) {
         CardHeader(Icons.Rounded.Air, tr("Wind"))
-        Spacer(Modifier.height(4.dp))
-        Canvas(Modifier.weight(1f).fillMaxWidth()) {
-            val r = min(size.width, size.height) / 2f - 3.dp.toPx()
-            val c = Offset(size.width / 2f, size.height / 2f)
-            drawCircle(ink.copy(alpha = 0.1f), r, c)
-            drawCircle(ink.copy(alpha = 0.55f), r, c, style = Stroke(1.5f.dp.toPx()))
-            for (i in 0 until 36) {
-                val a = Math.toRadians(i * 10.0 - 90.0)
-                val major = i % 9 == 0
-                val len = if (major) 6.dp.toPx() else if (i % 3 == 0) 4.dp.toPx() else 2.5f.dp.toPx()
-                drawLine(
-                    ink.copy(alpha = if (major) 0.9f else 0.45f),
-                    Offset(c.x + cos(a).toFloat() * (r - len), c.y + sin(a).toFloat() * (r - len)),
-                    Offset(c.x + cos(a).toFloat() * r, c.y + sin(a).toFloat() * r),
-                    1.2f.dp.toPx()
-                )
-            }
-            for (i in 0 until 4) {
-                val a = Math.toRadians(i * 90.0 - 90.0)
-                val rr = r - 14.dp.toPx()
-                val m = measurer.measure(letters[i], labelStyle.copy(color = if (i == 0) Color(0xFFFF6B6B) else ink.copy(alpha = 0.9f)))
-                drawText(
-                    m,
-                    topLeft = Offset(c.x + cos(a).toFloat() * rr - m.size.width / 2f, c.y + sin(a).toFloat() * rr - m.size.height / 2f)
-                )
-            }
-            rotate(rot, c) {
-                val path = Path().apply {
-                    moveTo(c.x, c.y - r * 0.62f)
-                    lineTo(c.x - r * 0.15f, c.y - r * 0.2f)
-                    lineTo(c.x + r * 0.15f, c.y - r * 0.2f)
-                    close()
-                }
-                drawPath(path, arrow, style = Fill)
-                drawLine(arrow, Offset(c.x, c.y - r * 0.2f), Offset(c.x, c.y + r * 0.38f), 3.dp.toPx(), StrokeCap.Round)
-            }
+        Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+            Icon(
+                Icons.Rounded.Air,
+                contentDescription = "${tr("From")} ${compassLabel(fromDeg)}",
+                modifier = Modifier.size(58.dp).graphicsLayer {
+                    rotationZ = rot
+                    rotationX = (-orientation.pitch * 0.25f).coerceIn(-18f, 18f)
+                    rotationY = (orientation.roll * 0.25f).coerceIn(-18f, 18f)
+                },
+                tint = MaterialTheme.colorScheme.primary
+            )
         }
-        Spacer(Modifier.height(2.dp))
         Text(windText(speedKmh, LocalUnits.current.wind), style = MaterialTheme.typography.titleMedium, maxLines = 1)
         Text(
-            "${tr("Blowing to")} ${compassLabel(going.toDouble())}",
+            "${tr("From")} ${compassLabel(fromDeg)} · ${fromDeg.roundToInt()}°",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        Text(
+            if (orientation.available) "${tr("True heading")} ${compassLabel(trueHeading.toDouble())}" else tr("Compass unavailable"),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
@@ -395,58 +427,26 @@ fun PressureCardV2(hpa: Double, modifier: Modifier = Modifier, onClick: (() -> U
     val lo = 960.0
     val hi = 1060.0
     val target = ((hpa - lo) / (hi - lo)).toFloat().coerceIn(0f, 1f)
-    var go by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) { go = true }
-    val f by animateFloatAsState(if (go) target else 0f, tween(1200), label = "gauge")
-    val ink = MaterialTheme.colorScheme.onSurface
-    val arcColor = when {
-        target < 0.33f -> Color(0xFF4FC3F7)
-        target < 0.66f -> Color(0xFF66BB6A)
-        else -> Color(0xFFFF7043)
-    }
+    val f by animateFloatAsState(target, tween(350), label = "pressurePosition")
+    val unit = LocalUnits.current.pressure
+    val primary = MaterialTheme.colorScheme.primary
+    val track = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
     GlassCard(modifier, onClick, Modifier.fillMaxSize()) {
         CardHeader(Icons.Rounded.Speed, tr("Pressure"))
-        Canvas(Modifier.weight(1f).fillMaxWidth().padding(top = 4.dp)) {
-            val r = min(size.width, size.height) / 2f - 4.dp.toPx()
-            val c = Offset(size.width / 2f, size.height / 2f)
-            val tl = Offset(c.x - r, c.y - r)
-            val sz = Size(2 * r, 2 * r)
-            drawArc(ink.copy(alpha = 0.18f), 135f, 270f, false, tl, sz, style = Stroke(6.dp.toPx(), cap = StrokeCap.Round))
-            drawArc(arcColor, 135f, 270f * f, false, tl, sz, style = Stroke(6.dp.toPx(), cap = StrokeCap.Round))
-            for (i in 0..50) {
-                val a = Math.toRadians(135.0 + 270.0 * i / 50.0)
-                val major = i % 5 == 0
-                val len = if (major) 6.dp.toPx() else 3.dp.toPx()
-                val outer = r - 9.dp.toPx()
-                drawLine(
-                    ink.copy(alpha = if (major) 0.85f else 0.35f),
-                    Offset(c.x + cos(a).toFloat() * (outer - len), c.y + sin(a).toFloat() * (outer - len)),
-                    Offset(c.x + cos(a).toFloat() * outer, c.y + sin(a).toFloat() * outer),
-                    if (major) 1.5f.dp.toPx() else 1f.dp.toPx()
-                )
+        Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+            Canvas(Modifier.fillMaxSize()) {
+                val stroke = 7.dp.toPx()
+                val radius = (min(size.width, size.height) - stroke * 2f) / 2f
+                val arcSize = Size(radius * 2f, radius * 2f)
+                val topLeft = Offset((size.width - arcSize.width) / 2f, (size.height - arcSize.height) / 2f)
+                drawArc(track, 108f, 324f, false, topLeft, arcSize, style = Stroke(stroke, cap = StrokeCap.Round))
+                drawArc(primary, 108f, 324f * f, false, topLeft, arcSize, style = Stroke(stroke, cap = StrokeCap.Round))
             }
-            val na = Math.toRadians(135.0 + 270.0 * f)
-            val dx = cos(na).toFloat()
-            val dy = sin(na).toFloat()
-            val len = r - 16.dp.toPx()
-            val w = 3.dp.toPx()
-            val needle = Path().apply {
-                moveTo(c.x + dx * len, c.y + dy * len)
-                lineTo(c.x - dy * w, c.y + dx * w)
-                lineTo(c.x + dy * w, c.y - dx * w)
-                close()
+            Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.Center) {
+                Text(pressureNumber(hpa, unit), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                Spacer(Modifier.width(4.dp))
+                Text(unit.label, Modifier.padding(bottom = 3.dp), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            drawPath(needle, Color(0xFFFF5252), style = Fill)
-        }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.Bottom) {
-            Text(pressureNumber(hpa, LocalUnits.current.pressure), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, maxLines = 1)
-            Spacer(Modifier.width(4.dp))
-            Text(
-                LocalUnits.current.pressure.label,
-                Modifier.padding(bottom = 3.dp),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
         }
     }
 }
@@ -462,6 +462,10 @@ fun CardsDashboard(
     val cur = bundle.current
     val km = cur.visibility / 1000.0
     val tall = Modifier.height(176.dp)
+    val currentRain = remember(bundle.rain, cur.now) {
+        bundle.rain.minByOrNull { abs(Duration.between(cur.now, it.time).toMinutes()) }
+            ?.takeIf { abs(Duration.between(cur.now, it.time).toMinutes()) <= 30L }
+    }
     val rainSoon = remember(bundle) {
         bundle.rain.any {
             it.mm > 0.0 && !it.time.isBefore(cur.now) && it.time.isBefore(cur.now.plusHours(2))
@@ -471,16 +475,18 @@ fun CardsDashboard(
         RadarCard(city, bundle.utcOffsetSeconds, Modifier.fillMaxWidth().height(250.dp))
     }
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        MetricCard(
+        LiquidLevelCard(
             title = tr("Precipitation"),
+            value = precipText(day.precipSum, LocalUnits.current.precip),
+            description = "${precipToday(day.precipSum)} · ${tr("Scale: 0–50 mm per day")}",
+            footer = currentRain?.let { "${tr("Next 15 minutes")}: ${precipText(it.mm, LocalUnits.current.precip)}" } ?: tr("Current precipitation data unavailable"),
+            fraction = (day.precipSum / 50.0).toFloat(),
+            modifier = Modifier.weight(1f).then(tall),
             icon = Icons.Rounded.Umbrella,
-            value = precipNumber(day.precipSum, LocalUnits.current.precip),
-            unit = LocalUnits.current.precip.label,
-            description = precipToday(day.precipSum),
-            modifier = Modifier.weight(1f),
+            color = Color(0xFF42A5F5),
             onClick = { onOpen("Precip") }
         )
-        WindCardV2(cur.windSpeed, cur.windDir, Modifier.weight(1f).then(tall)) { onOpen("Wind") }
+        WindCardV2(cur.windSpeed, cur.windDir, city, Modifier.weight(1f).then(tall)) { onOpen("Wind") }
     }
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         AirCardV2(
@@ -492,13 +498,15 @@ fun CardsDashboard(
         UvCardV2(cur.uv, uvShort(cur.uv), Modifier.weight(1f).then(tall)) { onOpen("Uv") }
     }
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        MetricCard(
+        LiquidLevelCard(
             title = tr("Humidity"),
-            icon = Icons.Rounded.WaterDrop,
             value = "${cur.humidity}%",
-            unit = null,
-            description = humidityLabel(cur.humidity),
+            description = tr("Relative humidity"),
+            footer = humidityLabel(cur.humidity),
+            fraction = cur.humidity / 100f,
             modifier = Modifier.weight(1f),
+            icon = Icons.Rounded.WaterDrop,
+            color = Color(0xFF29B6F6),
             onClick = { onOpen("Humidity") }
         )
         PressureCardV2(cur.pressure, Modifier.weight(1f).then(tall)) { onOpen("Pressure") }

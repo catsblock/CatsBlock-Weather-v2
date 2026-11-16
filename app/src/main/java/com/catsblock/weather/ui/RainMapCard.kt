@@ -75,6 +75,9 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.catsblock.weather.data.City
 import com.catsblock.weather.data.MapStyle
+import com.catsblock.weather.data.RadarFrames
+import com.catsblock.weather.data.RadarFrameRef
+import com.catsblock.weather.data.RainViewerPalette
 import com.catsblock.weather.i18n.tr
 import java.time.LocalDateTime
 import java.time.ZoneOffset
@@ -94,34 +97,19 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
-import okhttp3.Request
-import org.json.JSONObject
 
-data class RadarFrame(val time: Long, val path: String)
+data class RadarFrame(val time: Long, val path: String, val observed: Boolean)
 
 data class RadarSet(val host: String, val frames: List<RadarFrame>)
 
 object RadarLoader {
-    private val client = OkHttpClient.Builder()
-        .connectTimeout(10, TimeUnit.SECONDS)
-        .readTimeout(10, TimeUnit.SECONDS)
-        .build()
-
     suspend fun load(): RadarSet? = withContext(Dispatchers.IO) {
         runCatching {
-            client.newCall(Request.Builder().url("https://api.rainviewer.com/public/weather-maps.json").build())
-                .execute()
-                .use { r ->
-                    if (!r.isSuccessful) return@use null
-                    val j = JSONObject(r.body?.string() ?: return@use null)
-                    val past = j.getJSONObject("radar").getJSONArray("past")
-                    val frames = (0 until past.length()).map {
-                        val o = past.getJSONObject(it)
-                        RadarFrame(o.getLong("time"), o.getString("path"))
-                    }
-                    val horizon = (frames.lastOrNull()?.time ?: 0L) - 8 * 3600L
-                    RadarSet(j.getString("host"), frames.filter { it.time >= horizon })
-                }
+            val set = RadarFrames.set() ?: return@runCatching null
+            val now = System.currentTimeMillis() / 1000L
+            val frames = set.frames.filter { it.time in (now - 2 * 3600L)..(now + 2 * 3600L) }
+                .map { RadarFrame(it.time, it.path, it.observed) }
+            RadarSet(set.host, frames.takeIf { it.isNotEmpty() } ?: return@runCatching null)
         }.getOrNull()
     }
 }
@@ -145,10 +133,14 @@ private object RadarMapRenderer {
             }
     }.getOrNull()
 
-    private suspend fun tile(url: String, fallback: String? = null): Bitmap? {
-        cache.get(url)?.let { return it }
-        val bmp = withContext(Dispatchers.IO) { fetch(url) ?: fallback?.let { fetch(it) } }
-        if (bmp != null) cache.put(url, bmp)
+    private suspend fun tile(url: String, fallback: String? = null, recolor: Boolean = false): Bitmap? {
+        val key = if (recolor) "radar:$url" else url
+        cache.get(key)?.let { return it }
+        val bmp = withContext(Dispatchers.IO) {
+            val source = fetch(url) ?: fallback?.let { fetch(it) }
+            if (source != null && recolor) RainViewerPalette.recolor(source).also { source.recycle() } else source
+        }
+        if (bmp != null) cache.put(key, bmp)
         return bmp
     }
 
@@ -170,7 +162,7 @@ private object RadarMapRenderer {
         }
         val base = cells.map { c -> async { c to tile(MapStyle.tileUrl(dark, zoom, c.third, c.second), MapStyle.fallbackUrl(zoom, c.third, c.second)) } }
         val radar = if (set != null && frame != null && zoom <= 7) {
-            cells.map { c -> async { c to tile("${set.host}${frame.path}/256/$zoom/${c.third}/${c.second}/2/1_1.png") } }
+            cells.map { c -> async { c to tile("${set.host}${frame.path}/256/$zoom/${c.third}/${c.second}/2/0_0.png", recolor = true) } }
         } else {
             emptyList()
         }
@@ -243,7 +235,6 @@ private fun RainPanel(
 ) {
     val frames = set?.frames.orEmpty()
     val frame = frames.getOrNull(index)
-    val last = frames.lastOrNull()
     var zoom by remember { mutableIntStateOf(7) }
     val dark = rememberDarkMap()
     val pulse by rememberInfiniteTransition(label = "pulse").animateFloat(
@@ -321,11 +312,22 @@ private fun RainPanel(
             val clock = frame?.let {
                 clockLabel(LocalDateTime.ofEpochSecond(it.time, 0, ZoneOffset.ofTotalSeconds(offsetSeconds)))
             } ?: "--:--"
-            val mins = if (frame != null && last != null) ((last.time - frame.time) / 60L).toInt() else 0
-            val rel = if (mins <= 0) tr("Now") else if (mins < 60) "-${mins}m" else "-${mins / 60}h ${mins % 60}m"
-            Column(Modifier.width(62.dp).padding(end = 6.dp)) {
+            val mins = frame?.let { ((it.time - System.currentTimeMillis() / 1000L) / 60L).toInt() } ?: 0
+            val rel = when {
+                kotlin.math.abs(mins) <= 1 -> tr("Now")
+                mins < 0 && -mins < 60 -> "−${-mins}m"
+                mins < 0 -> "−${-mins / 60}h ${-mins % 60}m"
+                mins < 60 -> "+${mins}m"
+                else -> "+${mins / 60}h ${mins % 60}m"
+            }
+            Column(Modifier.width(82.dp).padding(end = 6.dp)) {
                 Text(clock, color = Color.White, style = MaterialTheme.typography.labelLarge, maxLines = 1)
-                Text(rel, color = Color.White.copy(alpha = 0.75f), style = MaterialTheme.typography.labelSmall, maxLines = 1)
+                Text(
+                    "${tr(if (frame?.observed != false) "Observed" else "Forecast")} · $rel",
+                    color = Color.White.copy(alpha = 0.75f),
+                    style = MaterialTheme.typography.labelSmall,
+                    maxLines = 1
+                )
             }
         }
     }

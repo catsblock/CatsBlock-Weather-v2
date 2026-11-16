@@ -71,6 +71,7 @@ import com.catsblock.weather.data.City
 import com.catsblock.weather.data.Eclipse
 import com.catsblock.weather.data.Moon
 import com.catsblock.weather.data.MoonPhase
+import com.catsblock.weather.data.Solar
 import com.catsblock.weather.i18n.I18n
 import com.catsblock.weather.i18n.tr
 import com.catsblock.weather.ui.sky.MoonShaderOrb
@@ -284,6 +285,26 @@ fun MoonCard(city: City, offsetSeconds: Int, now: LocalDateTime, onClick: () -> 
     val ms = remember(now, offset) { now.toInstant(offset).toEpochMilli() }
     val phase = remember(ms / 60_000L) { Moon.phase(ms) }
     val eclipse = remember(ms / 60_000L) { Moon.eclipse(ms) }
+    val moonAltitude = remember(ms / 60_000L, city.lat, city.lon) {
+        Math.toDegrees(Moon.position(ms, city.lat, city.lon).altitude)
+    }
+    val sunAltitude = remember(ms / 60_000L, city.lat, city.lon) {
+        Math.toDegrees(Solar.position(ms, city.lat, city.lon).altitude)
+    }
+    val horizonFactor = if (moonAltitude < -2.0) 0.12 else (0.35 + 0.65 * ((moonAltitude + 2.0) / 18.0).coerceIn(0.0, 1.0))
+    val solarFactor = when {
+        sunAltitude >= 0.0 -> 0.22
+        sunAltitude >= -6.0 -> 0.22 + 0.78 * (-sunAltitude / 6.0)
+        else -> 1.0
+    }
+    val moonBrightness = 0.18 + 0.82 * phase.illumination
+    val targetOrbAlpha = (horizonFactor * solarFactor * moonBrightness).coerceIn(0.06, 1.0).toFloat()
+    val orbAlpha by animateFloatAsState(targetOrbAlpha, tween(450), label = "moonVisibility")
+    val visibilityLabel = when {
+        moonAltitude < 0.0 -> tr("Below horizon")
+        sunAltitude > 0.0 -> tr("Daylight reduces contrast")
+        else -> tr("Above horizon")
+    }
     val date = now.toLocalDate()
     val times = remember(date, city.lat, city.lon, offset) { Moon.riseSet(date, city.lat, city.lon, offset) }
     GlassCard(Modifier.fillMaxWidth(), onClick) {
@@ -305,6 +326,12 @@ fun MoonCard(city: City, offsetSeconds: Int, now: LocalDateTime, onClick: () -> 
                 )
                 Spacer(Modifier.height(14.dp))
                 IlluminationBar(phase.illumination.toFloat())
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "$visibilityLabel · ${moonAltitude.roundToInt()}°",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = SoftWhite
+                )
                 if (eclipse != null) {
                     Spacer(Modifier.height(8.dp))
                     Text(
@@ -315,7 +342,7 @@ fun MoonCard(city: City, offsetSeconds: Int, now: LocalDateTime, onClick: () -> 
                 }
             }
             Spacer(Modifier.width(20.dp))
-            MoonOrb(phase.cycle, Modifier.size(104.dp), eclipse, ms)
+            MoonOrb(phase.cycle, Modifier.size(104.dp).graphicsLayer { alpha = orbAlpha }, eclipse, ms)
         }
         Spacer(Modifier.height(16.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {

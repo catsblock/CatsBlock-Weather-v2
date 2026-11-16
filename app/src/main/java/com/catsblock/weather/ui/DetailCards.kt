@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -96,6 +97,7 @@ fun GlassCard(
     modifier: Modifier = Modifier,
     onClick: (() -> Unit)? = null,
     contentModifier: Modifier = Modifier,
+    background: (@Composable BoxScope.() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit
 ) {
     val expressive = LocalGlass.current
@@ -113,13 +115,24 @@ fun GlassCard(
     )
     val surface = if (expressive) modifier.scrollEdgeFade().cardEntrance() else modifier
     val elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+    @Composable
+    fun CardContent() {
+        if (background == null) {
+            Column(contentModifier.padding(20.dp), content = content)
+        } else {
+            Box(Modifier.fillMaxSize()) {
+                background.invoke(this)
+                Column(contentModifier.padding(20.dp), content = content)
+            }
+        }
+    }
     if (onClick != null) {
         Card(onClick = onClick, modifier = surface, shape = shape, colors = colors, elevation = elevation, border = null) {
-            Column(contentModifier.padding(20.dp), content = content)
+            CardContent()
         }
     } else {
         Card(modifier = surface, shape = shape, colors = colors, elevation = elevation, border = null) {
-            Column(contentModifier.padding(20.dp), content = content)
+            CardContent()
         }
     }
 }

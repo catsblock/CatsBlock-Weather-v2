@@ -1,10 +1,4 @@
 package com.catsblock.weather.ui.detail
-import android.content.Context
-import android.hardware.GeomagneticField
-import android.hardware.Sensor
-import android.hardware.SensorEvent
-import android.hardware.SensorEventListener
-import android.hardware.SensorManager
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -32,10 +26,12 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Navigation
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -43,7 +39,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
@@ -61,6 +56,7 @@ import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
@@ -585,91 +581,34 @@ fun WaterGauge(
 }
 
 @Composable
-private fun rememberGeographicHeading(): Float? {
-    val context = LocalContext.current
-    var heading by remember { mutableStateOf<Float?>(null) }
-    DisposableEffect(context) {
-        val manager = context.getSystemService(Context.SENSOR_SERVICE) as? SensorManager
-        val sensor = manager?.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
-        var filtered: Float? = null
-        val listener = object : SensorEventListener {
-            override fun onSensorChanged(event: SensorEvent) {
-                val rotation = FloatArray(9)
-                val orientation = FloatArray(3)
-                SensorManager.getRotationMatrixFromVector(rotation, event.values)
-                SensorManager.getOrientation(rotation, orientation)
-                val magnetic = (Math.toDegrees(orientation[0].toDouble()).toFloat() + 360f) % 360f
-                val field = GeomagneticField(0f, 0f, 0f, System.currentTimeMillis())
-                val geographic = (magnetic + field.declination + 360f) % 360f
-                filtered = filtered?.let { previous ->
-                    var delta = geographic - previous
-                    while (delta > 180f) delta -= 360f
-                    while (delta < -180f) delta += 360f
-                    (previous + delta * 0.18f + 360f) % 360f
-                } ?: geographic
-                heading = filtered
-            }
-            override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
-        }
-        if (manager != null && sensor != null) manager.registerListener(listener, sensor, SensorManager.SENSOR_DELAY_UI)
-        onDispose { manager?.unregisterListener(listener) }
-    }
-    return heading
-}
-
-@Composable
 fun WindCompass(
     fromDegrees: Double,
-    letters: List<String>,
+    latitude: Double = 0.0,
+    longitude: Double = 0.0,
     modifier: Modifier = Modifier,
     size: Dp = 112.dp
 ) {
-    val scheme = MaterialTheme.colorScheme
-    val measurer = rememberTextMeasurer()
-    val heading = rememberGeographicHeading()
-    val target = (((fromDegrees + 180.0) - (heading ?: 0f) + 360.0) % 360.0).toFloat()
+    val orientation = com.catsblock.weather.ui.rememberDeviceOrientation()
+    val declination = remember(latitude, longitude) {
+        com.catsblock.weather.ui.magneticDeclination(latitude, longitude)
+    }
+    val trueHeading = if (orientation.available) (orientation.heading + declination + 360f) % 360f else 0f
+    val target = com.catsblock.weather.ui.shortestAngle(fromDegrees.toFloat() - trueHeading)
     val angle by animateFloatAsState(
         targetValue = target,
-        animationSpec = spring(dampingRatio = 0.5f, stiffness = 90f),
+        animationSpec = tween(durationMillis = 120),
         label = "compass"
     )
-    val style = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.Bold, color = scheme.onSurfaceVariant)
-    val arrow = scheme.primary
-    Canvas(modifier.size(size)) {
-        val r = this.size.minDimension / 2f
-        val c = Offset(this.size.width / 2f, this.size.height / 2f)
-        drawCircle(scheme.surfaceContainerHighest.copy(alpha = 0.8f), r, c)
-        drawCircle(scheme.outlineVariant.copy(alpha = 0.5f), r - 1.dp.toPx(), c, style = Stroke(1.dp.toPx()))
-        for (i in 0 until 4) {
-            val ticks = i * 90f
-            rotate(ticks, c) {
-                drawLine(scheme.onSurfaceVariant.copy(alpha = 0.5f), Offset(c.x, c.y - r + 3.dp.toPx()), Offset(c.x, c.y - r + 8.dp.toPx()), 2.dp.toPx(), StrokeCap.Round)
-            }
-        }
-        val offsets = listOf(
-            Offset(c.x, c.y - r + 20.dp.toPx()),
-            Offset(c.x + r - 20.dp.toPx(), c.y),
-            Offset(c.x, c.y + r - 20.dp.toPx()),
-            Offset(c.x - r + 20.dp.toPx(), c.y)
-        )
-        letters.take(4).forEachIndexed { i, letter ->
-            val layout = measurer.measure(letter, style)
-            drawText(layout, topLeft = Offset(offsets[i].x - layout.size.width / 2f, offsets[i].y - layout.size.height / 2f))
-        }
-        rotate(angle, c) {
-            val len = r * 0.46f
-            val head = Path().apply {
-                moveTo(c.x, c.y - len)
-                lineTo(c.x + 9.dp.toPx(), c.y - len + 18.dp.toPx())
-                lineTo(c.x, c.y - len + 13.dp.toPx())
-                lineTo(c.x - 9.dp.toPx(), c.y - len + 18.dp.toPx())
-                close()
-            }
-            drawLine(arrow, Offset(c.x, c.y - len + 12.dp.toPx()), Offset(c.x, c.y + len * 0.7f), 5.dp.toPx(), StrokeCap.Round)
-            drawPath(head, arrow)
-        }
-        drawCircle(scheme.surfaceContainerHigh, 4.dp.toPx(), c)
-    }
+    androidx.compose.material3.Icon(
+        androidx.compose.material.icons.Icons.Rounded.Navigation,
+        contentDescription = null,
+        modifier = modifier.size(size * 0.56f).graphicsLayer {
+            rotationZ = angle
+            rotationX = (-orientation.pitch * 0.25f).coerceIn(-18f, 18f)
+            rotationY = (orientation.roll * 0.25f).coerceIn(-18f, 18f)
+        },
+        tint = MaterialTheme.colorScheme.primary
+    )
 }
 
 @Composable

@@ -17,8 +17,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.catsblock.weather.data.Condition
@@ -153,33 +156,43 @@ fun PrecipitationCard(bundle: WeatherBundle, modifier: Modifier = Modifier) {
         )
         Spacer(Modifier.height(2.dp))
         Text(
-            detail,
+            "${tr("Peak")} ${f1(forecast.peak)} mm/h · $detail",
             style = MaterialTheme.typography.bodyMedium,
             color = Color.White.copy(alpha = 0.8f)
         )
         Spacer(Modifier.height(16.dp))
+        Text("mm/h", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.65f))
         Canvas(Modifier.fillMaxWidth().height(84.dp)) {
-            val gap = 1.dp.toPx()
-            val barWidth = (size.width - gap * (total - 1)) / total
-            val minBar = 2.dp.toPx()
-            drawLine(
-                Color.White.copy(alpha = 0.25f),
-                Offset(0f, size.height),
-                Offset(size.width, size.height),
-                strokeWidth = 1.dp.toPx()
-            )
-            for (i in 0 until total) {
-                val v = forecast.values[i]
-                val wet = v >= WET_THRESHOLD
-                val fraction = (v / scale).coerceIn(0.0, 1.0).toFloat()
-                val barHeight = if (wet) max(minBar, size.height * (0.12f + 0.88f * fraction)) else minBar
-                val color = if (wet) lerp(light, deep, fraction) else Color.White.copy(alpha = 0.18f)
-                drawRoundRect(
-                    color = color,
-                    topLeft = Offset(i * (barWidth + gap), size.height - barHeight),
-                    size = Size(barWidth, barHeight),
-                    cornerRadius = CornerRadius(barWidth / 2f, barWidth / 2f)
-                )
+            val bottom = size.height - 2.dp.toPx()
+            val topPadding = 4.dp.toPx()
+            val chartHeight = bottom - topPadding
+            for (index in 1..3) {
+                val fraction = index / 4f
+                val y = bottom - chartHeight * fraction
+                drawLine(Color.White.copy(alpha = 0.10f), Offset(0f, y), Offset(size.width, y), 1.dp.toPx())
+            }
+            drawLine(Color.White.copy(alpha = 0.24f), Offset(0f, bottom), Offset(size.width, bottom), 1.dp.toPx())
+            val points = (0 until total).map { index ->
+                val value = forecast.values[index].coerceIn(0.0, scale).toFloat()
+                Offset(size.width * index / (total - 1).coerceAtLeast(1), bottom - chartHeight * value / scale.toFloat())
+            }
+            val line = Path().apply {
+                moveTo(points.first().x, points.first().y)
+                points.drop(1).forEach { lineTo(it.x, it.y) }
+            }
+            val area = Path().apply {
+                moveTo(points.first().x, bottom)
+                lineTo(points.first().x, points.first().y)
+                points.drop(1).forEach { lineTo(it.x, it.y) }
+                lineTo(points.last().x, bottom)
+                close()
+            }
+            drawPath(area, Brush.verticalGradient(listOf(deep.copy(alpha = 0.24f), deep.copy(alpha = 0.015f)), topPadding, bottom))
+            drawPath(line, Brush.horizontalGradient(listOf(light, deep)), style = Stroke(width = 2.5.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round))
+            for (index in 0 until total step 15) {
+                val point = points[index]
+                val value = forecast.values[index]
+                drawCircle(lerp(light, deep, (value / scale).coerceIn(0.0, 1.0).toFloat()), 2.1.dp.toPx(), point)
             }
         }
         Spacer(Modifier.height(8.dp))

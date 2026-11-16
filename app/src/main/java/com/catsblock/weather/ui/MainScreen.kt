@@ -730,7 +730,7 @@ private fun WeatherDetails(
     }
 
     (sheet as? Sheet.DaySheet)?.let { current ->
-        DayDetailSheet(current.day, bundle.hours, fahrenheit, today, cur.now) { sheet = null }
+        DayDetailSheet(current.day, bundle.hours, fahrenheit, today, cur.now, city) { sheet = null }
     }
 
     if (sheet is Sheet.Sun && city != null) {
@@ -759,6 +759,7 @@ private fun WeatherDetails(
         MetricDetailScreen(
             kind = kind,
             bundle = bundle,
+            city = city,
             windUnit = settings.windUnit,
             pressureUnit = settings.pressureUnit,
             fahrenheit = settings.fahrenheit,

@@ -79,7 +79,7 @@ var map = L.map('map', {zoomControl:false, attributionControl:false, minZoom:INI
 L.control.attribution({position:'bottomright', prefix:false}).addTo(map)
   .addAttribution('© OpenStreetMap contributors · Open-Meteo · RainViewer · NASA GIBS · NASA FIRMS · NASA EONET · NIFC · Alert-Hub.org · US Drought Monitor · Natural Earth');
 
-var state = {canvas:false, dark:false, layer:'none', title:'', err:'', f:false, lat:0, lon:0, seq:0, busy:false, labels:{}};
+var state = {canvas:false, dark:false, layer:'none', title:'', err:'', f:false, lat:0, lon:0, time:Date.now() / 1000, seq:0, busy:false, labels:{}};
 var base = null, overlay = null, pin = null, grid = null, gridAt = 0, gridZoom = 0, timer = null, off = null;
 var cache = {storms:null, stormsAt:0, fires:null, firesAt:0};
 var legend = document.getElementById('legend');
@@ -90,6 +90,7 @@ var RAMPS = {
   temp: [[-30,[122,48,176]],[-15,[48,86,226]],[0,[34,196,226]],[10,[72,198,104]],[20,[250,222,52]],[30,[250,140,28]],[40,[226,52,40]],[50,[150,24,60]]],
   wind: [[0,[42,111,219]],[15,[38,198,218]],[30,[102,187,106]],[50,[253,216,53]],[75,[251,140,0]],[100,[211,47,47]],[140,[142,36,170]]],
   pressure: [[980,[123,50,148]],[995,[59,111,212]],[1005,[79,195,247]],[1013,[224,224,224]],[1022,[255,183,77]],[1030,[244,81,30]],[1045,[183,28,28]]],
+  humidity: [[0,[235,245,255]],[20,[128,203,196]],[40,[38,166,154]],[60,[30,136,229]],[80,[21,101,192]],[100,[13,71,161]]],
   dew: [[-20,[110,60,170]],[-5,[60,100,210]],[5,[60,190,210]],[12,[90,200,110]],[18,[240,220,70]],[22,[250,150,40]],[26,[230,60,50]],[30,[150,20,60]]],
   uv: [[0,[67,160,71]],[3,[250,220,52]],[6,[251,140,0]],[8,[229,57,53]],[11,[142,36,170]],[14,[90,20,130]]],
   aqi: [[0,[0,228,0]],[50,[200,220,0]],[100,[255,126,0]],[150,[255,0,0]],[200,[153,0,76]],[300,[126,0,35]]],
@@ -148,8 +149,13 @@ function setLegend(extra) {
   if (id === 'temp') { grad = gradCss(RAMPS.temp); lo = fmtTemp(-30); hi = fmtTemp(50); }
   else if (id === 'wind') { grad = gradCss(RAMPS.wind); lo = '0'; hi = '140 km/h'; }
   else if (id === 'pressure') { grad = gradCss(RAMPS.pressure); lo = '980'; hi = '1045 hPa'; }
+  else if (id === 'humidity') { grad = gradCss(RAMPS.humidity); lo = '0%'; hi = '100%'; }
   else if (id === 'clouds') { grad = 'linear-gradient(90deg,rgba(150,160,180,0),rgba(235,240,250,.98))'; lo = '0%'; hi = '100%'; }
-  else if (id === 'precip') { grad = 'linear-gradient(90deg,#8fd3f4,#2f80ed,#27ae60,#f2c94c,#eb5757,#9b51e0)'; lo = '·'; hi = '···'; }
+  else if (id === 'precip') {
+    var stops = state.labels.radarStops || [[15,57330],[35,2653183],[45,8803800],[55,15555503],[65,16777215]];
+    grad = gradCss(stops.map(function (s) { var c = s[1]; return [s[0],[(c >> 16) & 255,(c >> 8) & 255,c & 255]]; }));
+    lo = '15 dBZ'; hi = '65+ dBZ';
+  }
   else if (id === 'sst') { grad = 'linear-gradient(90deg,#2b6cb0,#e6eef7,#e53e3e)'; lo = '-3°'; hi = '+3°'; }
   else if (id === 'fires') { grad = 'linear-gradient(90deg,#ffb300,#ff5722,#d50000)'; lo = '·'; hi = '···'; }
   else if (id === 'cyclones') { grad = gradCss(CAT_STOPS); lo = 'TD'; hi = 'C5'; }
@@ -643,9 +649,10 @@ function startLayer(id) {
     state.busy = true;
     fetchJsonWithTimeout('https://api.rainviewer.com/public/weather-maps.json', 15000).then(function (d) {
       if (seq !== state.seq) return;
-      var frames = d.radar && d.radar.past ? d.radar.past : [], last = frames[frames.length - 1];
-      if (!last) throw new Error('none');
-      overlay = L.tileLayer(d.host + last.path + '/256/{z}/{x}/{y}/2/1_1.png', {maxNativeZoom:7, maxZoom:12, opacity:0.82, tileSize:256, updateWhenIdle:true, updateWhenZooming:false, keepBuffer:2}).addTo(map);
+      var radar = d.radar || {}, frames = (radar.past || []).map(function (f) { f.observed = true; return f; }).concat((radar.nowcast || []).map(function (f) { f.observed = false; return f; }));
+      var frame = frames.reduce(function (best, f) { return !best || Math.abs(f.time - state.time) < Math.abs(best.time - state.time) ? f : best; }, null);
+      if (!frame) throw new Error('none');
+      overlay = rainTileLayer(d.host, frame.path).addTo(map);
       overlay.setZIndex(5);
       state.busy = false; setLegend('');
     }).catch(function () { if (seq === state.seq) { state.busy = false; setLegend(state.err); } });
@@ -691,7 +698,13 @@ function lonFor(latlng) {
   return x;
 }
 
-window.MapApi = {setTheme:setTheme, setLayer:setLayer, setCity:setCity, setInsets:setInsets, locate:locate};
+map.on('click', function (event) {
+  if (!(window.MapBridge && window.MapBridge.detail)) return;
+  if (['precip','temp','clouds','wind','pressure','humidity','dew','uv','aqi','sea'].indexOf(state.layer) < 0) return;
+  openDetail('weather-point', {lat:event.latlng.lat, lon:wrapLon(event.latlng.lng), layer:state.layer, time:Math.floor(state.time * 1000)});
+});
+
+window.MapApi = {setTheme:setTheme, setLayer:setLayer, setTime:setTime, setCity:setCity, setInsets:setInsets, locate:locate};
 
 var sizeRaf = 0;
 function syncSize() {

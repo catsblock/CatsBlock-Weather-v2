@@ -5,7 +5,7 @@ internal object MapLayerScripts {
     val source: String = """
 var extra = null, land = null, landLoading = false, landWaiters = [];
 var OM = 'https://api.open-meteo.com/v1/forecast';
-var GRID_KEY = {temp:'t', clouds:'c', wind:'ws', pressure:'p', dew:'dp', uv:'uv', aqi:'aq', sea:'sl', drought:'dr'};
+var GRID_KEY = {temp:'t', clouds:'c', wind:'ws', pressure:'p', humidity:'rh', dew:'dp', uv:'uv', aqi:'aq', sea:'sl', drought:'dr'};
 var LEVEL_COLORS = {warning:'#ffd600', alert:'#ff6d00', danger:'#e53935'};
 var LEVEL_RANK = {warning:1, alert:2, danger:3};
 var DRY = [[255, 236, 140], [255, 200, 60], [245, 140, 30], [216, 67, 21], [150, 20, 20]];
@@ -163,8 +163,12 @@ var gridCache = {}, GRID_TTL = 1800000, GRID_BOX = {s:-75, n:75, w:-180, e:180},
 map.createPane('zonepane').style.zIndex = 400;
 
 function openDetail(type, data) {
-  if (window.MapBridge && window.MapBridge.detail) { window.MapBridge.detail(type, JSON.stringify(data)); return; }
   var ll = data.lat !== undefined ? [data.lat, data.lon] : map.getCenter();
+  if (window.MapBridge && window.MapBridge.detail) {
+    var point = map.latLngToContainerPoint(ll);
+    window.MapBridge.detail(type, JSON.stringify(data), point.x, point.y);
+    return;
+  }
   var title = data.event || data.name || lbl('fire', 'Wildfire');
   L.popup({closeButton:false}).setLatLng(ll).setContent('<b>' + esc(title) + '</b>').openOn(map);
 }
@@ -302,34 +306,33 @@ function omFetch(base, p, tail, size) {
 function hasData(arr) { return arr.some(function (v) { return v !== null && v !== undefined; }); }
 
 function fetchWeather(p, id) {
-  var vars = id === 'dew' ? 'dew_point_2m' : (id === 'uv' ? 'uv_index' : 'temperature_2m,cloud_cover,pressure_msl,wind_speed_10m,wind_direction_10m');
-  var job = omFetch(OM, p, '&current=' + vars + '&wind_speed_unit=kmh&timezone=UTC', 120).then(function (d) {
-    var g = {t:[], c:[], p:[], ws:[], wd:[], dp:[], uv:[]};
+  var vars = id === 'humidity' ? 'relative_humidity_2m' : (id === 'dew' ? 'dew_point_2m' : (id === 'uv' ? 'uv_index' : 'temperature_2m,cloud_cover,pressure_msl,wind_speed_10m,wind_direction_10m'));
+  if (id === 'wind') vars = 'wind_speed_10m,wind_direction_10m,wind_gusts_10m';
+  var hour = new Date(state.time * 1000).toISOString().slice(0, 13) + ':00';
+  var tail = '&hourly=' + vars + '&start_hour=' + encodeURIComponent(hour) + '&end_hour=' + encodeURIComponent(hour) + '&wind_speed_unit=kmh&timezone=UTC';
+  return omFetch(OM, p, tail, 120).then(function (d) {
+    var g = {t:[], c:[], p:[], ws:[], wd:[], rh:[], dp:[], uv:[]};
     d.forEach(function (it) {
-      var cur = (it && it.current) || {};
-      g.t.push(val(function () { return cur.temperature_2m; }));
-      g.c.push(val(function () { return cur.cloud_cover; }));
-      g.p.push(val(function () { return cur.pressure_msl; }));
-      g.ws.push(val(function () { return cur.wind_speed_10m; }));
-      g.wd.push(val(function () { return cur.wind_direction_10m; }));
-      g.dp.push(val(function () { return cur.dew_point_2m; }));
-      g.uv.push(val(function () { return cur.uv_index; }));
+      var h = (it && it.hourly) || {};
+      function first(key) { return val(function () { return h[key][0]; }); }
+      g.t.push(first('temperature_2m'));
+      g.c.push(first('cloud_cover'));
+      g.p.push(first('pressure_msl'));
+      g.ws.push(first('wind_speed_10m'));
+      g.wd.push(first('wind_direction_10m'));
+      g.rh.push(first('relative_humidity_2m'));
+      g.dp.push(first('dew_point_2m'));
+      g.uv.push(first('uv_index'));
     });
-    if (id === 'uv' && !hasData(g.uv)) throw new Error('none');
+    if (!hasData(g[GRID_KEY[id]])) throw new Error('none');
     return g;
-  });
-  if (id !== 'uv') return job;
-  return job.catch(function () {
-    var hour = new Date().getUTCHours();
-    return omFetch(OM, p, '&hourly=uv_index&forecast_days=1&timezone=UTC', 120).then(function (d) {
-      return {uv:d.map(function (it) { return val(function () { return it.hourly.uv_index[hour]; }); })};
-    });
   });
 }
 
 function fetchAir(p) {
-  return omFetch('https://air-quality-api.open-meteo.com/v1/air-quality', p, '&current=us_aqi&timezone=UTC', 120).then(function (d) {
-    return {aq:d.map(function (it) { return val(function () { return it.current.us_aqi; }); })};
+  var hour = new Date(state.time * 1000).toISOString().slice(0, 13) + ':00';
+  return omFetch('https://air-quality-api.open-meteo.com/v1/air-quality', p, '&hourly=us_aqi&start_hour=' + encodeURIComponent(hour) + '&end_hour=' + encodeURIComponent(hour) + '&timezone=UTC', 120).then(function (d) {
+    return {aq:d.map(function (it) { return val(function () { return it.hourly.us_aqi[0]; }); })};
   });
 }
 
@@ -357,7 +360,9 @@ function fetchDrought(p) {
 function loadGrid(force) {
   if (!isGrid(state.layer) || !state.canvas) return;
   var seq = state.seq, id = state.layer, token = ++gridToken;
-  var cached = gridCache[id];
+  var timed = ['temp','clouds','wind','pressure','dew','uv','aqi'].indexOf(id) >= 0;
+  var cacheKey = timed ? id + ':' + Math.floor(state.time / 3600) : id;
+  var cached = gridCache[cacheKey];
   if (cached && Date.now() - cached.at < GRID_TTL) {
     grid = cached.g; gridAt = cached.at; gridZoom = map.getZoom();
     state.busy = false; setLegend('');
@@ -379,13 +384,13 @@ function loadGrid(force) {
   job.then(function (g) {
     if (seq !== state.seq || token !== gridToken) return;
     g.s = GRID_BOX.s; g.n = GRID_BOX.n; g.w = GRID_BOX.w; g.e = GRID_BOX.e;
-    gridCache[id] = {g:g, at:Date.now()};
+    gridCache[cacheKey] = {g:g, at:Date.now()};
     grid = g; gridAt = Date.now(); gridZoom = map.getZoom();
     state.busy = false; setLegend('');
     if (overlay && overlay.refresh) overlay.refresh();
    }).catch(function () {
     if (seq !== state.seq || token !== gridToken) return;
-    var fallback = gridCache[id];
+    var fallback = gridCache[cacheKey];
     if (fallback && Date.now() - fallback.at < GRID_TTL * 6) {
       grid = fallback.g;
       gridAt = fallback.at;
@@ -472,6 +477,74 @@ function loadAlerts(seq) {
     state.busy = false;
     setLegend(feats.length ? '' : lbl('noAlerts', 'No active alerts right now'));
   }).catch(function () { if (seq === state.seq) { state.busy = false; setLegend(state.err); } });
+}
+
+var rainMemo = Object.create(null);
+function rainColor(r, g, b) {
+  var key = (r << 16) | (g << 8) | b;
+  if (Object.prototype.hasOwnProperty.call(rainMemo, key)) return rainMemo[key];
+  var samples = state.labels.radarSamples || [], best = 2147483647, dbz = null;
+  for (var i = 0; i < samples.length; i++) {
+    var sample = samples[i], c = sample[1];
+    var dr = r - ((c >> 16) & 255), dg = g - ((c >> 8) & 255), db = b - (c & 255);
+    var distance = dr * dr + dg * dg + db * db;
+    if (distance < best) { best = distance; dbz = sample[0]; }
+  }
+  if (dbz === null || best > 900) { rainMemo[key] = null; return null; }
+  var stops = state.labels.radarStops || [[15,57330],[35,2653183],[45,8803800],[55,15555503],[65,16777215]], color;
+  if (dbz < stops[0][0]) { rainMemo[key] = false; return false; }
+  if (dbz <= stops[0][0]) color = stops[0][1];
+  else if (dbz >= stops[stops.length - 1][0]) color = stops[stops.length - 1][1];
+  else {
+    for (var j = 1; j < stops.length; j++) {
+      if (dbz <= stops[j][0]) {
+        var lo = stops[j - 1], hi = stops[j], t = (dbz - lo[0]) / (hi[0] - lo[0]);
+        var lr = (lo[1] >> 16) & 255, lg = (lo[1] >> 8) & 255, lb = lo[1] & 255;
+        var hr = (hi[1] >> 16) & 255, hg = (hi[1] >> 8) & 255, hb = hi[1] & 255;
+        color = (Math.round(lr + (hr - lr) * t) << 16) | (Math.round(lg + (hg - lg) * t) << 8) | Math.round(lb + (hb - lb) * t);
+        break;
+      }
+    }
+  }
+  var out = [(color >> 16) & 255, (color >> 8) & 255, color & 255];
+  rainMemo[key] = out;
+  return out;
+}
+
+function rainTileLayer(host, path) {
+  var layer = L.gridLayer({tileSize:256, maxNativeZoom:7, maxZoom:12, opacity:0.9, updateWhenIdle:true, updateWhenZooming:false, keepBuffer:2});
+  layer.createTile = function (coords, done) {
+    var canvas = L.DomUtil.create('canvas', 'leaflet-tile'), context = canvas.getContext('2d', {willReadFrequently:true});
+    canvas.width = 256; canvas.height = 256;
+    var image = new Image(); image.crossOrigin = 'anonymous';
+    image.onload = function () {
+      try {
+        context.drawImage(image, 0, 0, 256, 256);
+        var imageData = context.getImageData(0, 0, 256, 256), pixels = imageData.data;
+        for (var i = 0; i < pixels.length; i += 4) {
+          if (pixels[i + 3] < 16) continue;
+          var color = rainColor(pixels[i], pixels[i + 1], pixels[i + 2]);
+          if (color === false) pixels[i + 3] = 0;
+          else if (color) { pixels[i] = color[0]; pixels[i + 1] = color[1]; pixels[i + 2] = color[2]; }
+        }
+        context.putImageData(imageData, 0, 0);
+        done(null, canvas);
+      } catch (error) { done(error, canvas); }
+    };
+    image.onerror = function () { done(new Error('radar_tile_unavailable'), canvas); };
+    var n = 1 << coords.z, x = ((coords.x % n) + n) % n;
+    image.src = host + path + '/256/' + coords.z + '/' + x + '/' + coords.y + '/2/0_0.png';
+    return canvas;
+  };
+  return layer;
+}
+
+function setTime(epochMillis) {
+  var next = Number(epochMillis) / 1000;
+  if (!isFinite(next)) return;
+  state.time = next;
+  if (state.layer === 'precip') startLayer(state.layer);
+  else if (isGrid(state.layer) && state.layer !== 'sea' && state.layer !== 'drought') loadGrid(true);
 }
 
 function fmtDelta(c) { return state.f ? Math.round(c * 9 / 5) + '°F' : Math.round(c) + '°C'; }

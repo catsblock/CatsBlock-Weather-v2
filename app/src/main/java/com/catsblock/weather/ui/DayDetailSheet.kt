@@ -72,6 +72,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.catsblock.weather.data.Day
 import com.catsblock.weather.data.Hour
+import com.catsblock.weather.data.City
 import com.catsblock.weather.data.LifeKind
 import com.catsblock.weather.data.aqiStatus
 import com.catsblock.weather.data.compassLabel
@@ -142,6 +143,7 @@ fun DayDetailSheet(
     fahrenheit: Boolean,
     today: LocalDate,
     now: LocalDateTime,
+    city: City? = null,
     onDismiss: () -> Unit
 ) {
     val scheme = MaterialTheme.colorScheme
@@ -290,7 +292,6 @@ private fun DayBody(day: Day, dayHours: List<Hour>, fahrenheit: Boolean, now: Lo
     val marker = if (live) now.hour else null
     val windUnit = LocalUnits.current.wind
     val tempSeries = dayHours.hourly { it.temp.toUnit(fahrenheit) }
-    val letters = listOf(compassLabel(0.0), compassLabel(90.0), compassLabel(180.0), compassLabel(270.0))
     val uvTint = UvPalette[stepOf(day.uvMax, UvSteps)]
 
     ChartCard(tr("Hourly temperature"), 1) {
@@ -321,7 +322,7 @@ private fun DayBody(day: Day, dayHours: List<Hour>, fahrenheit: Boolean, now: Lo
                     label = tr("Wind"),
                     value = windText(windPeak.windSpeed, windUnit),
                     sub = "${windShort(windPeak.windSpeed)} · ${tr("From")} ${compassLabel(windPeak.windDir)}"
-                ) { WindCompass(windPeak.windDir, letters) }
+                ) { WindCompass(windPeak.windDir, city?.lat ?: 0.0, city?.lon ?: 0.0) }
             },
             {
                 GaugeRow(

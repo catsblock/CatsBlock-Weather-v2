@@ -92,6 +92,7 @@ private class DayData(val date: LocalDate, val hours: List<Hour>)
 private class Ctx(
     val today: LocalDate,
     val nowHour: Int,
+    val city: com.catsblock.weather.data.City?,
     val windUnit: WindUnit,
     val pressureUnit: PressureUnit,
     val fahrenheit: Boolean,
@@ -178,6 +179,7 @@ private fun List<Float?>.peak(): Float = filterNotNull().maxOrNull() ?: 0f
 fun MetricDetailScreen(
     kind: MetricKind,
     bundle: WeatherBundle,
+    city: com.catsblock.weather.data.City?,
     windUnit: WindUnit,
     pressureUnit: PressureUnit,
     fahrenheit: Boolean,
@@ -185,8 +187,8 @@ fun MetricDetailScreen(
     onBack: () -> Unit
 ) {
     val now = bundle.current.now
-    val ctx = remember(bundle, windUnit, pressureUnit, fahrenheit, precipUnit) {
-        Ctx(now.toLocalDate(), now.hour, windUnit, pressureUnit, fahrenheit, bundle, precipUnit)
+    val ctx = remember(bundle, city, windUnit, pressureUnit, fahrenheit, precipUnit) {
+        Ctx(now.toLocalDate(), now.hour, city, windUnit, pressureUnit, fahrenheit, bundle, precipUnit)
     }
     val tabs = remember(kind, ctx) { buildTabs(kind, groupDays(bundle, ctx.today), ctx) }
     if (tabs.isEmpty() || tabs.first().pills.isEmpty()) {
@@ -386,7 +388,6 @@ private fun WindBody(day: DayData, ctx: Ctx) {
     val f = day.focus(ctx)
     val speed = f?.windSpeed ?: 0.0
     val dir = f?.windDir ?: 0.0
-    val letters = listOf(compassLabel(0.0), compassLabel(90.0), compassLabel(180.0), compassLabel(270.0))
     val series = day.series { windValue(it.windSpeed, unit) }
     val dirs = day.series { it.windDir }
     val moderate = windValue(20.0, unit).toFloat()
@@ -396,7 +397,7 @@ private fun WindBody(day: DayData, ctx: Ctx) {
                 label = tr("Wind"),
                 value = windText(speed, unit),
                 sub = "${windShort(speed)} · ${tr("From")} ${compassLabel(dir)}"
-            ) { WindCompass(dir, letters) }
+            ) { WindCompass(dir, ctx.city?.lat ?: 0.0, ctx.city?.lon ?: 0.0) }
         }),
         baseIndex = 1
     )

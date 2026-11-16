@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -15,19 +16,28 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.catsblock.weather.data.MunicipalityMeta
+import com.catsblock.weather.data.MapPointWeather
+import com.catsblock.weather.data.MapPointWeatherLoader
+import com.catsblock.weather.data.PressureUnit
+import com.catsblock.weather.data.WindUnit
 import com.catsblock.weather.i18n.I18n
 import com.catsblock.weather.i18n.tr
 import kotlinx.coroutines.Dispatchers
@@ -42,8 +52,9 @@ import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 import java.util.Currency
 import java.util.Locale
+import kotlin.math.roundToInt
 
-internal class MapDetail(val type: String, val data: JSONObject)
+internal class MapDetail(val type: String, val data: JSONObject, val anchorX: Double = 0.0, val anchorY: Double = 0.0)
 
 private val Dash = "—"
 
@@ -65,6 +76,47 @@ private fun count(value: Long): String = NumberFormat.getInstance(I18n.lang.loca
 private fun decimal(value: Double, digits: Int = 1): String =
     NumberFormat.getInstance(I18n.lang.locale).apply { maximumFractionDigits = digits; minimumFractionDigits = 0 }.format(value)
 
+@Composable
+internal fun MapPointPopup(
+    detail: MapDetail,
+    fahrenheit: Boolean,
+    windUnit: WindUnit,
+    pressureUnit: PressureUnit,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val data = detail.data
+    val lat = data.optDouble("lat", Double.NaN)
+    val lon = data.optDouble("lon", Double.NaN)
+    val layer = data.optString("layer")
+    val time = data.optLong("time", 0L)
+    val point by produceState<MapPointWeather?>(null, detail.type, lat, lon, layer, time) {
+        value = MapPointWeatherLoader.load(lat, lon, layer, time)
+    }
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(24.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        tonalElevation = 4.dp,
+        shadowElevation = 8.dp
+    ) {
+        Column(
+            Modifier
+                .heightIn(max = 360.dp)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                IconButton(onClick = onDismiss, modifier = Modifier.size(36.dp)) {
+                    Icon(Icons.Rounded.Close, tr("Close"), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            WeatherPointBody(point, data, fahrenheit, windUnit, pressureUnit)
+        }
+    }
+}
+
 private fun usd(value: Double): String {
     val format = NumberFormat.getCurrencyInstance(I18n.lang.locale)
     format.currency = Currency.getInstance("USD")
@@ -84,17 +136,20 @@ private fun levelColor(level: String): Color = when (level) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun MapDetailSheet(detail: MapDetail, onDismiss: () -> Unit) {
+internal fun MapDetailSheet(detail: MapDetail, fahrenheit: Boolean, windUnit: WindUnit, pressureUnit: PressureUnit, onDismiss: () -> Unit) {
     val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val data = detail.data
     val lat = data.optDouble("lat", Double.NaN)
     val lon = data.optDouble("lon", Double.NaN)
-    val meta by produceState<JSONObject?>(null, lat, lon) {
-        value = if (lat.isNaN() || lon.isNaN()) null else withContext(Dispatchers.IO) {
+    val point by produceState<MapPointWeather?>(null, detail.type, lat, lon, data.optString("layer"), data.optLong("time")) {
+        value = if (detail.type == "weather-point") MapPointWeatherLoader.load(lat, lon, data.optString("layer"), data.optLong("time")) else null
+    }
+    val meta by produceState<JSONObject?>(null, detail.type, lat, lon) {
+        value = if (detail.type == "weather-point" || lat.isNaN() || lon.isNaN()) null else withContext(Dispatchers.IO) {
             runCatching { MunicipalityMeta.details(lat, lon) }.getOrNull()
         }
     }
-    val loading = meta == null && !lat.isNaN()
+    val loading = meta == null && detail.type != "weather-point" && !lat.isNaN()
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheet,
@@ -111,9 +166,10 @@ internal fun MapDetailSheet(detail: MapDetail, onDismiss: () -> Unit) {
             when (detail.type) {
                 "alert" -> AlertBody(data)
                 "fire" -> FireBody(data)
+                "weather-point" -> WeatherPointBody(point, detail.data, fahrenheit, windUnit, pressureUnit)
                 else -> Header(tr("Municipality details"), null, Color.Unspecified)
             }
-            MunicipalityBlock(meta, loading)
+            if (detail.type != "weather-point") MunicipalityBlock(meta, loading)
             val event = when (detail.type.lowercase()) {
                 "cyclone", "cyclones", "hurricane", "typhoon" -> "cyclone hurricane typhoon"
                 "drought" -> "drought dryness"
@@ -123,6 +179,58 @@ internal fun MapDetailSheet(detail: MapDetail, onDismiss: () -> Unit) {
             if (event != null) EventNewsSection(event, data.optString("region"))
         }
     }
+}
+
+@Composable
+private fun WeatherPointBody(point: MapPointWeather?, data: JSONObject, fahrenheit: Boolean, windUnit: WindUnit, pressureUnit: PressureUnit) {
+    val layer = data.optString("layer")
+    val title = tr(MapLayer.entries.firstOrNull { it.id == layer }?.label ?: "Weather")
+    val requestedMillis = data.optLong("time", 0L)
+    val requested = Instant.ofEpochMilli(requestedMillis)
+    val status = tr(if (requested.isBefore(Instant.now())) "Historical model" else "Forecast model")
+    Header(title, null, Color.Unspecified)
+    if (point == null) {
+        Text(tr("Loading details…"), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        return
+    }
+    if (point.error != null) {
+        val message = if (point.error == "no_echo") tr("No measurable radar echo at this pixel.") else tr("No value returned for this point and time.")
+        Block(null) { Text(message, style = MaterialTheme.typography.bodyMedium) }
+        Note("${if (layer == "precip") "RainViewer" else "Open-Meteo"} · $status")
+        return
+    }
+    val timeFormatter = DateTimeFormatter.ofPattern("EEE, MMM d · HH:mm 'UTC'", I18n.lang.locale).withZone(ZoneId.of("UTC"))
+    Block(null) {
+        Field(status, timeFormatter.format(point.actualTime))
+        when (layer) {
+            "temp" -> point.values["temperature_2m"]?.let { Field(tr("Temperature"), tempText(it, fahrenheit)) }
+            "clouds" -> point.values["cloud_cover"]?.let { Field(tr("Cloudiness"), "${it.roundToInt()}%") }
+            "humidity" -> point.values["relative_humidity_2m"]?.let { Field(tr("Humidity"), "${it.roundToInt()}%") }
+            "wind" -> {
+                point.values["wind_speed_10m"]?.let { Field(tr("Wind speed"), windText(it, windUnit)) }
+                point.values["wind_direction_10m"]?.let {
+                    val degrees = (it.roundToInt() % 360 + 360) % 360
+                    Field(tr("From"), "${com.catsblock.weather.data.compassLabel(it)} · $degrees°")
+                }
+                point.values["wind_gusts_10m"]?.let { Field(tr("Wind gusts"), windText(it, windUnit)) }
+            }
+            "pressure" -> point.values["pressure_msl"]?.let { Field(tr("Pressure"), "${pressureNumber(it, pressureUnit)} ${pressureUnit.label}") }
+            "dew" -> point.values["dew_point_2m"]?.let { Field(tr("Dew point"), tempText(it, fahrenheit)) }
+            "uv" -> point.values["uv_index"]?.let { Field(tr("UV index"), decimal(it, 1)) }
+            "aqi" -> point.values["us_aqi"]?.let { Field(tr("Air quality"), "${it.roundToInt()} US AQI") }
+            "sea" -> point.values["sea_level_height_msl"]?.let { Field(tr("Sea level"), "${decimal(it, 2)} m") }
+            "precip" -> point.reflectivityDbz?.let {
+                Field(tr("Reflectivity"), "${decimal(it, 0)} dBZ")
+                point.values["rain_rate_mm_h"]?.let { rate -> Field(tr("Estimated rain rate"), "${decimal(rate, 1)} mm/h") }
+                point.values["rain_15m_mm"]?.let { amount -> Field(tr("Estimated 15-minute amount"), "${decimal(amount, 2)} mm") }
+            }
+        }
+        Field(tr("Selected point"), "${decimal(point.selectedLatitude, 5)}, ${decimal(point.selectedLongitude, 5)}")
+        if (layer != "precip") Field(tr("Nearest model cell"), "${decimal(point.gridLatitude, 3)}, ${decimal(point.gridLongitude, 3)}")
+    }
+    Note(if (layer == "precip") "RainViewer · ${tr("Reflectivity")} · dBZ" else "Open-Meteo · ${tr("Hourly model grid")}")
+    if (layer == "precip") Note(tr("RainViewer pixel sample; resolution varies by location."))
+    if (layer != "precip") Note(tr("Model grid estimate; the returned cell may be offset from the selected point."))
 }
 
 @Composable
