@@ -1,0 +1,68 @@
+{
+  "project_info": {
+    "project_number": "464000522974",
+    "project_id": "catsappserver",
+    "storage_bucket": "catsappserver.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:464000522974:android:aa4bb2c2b0a0f4cd47004f",
+        "android_client_info": {
+          "package_name": "com.catsblock.catsapp"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "464000522974-bmo3vlqotj6kmh4u4vgo1gh5hnd2phfc.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAb61pRcahF3RI8Y_K4OiIr5IPmp54Xl20"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "464000522974-bmo3vlqotj6kmh4u4vgo1gh5hnd2phfc.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:464000522974:android:0ca645faf34f7b1447004f",
+        "android_client_info": {
+          "package_name": "com.catsblock.weather"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "464000522974-bmo3vlqotj6kmh4u4vgo1gh5hnd2phfc.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAb61pRcahF3RI8Y_K4OiIr5IPmp54Xl20"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "464000522974-bmo3vlqotj6kmh4u4vgo1gh5hnd2phfc.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
