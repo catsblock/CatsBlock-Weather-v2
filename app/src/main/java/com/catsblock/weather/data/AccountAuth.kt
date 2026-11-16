@@ -45,7 +45,6 @@ internal object AccountAuth {
     private const val MSG_USERNAME = "Enter a username of 3 to 32 letters, digits or underscores, starting with a letter."
     private const val MSG_PASSWORD = "Use a password of 10 to 128 characters."
     private const val MSG_MISMATCH = "The passwords do not match."
-    private const val MSG_TAKEN = "That username is not available."
     private const val MSG_CREDENTIALS = "Incorrect username or password."
     private const val MSG_EXPIRED = "Your session has expired. Log in again."
     private const val MSG_RATE = "Too many attempts. Try again later."
@@ -55,6 +54,7 @@ internal object AccountAuth {
 
     private val jsonType = "application/json; charset=utf-8".toMediaType()
     private val usernamePattern = Regex("^[a-z][a-z0-9_]{2,31}$")
+    private val tokenPattern = Regex("^[A-Za-z0-9_-]{20,128}$")
     private val lock = Any()
     private val client = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
@@ -193,7 +193,7 @@ internal object AccountAuth {
         val username = user.optString("username")
         val access = json.optString("accessToken")
         val refresh = json.optString("refreshToken")
-        if (username.isEmpty() || access.isEmpty() || refresh.isEmpty()) return false
+        if (!usernamePattern.matches(username) || !tokenPattern.matches(access) || !tokenPattern.matches(refresh)) return false
         val created = Session(username, access, refresh, System.currentTimeMillis() + ACCESS_LIFETIME_MS)
         session = created
         prefs?.edit()
@@ -241,7 +241,6 @@ internal object AccountAuth {
             error == "invalid_username" -> MSG_USERNAME
             error == "invalid_password" -> MSG_PASSWORD
             error == "password_mismatch" -> MSG_MISMATCH
-            error == "account_unavailable" || reply.code == 409 -> MSG_TAKEN
             error == "invalid_credentials" -> MSG_CREDENTIALS
             reply.code == 401 -> MSG_EXPIRED
             reply.code == 429 -> MSG_RATE

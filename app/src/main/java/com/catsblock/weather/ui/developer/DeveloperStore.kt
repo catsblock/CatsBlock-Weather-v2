@@ -102,8 +102,10 @@ object AppLog {
             "${it.className.substringAfterLast('.')}.${it.methodName}:${it.lineNumber}"
         }
         val now = System.currentTimeMillis()
-        add(LogLevel.Error, "Crash", "Uncaught exception on ${thread.name}: ${describe(error)} at $trace", null, now)
-        val payload = listOf(thread.name, now.toString(), describe(error), trace).joinToString(SEPARATOR.toString())
+        val safeDescription = LogRedactor.redact(describe(error)).take(240)
+        val safeTrace = LogRedactor.redact(trace).take(1200)
+        add(LogLevel.Error, "Crash", "Uncaught exception on ${thread.name}: $safeDescription at $safeTrace", null, now)
+        val payload = listOf(thread.name.take(100), now.toString(), safeDescription, safeTrace).joinToString(SEPARATOR.toString())
         context.getSharedPreferences(CRASH_FILE, Context.MODE_PRIVATE).edit().putString(CRASH_KEY, payload).commit()
     }
 

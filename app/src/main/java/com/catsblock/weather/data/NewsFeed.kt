@@ -253,7 +253,7 @@ object NewsFeed {
             val title = item.optString("title")
             val url = item.optString("url")
             if (id.isEmpty() || title.isEmpty() || url.isEmpty()) continue
-            if (!url.startsWith("https://") && !url.startsWith("http://")) continue
+            if (!url.startsWith("https://", ignoreCase = true)) continue
             articles.add(
                 NewsArticle(
                     id = id,
@@ -261,7 +261,7 @@ object NewsFeed {
                     summary = item.optString("summary"),
                     source = item.optString("source"),
                     publishedAt = item.optLong("publishedAt", 0L),
-                    imageUrl = item.optString("imageUrl").takeIf { it.startsWith("https://") || it.startsWith("http://") },
+                    imageUrl = item.optString("imageUrl").takeIf { it.startsWith("https://", ignoreCase = true) },
                     url = url,
                     likes = item.optInt("likes", 0).coerceIn(0, MAX_LIKES),
                     liked = item.optBoolean("liked", false),

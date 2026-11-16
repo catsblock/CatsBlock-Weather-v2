@@ -3,6 +3,9 @@ const TOKEN_BYTES = 32;
 const ACCESS_SECONDS = 900;
 const REFRESH_SECONDS = 2592000;
 const MAX_BODY_BYTES = 4096;
+const DEVICE_ID_PATTERN = /^[a-f0-9]{64}$/;
+const DUMMY_SALT = "AAAAAAAAAAAAAAAAAAAAAA";
+const DUMMY_HASH = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
 
 function bytesToBase64(bytes) {
   let binary = "";
@@ -57,28 +60,62 @@ function constantTimeEqual(left, right) {
 }
 
 async function parseBody(request) {
-  const length = Number(request.headers.get("Content-Length") || 0);
-  if (length > MAX_BODY_BYTES) return null;
-  const text = await request.text();
-  if (text.length > MAX_BODY_BYTES) return null;
-  try { return JSON.parse(text); } catch { return null; }
+  const declared = Number(request.headers.get("Content-Length") || 0);
+  if (request.headers.has("Content-Length") && (!Number.isFinite(declared) || declared > MAX_BODY_BYTES)) return null;
+  if (!request.body) return null;
+  const reader = request.body.getReader();
+  const chunks = [];
+  let received = 0;
+  try {
+    for (;;) {
+      const part = await reader.read();
+      if (part.done) break;
+      received += part.value.byteLength;
+      if (received > MAX_BODY_BYTES) {
+        await reader.cancel();
+        return null;
+      }
+      chunks.push(part.value);
+    }
+    const merged = new Uint8Array(received);
+    let offset = 0;
+    for (const chunk of chunks) {
+      merged.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    const text = new TextDecoder("utf-8", { fatal: true }).decode(merged);
+    const parsed = JSON.parse(text);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
 }
 
 function publicAccount(row) {
   return { id: Number(row.id), username: row.username, role: row.role, createdAt: Number(row.created_at) };
 }
 
-async function sessionRow(env, token) {
+async function sessionRow(env, token, request) {
   if (!env.NEWS_DB || typeof token !== "string" || token.length < 20) return null;
+  const device = String(request.headers.get("X-Device-Id") || "").trim().toLowerCase();
+  if (!DEVICE_ID_PATTERN.test(device)) return null;
   const hash = await digest(token);
-  return await env.NEWS_DB.prepare("SELECT s.*, a.username, a.role, a.status FROM account_sessions s JOIN accounts a ON a.id = s.account_id WHERE s.token_hash = ? AND s.revoked_at = 0 AND s.expires_at > ? AND a.status = 'active'").bind(hash, Date.now()).first();
+  const row = await env.NEWS_DB.prepare("SELECT s.*, a.username, a.role, a.status FROM account_sessions s JOIN accounts a ON a.id = s.account_id WHERE s.token_hash = ? AND s.revoked_at = 0 AND s.expires_at > ? AND a.status = 'active'").bind(hash, Date.now()).first();
+  return row && constantTimeEqual(row.installation_hash, device) ? row : null;
 }
 
 export async function authenticateSession(request, env) {
   const header = request.headers.get("Authorization") || "";
   const token = header.startsWith("Bearer ") ? header.slice(7).trim() : "";
-  const row = await sessionRow(env, token);
+  const row = await sessionRow(env, token, request);
   return row ? { token, accountId: Number(row.account_id), username: row.username, role: row.role, sessionId: row.session_id } : null;
+}
+
+function readInstallation(request, body) {
+  const header = String(request.headers.get("X-Device-Id") || "").trim().toLowerCase();
+  const payload = typeof body.installationId === "string" ? body.installationId.trim().toLowerCase() : "";
+  if (!DEVICE_ID_PATTERN.test(header) || !DEVICE_ID_PATTERN.test(payload) || !constantTimeEqual(header, payload)) return "";
+  return header;
 }
 
 async function authBudget(request, env, h, path, body) {
@@ -130,14 +167,18 @@ export async function handleAuth(request, env, h, path) {
   if (!body || typeof body !== "object") return h.jsonResponse({ error: "bad_request" }, 400);
   const budgetError = await authBudget(request, env, h, path, body);
   if (budgetError) return budgetError;
-  const installation = typeof body.installationId === "string" && /^[a-f0-9]{64}$/.test(body.installationId) ? body.installationId : "unknown";
+  const installation = readInstallation(request, body);
+  if (!installation) return h.jsonResponse({ error: "client_unidentified" }, 400);
   try {
     if (path === "/v1/auth/register") {
       const username = validateUsername(body.username);
       const password = validatePassword(body.password);
       if (password !== body.passwordConfirmation) return h.jsonResponse({ error: "password_mismatch" }, 400);
       const existing = await env.NEWS_DB.prepare("SELECT id FROM accounts WHERE username_normalized = ?").bind(username).first();
-      if (existing) return h.jsonResponse({ error: "account_unavailable" }, 409);
+      if (existing) {
+        await derivePassword(password, DUMMY_SALT);
+        return h.jsonResponse({ error: "invalid_request" }, 400);
+      }
       const salt = bytesToBase64(crypto.getRandomValues(new Uint8Array(16)));
       const passwordHash = await derivePassword(password, salt);
       const result = await env.NEWS_DB.prepare("INSERT INTO accounts(username, username_normalized, password_hash, password_salt, role, status, created_at, updated_at) VALUES (?, ?, ?, ?, 'user', 'active', ?, ?)").bind(username, username, passwordHash, salt, Date.now(), Date.now()).run();
@@ -150,7 +191,8 @@ export async function handleAuth(request, env, h, path) {
       const username = normalizeUsername(body.username);
       const password = validatePassword(body.password);
       const account = await env.NEWS_DB.prepare("SELECT * FROM accounts WHERE username_normalized = ? AND status = 'active'").bind(username).first();
-      const valid = account && constantTimeEqual(await derivePassword(password, account.password_salt), account.password_hash);
+      const candidateHash = await derivePassword(password, account?.password_salt || DUMMY_SALT);
+      const valid = Boolean(account) && constantTimeEqual(candidateHash, account?.password_hash || DUMMY_HASH);
       if (!valid) return h.jsonResponse({ error: "invalid_credentials" }, 401);
       await env.NEWS_DB.prepare("DELETE FROM account_devices WHERE account_id = ?").bind(account.id).run();
       await env.NEWS_DB.prepare("INSERT INTO account_devices(account_id, installation_hash, created_at, updated_at) VALUES (?, ?, ?, ?)").bind(account.id, installation, Date.now(), Date.now()).run();
@@ -159,17 +201,20 @@ export async function handleAuth(request, env, h, path) {
     }
     if (path === "/v1/auth/refresh") {
       const refreshToken = typeof body.refreshToken === "string" ? body.refreshToken : "";
+      if (refreshToken.length < 20) return h.jsonResponse({ error: "refresh_invalid" }, 401);
       const hash = await digest(refreshToken);
       const now = Date.now();
+      const existing = await env.NEWS_DB.prepare("SELECT * FROM refresh_sessions WHERE token_hash = ?").bind(hash).first();
+      if (!existing || !constantTimeEqual(existing.installation_hash, installation) || Number(existing.expires_at) <= now || Number(existing.revoked_at) !== 0) {
+        return h.jsonResponse({ error: "refresh_invalid" }, 401);
+      }
       const claimed = await env.NEWS_DB.prepare(
         "UPDATE refresh_sessions SET used_at = ? WHERE token_hash = ? AND used_at = 0 AND revoked_at = 0 AND expires_at > ? RETURNING *"
       ).bind(now, hash, now).first();
       if (!claimed) {
-        const row = await env.NEWS_DB.prepare("SELECT * FROM refresh_sessions WHERE token_hash = ?").bind(hash).first();
-        if (!row || Number(row.expires_at) <= now || Number(row.revoked_at) !== 0) return h.jsonResponse({ error: "refresh_invalid" }, 401);
         await env.NEWS_DB.batch([
-          env.NEWS_DB.prepare("UPDATE refresh_sessions SET revoked_at = ? WHERE family_id = ?").bind(now, row.family_id),
-          env.NEWS_DB.prepare("UPDATE account_sessions SET revoked_at = ? WHERE account_id = ?").bind(now, row.account_id)
+          env.NEWS_DB.prepare("UPDATE refresh_sessions SET revoked_at = ? WHERE family_id = ?").bind(now, existing.family_id),
+          env.NEWS_DB.prepare("UPDATE account_sessions SET revoked_at = ? WHERE account_id = ?").bind(now, existing.account_id)
         ]);
         return h.jsonResponse({ error: "refresh_reuse_detected" }, 401);
       }
@@ -181,14 +226,20 @@ export async function handleAuth(request, env, h, path) {
     }
     const session = await authenticateSession(request, env);
     if (path === "/v1/auth/logout") {
-      if (session) await env.NEWS_DB.prepare("UPDATE account_sessions SET revoked_at = ? WHERE session_id = ?").bind(Date.now(), session.sessionId).run();
+      if (session) {
+        const now = Date.now();
+        await env.NEWS_DB.batch([
+          env.NEWS_DB.prepare("UPDATE account_sessions SET revoked_at = ? WHERE account_id = ?").bind(now, session.accountId),
+          env.NEWS_DB.prepare("UPDATE refresh_sessions SET revoked_at = ? WHERE account_id = ? AND revoked_at = 0").bind(now, session.accountId)
+        ]);
+      }
       return h.jsonResponse({ success: true }, 200);
     }
     if (path === "/v1/auth/delete") {
       if (!session) return h.jsonResponse({ error: "unauthorized" }, 401);
       const password = validatePassword(body.password);
       const account = await env.NEWS_DB.prepare("SELECT * FROM accounts WHERE id = ?").bind(session.accountId).first();
-      if (!account || (await derivePassword(password, account.password_salt)) !== account.password_hash) return h.jsonResponse({ error: "invalid_credentials" }, 401);
+      if (!account || !constantTimeEqual(await derivePassword(password, account.password_salt), account.password_hash)) return h.jsonResponse({ error: "invalid_credentials" }, 401);
       await env.NEWS_DB.batch([
         env.NEWS_DB.prepare("UPDATE accounts SET status = 'deleted', username = ?, username_normalized = ?, password_hash = '', password_salt = '', updated_at = ? WHERE id = ?").bind(`deleted_${session.accountId}`, `deleted_${session.accountId}`, Date.now(), session.accountId),
         env.NEWS_DB.prepare("UPDATE account_sessions SET revoked_at = ? WHERE account_id = ?").bind(Date.now(), session.accountId),

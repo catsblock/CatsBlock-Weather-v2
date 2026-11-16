@@ -15,8 +15,13 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -25,15 +30,30 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.ArrowForward
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Clear
+import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Shield
+import androidx.compose.material.icons.rounded.Visibility
+import androidx.compose.material.icons.rounded.VisibilityOff
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -49,6 +69,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -78,6 +99,8 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 import java.util.Locale
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 
 private const val SEARCH_DEBOUNCE_MS = 2500L
 
@@ -297,59 +320,239 @@ fun NewsScreen(vm: WeatherViewModel) {
 @Composable
 private fun AccountGateDialog(onCancel: () -> Unit, onSuccess: () -> Unit) {
     val scope = rememberCoroutineScope()
+    val scheme = MaterialTheme.colorScheme
+    val scrollState = rememberScrollState()
     var username by rememberSaveable { mutableStateOf("") }
-    var password by rememberSaveable { mutableStateOf("") }
-    var confirmation by rememberSaveable { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var confirmation by remember { mutableStateOf("") }
     var register by rememberSaveable { mutableStateOf(false) }
     var error by rememberSaveable { mutableStateOf<String?>(null) }
     var busy by rememberSaveable { mutableStateOf(false) }
-    AlertDialog(
+    var showPassword by remember { mutableStateOf(false) }
+    var showConfirmation by remember { mutableStateOf(false) }
+
+    fun submit() {
+        if (busy) return
+        busy = true
+        error = null
+        scope.launch {
+            val result = if (register) AccountAuth.register(username, password, confirmation) else AccountAuth.login(username, password)
+            busy = false
+            when (result) {
+                is AccountAuth.Result.Success -> {
+                    password = ""
+                    confirmation = ""
+                    onSuccess()
+                }
+                is AccountAuth.Result.Failure -> error = result.message
+            }
+        }
+    }
+
+    Dialog(
         onDismissRequest = onCancel,
-        title = { Text(tr(if (register) "Create an account to react" else "Sign in to react")) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(tr("Your account keeps likes and reactions fair and helps protect the community from automated abuse."))
-                Text(tr("Read the Privacy Policy and Terms of Service in Settings before creating an account."), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                OutlinedTextField(value = username, onValueChange = { username = it }, singleLine = true, label = { Text(tr("Username")) })
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            dismissOnClickOutside = !busy,
+            dismissOnBackPress = !busy
+        )
+    ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = 720.dp)
+                .padding(horizontal = 16.dp)
+                .imePadding(),
+            shape = MaterialTheme.shapes.extraLarge,
+            color = scheme.surfaceContainerLow,
+            tonalElevation = 4.dp
+        ) {
+            Column(
+                modifier = Modifier
+                    .verticalScroll(scrollState)
+                    .padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(MaterialTheme.shapes.large)
+                        .background(scheme.primaryContainer)
+                        .padding(20.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .offset(x = 30.dp, y = (-34).dp)
+                            .size(116.dp)
+                            .background(scheme.secondary.copy(alpha = 0.22f), CircleShape)
+                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Surface(
+                            modifier = Modifier.size(56.dp),
+                            shape = CircleShape,
+                            color = scheme.primary
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(Icons.Rounded.AutoAwesome, contentDescription = null, tint = scheme.onPrimary)
+                            }
+                        }
+                        Spacer(Modifier.size(14.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                tr(if (register) "Create an account to react" else "Sign in to react"),
+                                style = MaterialTheme.typography.headlineSmall,
+                                color = scheme.onPrimaryContainer
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                tr("Your account keeps likes and reactions fair and helps protect the community from automated abuse."),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = scheme.onPrimaryContainer.copy(alpha = 0.82f)
+                            )
+                        }
+                    }
+                }
+
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = scheme.secondaryContainer),
+                    shape = MaterialTheme.shapes.large
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Rounded.Shield, contentDescription = null, tint = scheme.onSecondaryContainer)
+                        Spacer(Modifier.size(12.dp))
+                        Text(
+                            tr("Read the Privacy Policy and Terms of Service in Settings before creating an account."),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = scheme.onSecondaryContainer
+                        )
+                    }
+                }
+
+                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                    SegmentedButton(
+                        selected = !register,
+                        onClick = { register = false; error = null },
+                        shape = SegmentedButtonDefaults.itemShape(0, 2),
+                        icon = { Icon(Icons.Rounded.Lock, contentDescription = null) }
+                    ) { Text(tr("Sign in")) }
+                    SegmentedButton(
+                        selected = register,
+                        onClick = { register = true; error = null },
+                        shape = SegmentedButtonDefaults.itemShape(1, 2),
+                        icon = { Icon(Icons.Rounded.Person, contentDescription = null) }
+                    ) { Text(tr("Create account")) }
+                }
+
                 OutlinedTextField(
+                    modifier = Modifier.fillMaxWidth(),
+                    value = username,
+                    onValueChange = { username = it },
+                    singleLine = true,
+                    label = { Text(tr("Username")) },
+                    leadingIcon = { Icon(Icons.Rounded.Person, contentDescription = null) },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii, imeAction = ImeAction.Next),
+                    shape = MaterialTheme.shapes.medium
+                )
+
+                OutlinedTextField(
+                    modifier = Modifier.fillMaxWidth(),
                     value = password,
                     onValueChange = { password = it },
                     singleLine = true,
-                    visualTransformation = PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                    label = { Text(tr("Password")) }
+                    label = { Text(tr("Password")) },
+                    leadingIcon = { Icon(Icons.Rounded.Lock, contentDescription = null) },
+                    trailingIcon = {
+                        IconButton(onClick = { showPassword = !showPassword }) {
+                            Icon(
+                                if (showPassword) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
+                                contentDescription = tr(if (showPassword) "Hide password" else "Show password")
+                            )
+                        }
+                    },
+                    supportingText = if (register) {
+                        { Text(tr("Use a password of 10 to 128 characters.")) }
+                    } else null,
+                    visualTransformation = if (showPassword) androidx.compose.ui.text.input.VisualTransformation.None else PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = if (register) ImeAction.Next else ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { submit() }),
+                    shape = MaterialTheme.shapes.medium
                 )
-                if (register) OutlinedTextField(
-                    value = confirmation,
-                    onValueChange = { confirmation = it },
-                    singleLine = true,
-                    visualTransformation = PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                    label = { Text(tr("Confirm password")) }
-                )
-                error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-            }
-        },
-        confirmButton = {
-            TextButton(enabled = !busy, onClick = {
-                busy = true
-                error = null
-                scope.launch {
-                    val result = if (register) AccountAuth.register(username, password, confirmation) else AccountAuth.login(username, password)
-                    busy = false
-                    when (result) {
-                        is AccountAuth.Result.Success -> onSuccess()
-                        is AccountAuth.Result.Failure -> error = result.message
+
+                if (register) {
+                    OutlinedTextField(
+                        modifier = Modifier.fillMaxWidth(),
+                        value = confirmation,
+                        onValueChange = { confirmation = it },
+                        singleLine = true,
+                        label = { Text(tr("Confirm password")) },
+                        leadingIcon = { Icon(Icons.Rounded.Lock, contentDescription = null) },
+                        trailingIcon = {
+                            IconButton(onClick = { showConfirmation = !showConfirmation }) {
+                                Icon(
+                                    if (showConfirmation) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
+                                    contentDescription = tr(if (showConfirmation) "Hide password" else "Show password")
+                                )
+                            }
+                        },
+                        visualTransformation = if (showConfirmation) androidx.compose.ui.text.input.VisualTransformation.None else PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(onDone = { submit() }),
+                        shape = MaterialTheme.shapes.medium
+                    )
+                }
+
+                error?.let {
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = scheme.errorContainer),
+                        shape = MaterialTheme.shapes.medium
+                    ) {
+                        Text(
+                            it,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = scheme.onErrorContainer
+                        )
                     }
                 }
-            }) { Text(tr(if (register) "Create account" else "Sign in")) }
-        },
-        dismissButton = {
-            TextButton(onClick = { register = !register; error = null }) {
-                Text(tr(if (register) "Already have an account? Sign in" else "Need an account? Create one"))
+
+                HorizontalDivider(color = scheme.outlineVariant.copy(alpha = 0.7f))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TextButton(enabled = !busy, onClick = onCancel) {
+                        Text(tr("Cancel"))
+                    }
+                    Button(
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(52.dp),
+                        enabled = !busy,
+                        onClick = ::submit,
+                        shape = MaterialTheme.shapes.large
+                    ) {
+                        if (busy) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                strokeWidth = 2.dp,
+                                color = scheme.onPrimary
+                            )
+                        } else {
+                            Text(tr(if (register) "Create account" else "Sign in"))
+                            Spacer(Modifier.size(8.dp))
+                            Icon(Icons.Rounded.ArrowForward, contentDescription = null)
+                        }
+                    }
+                }
             }
         }
-    )
+    }
 }
 
 @Composable

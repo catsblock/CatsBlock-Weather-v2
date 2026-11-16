@@ -1,6 +1,7 @@
 package com.catsblock.weather.data
 
 import android.content.Context
+import android.content.SharedPreferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
@@ -8,15 +9,34 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKey
 import com.catsblock.weather.i18n.AppLanguage
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import org.json.JSONArray
 import org.json.JSONObject
+import java.util.concurrent.atomic.AtomicBoolean
 
 private val Context.dataStore by preferencesDataStore(name = "weather_settings")
 
 class SettingsStore(private val context: Context) {
+
+    private val securePrefs: SharedPreferences? by lazy { openSecurePrefs(context.applicationContext) }
+
+    init {
+        val secure = securePrefs
+        if (secure != null && apiKeyMigrationStarted.compareAndSet(false, true)) {
+            CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+                migrateLegacyApiKeys(secure)
+            }
+        }
+    }
 
     private object Keys {
         val fahrenheit = booleanPreferencesKey("fahrenheit")
@@ -113,13 +133,56 @@ class SettingsStore(private val context: Context) {
 
     private fun readKeys(prefs: androidx.datastore.preferences.core.Preferences): Map<WeatherSource, String> =
         WeatherSource.entries.mapNotNull { source ->
-            prefs[stringPreferencesKey("api_key_" + source.name)]
-                ?.takeIf { value -> value.isNotBlank() }
-                ?.let { value -> source to value }
+            val secureValue = securePrefs?.getString(secureKey(source), null)
+            val legacyValue = prefs[stringPreferencesKey("api_key_" + source.name)]
+            val value = secureValue ?: if (securePrefs == null) legacyValue else null
+            value?.takeIf { it.isNotBlank() }?.let { source to it }
         }.toMap()
 
     suspend fun setApiKey(source: WeatherSource, value: String) {
-        context.dataStore.edit { it[stringPreferencesKey("api_key_" + source.name)] = value.trim() }
+        val clean = value.trim()
+        val secure = securePrefs
+        if (secure != null) {
+            val editor = secure.edit()
+            if (clean.isEmpty()) editor.remove(secureKey(source)) else editor.putString(secureKey(source), clean)
+            editor.apply()
+        } else context.dataStore.edit {
+            if (clean.isEmpty()) it.remove(stringPreferencesKey("api_key_" + source.name)) else it[stringPreferencesKey("api_key_" + source.name)] = clean
+        }
+    }
+
+    private suspend fun migrateLegacyApiKeys(secure: SharedPreferences) {
+        val preferences = context.dataStore.data.first()
+        val legacyKeys = WeatherSource.entries.mapNotNull { source ->
+            preferences[stringPreferencesKey("api_key_" + source.name)]
+                ?.takeIf { it.isNotBlank() }
+                ?.let { source to it }
+        }
+        if (legacyKeys.isEmpty()) return
+        secure.edit().apply {
+            legacyKeys.forEach { (source, value) -> putString(secureKey(source), value) }
+        }.apply()
+        context.dataStore.edit {
+            WeatherSource.entries.forEach { source -> it.remove(stringPreferencesKey("api_key_" + source.name)) }
+        }
+    }
+
+    private fun openSecurePrefs(context: Context): SharedPreferences? = runCatching {
+        val key = MasterKey.Builder(context).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build()
+        EncryptedSharedPreferences.create(
+            context,
+            API_KEYS_PREFS,
+            key,
+            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+        )
+    }.getOrNull()
+
+    private fun secureKey(source: WeatherSource): String = "api_key_" + source.name
+
+    companion object {
+        private const val API_KEYS_PREFS = "weather_credentials"
+        private val apiKeyMigrationStarted = AtomicBoolean(false)
     }
 
     suspend fun purgeLegacyKeys() {
