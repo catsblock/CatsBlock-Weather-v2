@@ -39,7 +39,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
-import androidx.compose.foundation.layout.align
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -534,25 +533,25 @@ fun MapScreen(vm: WeatherViewModel) {
                 )
             }
         }
-    }
 
-    if (layer.timeline != MapTimeline.Static) {
-        MapTimelineControl(
-            layer = layer,
-            offsetDays = forecastOffset,
-            onOffsetDays = { forecastOffset = it.coerceIn(-14, 14) },
-            hour = forecastHour,
-            onHour = { forecastHour = it.coerceIn(0, 23) },
-            frames = radarFrames,
-            frameIndex = radarIndex,
-            onFrameIndex = { radarIndex = it.coerceIn(0, radarFrames.lastIndex.coerceAtLeast(0)) },
-            playing = radarPlaying,
-            onTogglePlaying = { radarPlaying = !radarPlaying },
-            selectedTimeMillis = selectedTimeMillis,
-            modifier = Modifier.align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .padding(start = 84.dp, end = 12.dp, bottom = bottomInset + 10.dp)
-        )
+        if (layer.timeline != MapTimeline.Static) {
+            MapTimelineControl(
+                layer = layer,
+                offsetDays = forecastOffset,
+                onOffsetDays = { forecastOffset = it.coerceIn(-14, 14) },
+                hour = forecastHour,
+                onHour = { forecastHour = it.coerceIn(0, 23) },
+                frames = radarFrames,
+                frameIndex = radarIndex,
+                onFrameIndex = { radarIndex = it.coerceIn(0, radarFrames.lastIndex.coerceAtLeast(0)) },
+                playing = radarPlaying,
+                onTogglePlaying = { radarPlaying = !radarPlaying },
+                selectedTimeMillis = selectedTimeMillis,
+                modifier = Modifier.align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .padding(start = 84.dp, end = 12.dp, bottom = bottomInset + 10.dp)
+            )
+        }
     }
 
     MapHost.selected?.let { detail ->
