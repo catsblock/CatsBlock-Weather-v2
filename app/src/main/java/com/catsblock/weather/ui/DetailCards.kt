@@ -62,6 +62,7 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
@@ -221,13 +222,15 @@ fun HoursCard(
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
     val chipScroll = rememberScrollState()
-    val selected by remember(hours, days) {
+    var chartViewportWidthPx by remember { mutableIntStateOf(0) }
+    val selected by remember(hours, days, chartViewportWidthPx) {
         derivedStateOf {
             if (hours.isEmpty() || days.isEmpty()) {
                 0
             } else {
                 val stepPx = with(density) { HourStep.toPx() }
-                val index = (scrollState.value / stepPx).roundToInt().coerceIn(0, hours.lastIndex)
+                val centerOffset = scrollState.value + chartViewportWidthPx / 2f
+                val index = (centerOffset / stepPx).roundToInt().coerceIn(0, hours.lastIndex)
                 days.indexOfFirst { it.date == hours[index].time.toLocalDate() }.coerceAtLeast(0)
             }
         }
@@ -251,8 +254,11 @@ fun HoursCard(
                         val index = hours.indexOfFirst { it.time.toLocalDate() == d.date }.coerceAtLeast(0)
                         scope.launch {
                             val chipTarget = with(density) { ((DayChipWidth + DayChipGap) * i).roundToPx() }
-                            chipScroll.animateScrollTo(chipTarget)
-                            val hourTarget = with(density) { (HourStep * index).roundToPx() }
+                            val hourStepPx = with(density) { HourStep.roundToPx() }.coerceAtLeast(1)
+                            val hourCenterPx = index * hourStepPx + hourStepPx / 2
+                            val hourTarget = (hourCenterPx - chartViewportWidthPx / 2)
+                                .coerceIn(0, scrollState.maxValue)
+                            launch { chipScroll.animateScrollTo(chipTarget) }
                             scrollState.animateScrollTo(hourTarget)
                         }
                     }
@@ -260,7 +266,7 @@ fun HoursCard(
             }
             Spacer(Modifier.height(8.dp))
         }
-        HoursChart(hours, fahrenheit, scrollState)
+        HoursChart(hours, fahrenheit, scrollState) { chartViewportWidthPx = it }
     }
 }
 
@@ -324,7 +330,12 @@ private fun PrecipChance(chance: Int) {
 }
 
 @Composable
-private fun HoursChart(hours: List<Hour>, fahrenheit: Boolean, scrollState: ScrollState) {
+private fun HoursChart(
+    hours: List<Hour>,
+    fahrenheit: Boolean,
+    scrollState: ScrollState,
+    onViewportWidthChanged: (Int) -> Unit
+) {
     if (hours.isEmpty()) return
     val measurer = rememberTextMeasurer()
     val scheme = MaterialTheme.colorScheme
@@ -336,7 +347,11 @@ private fun HoursChart(hours: List<Hour>, fahrenheit: Boolean, scrollState: Scro
     val maxT = hours.maxOf { it.temp }
     val span = (maxT - minT).coerceAtLeast(4.0)
     val nowLabel = tr("Now")
-    Column(Modifier.horizontalScroll(scrollState)) {
+    Column(
+        Modifier
+            .onSizeChanged { onViewportWidthChanged(it.width) }
+            .horizontalScroll(scrollState)
+    ) {
         Canvas(Modifier.width(HourStep * hours.size).height(150.dp)) {
             val topPad = 36.dp.toPx()
             val bottomPad = 14.dp.toPx()
