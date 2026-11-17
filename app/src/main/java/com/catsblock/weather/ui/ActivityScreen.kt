@@ -1,5 +1,11 @@
 package com.catsblock.weather.ui
 
+import com.catsblock.weather.data.City
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.material3.VerticalDivider
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.material.icons.rounded.MyLocation
 import android.Manifest
 import android.content.Intent
 import android.net.Uri
@@ -130,55 +136,27 @@ fun ActivityDialog(stats: ActivityStats, fahrenheit: Boolean, vm: WeatherViewMod
         val installed = stats.installedAtMillis.takeIf { it > 0L }
             ?.let { Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).toLocalDate() }
 
-        SectionTitle(tr("Activity city"), top = 0.dp)
-        Text(
-            tr("Set activity location separately from the current weather city. Activity counts only when both cities match."),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(horizontal = 8.dp)
-        )
-        Spacer(Modifier.height(8.dp))
-        Text("${tr("Current weather city")}: ${currentWeatherCity?.name ?: tr("Unknown")}", style = MaterialTheme.typography.bodyMedium)
-        Text("${tr("Activity city")}: ${activityCity?.name ?: tr("No activity city selected")}", style = MaterialTheme.typography.bodyMedium)
-        OutlinedTextField(
-            value = activityCitySearch,
-            onValueChange = {
+        ActivityCityPanel(
+            weatherCity = currentWeatherCity?.name ?: tr("Unknown"),
+            activityCity = activityCity?.name ?: tr("No activity city selected"),
+            query = activityCitySearch,
+            onQuery = {
                 activityCitySearch = it
                 vm.searchActivityCities(it)
             },
-            label = { Text(tr("Search for an activity city")) },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth()
-        )
-        cityResults.take(6).forEach { candidate ->
-            TextButton(
-                onClick = {
-                    vm.setActivityCity(candidate)
-                    activityCitySearch = ""
-                    vm.searchActivityCities("")
-                    locationMessage = tr("Activity location saved.")
-                },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(Modifier.fillMaxWidth()) {
-                    Text(candidate.name, style = MaterialTheme.typography.bodyLarge)
-                    val detail = listOf(candidate.region, candidate.country).filter(String::isNotBlank).joinToString(" · ")
-                    if (detail.isNotEmpty()) Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-        }
-        Button(
-            onClick = {
+            results = cityResults.take(6),
+            onPick = { candidate ->
+                vm.setActivityCity(candidate)
+                activityCitySearch = ""
+                vm.searchActivityCities("")
+                locationMessage = tr("Activity location saved.")
+            },
+            onLocate = {
                 locationPermission.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
             },
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text(tr("Use device location for activity"))
-        }
-        locationMessage?.let {
-            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        Spacer(Modifier.height(8.dp))
+            message = locationMessage
+        )
+        Spacer(Modifier.height(12.dp))
 
         HeroTile(
             icon = Icons.Rounded.CalendarMonth,
@@ -276,6 +254,84 @@ fun ActivityDialog(stats: ActivityStats, fahrenheit: Boolean, vm: WeatherViewMod
             Icon(Icons.Rounded.Shield, null, Modifier.size(20.dp))
             Spacer(Modifier.width(10.dp))
             Text(tr("Data sources and safety"))
+        }
+    }
+}
+
+@Composable
+private fun ActivityCityPanel(
+    weatherCity: String,
+    activityCity: String,
+    query: String,
+    onQuery: (String) -> Unit,
+    results: List<City>,
+    onPick: (City) -> Unit,
+    onLocate: () -> Unit,
+    message: String?
+) {
+    val scheme = MaterialTheme.colorScheme
+    ExpressiveSurface(
+        shape = WeatherExpressiveShapes.section,
+        color = scheme.surfaceContainer,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(Modifier.padding(horizontal = 20.dp, vertical = 20.dp)) {
+            Text(tr("Activity city"), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(4.dp))
+            Text(
+                tr("Set activity location separately from the current weather city. Activity counts only when both cities match."),
+                style = MaterialTheme.typography.bodyMedium,
+                color = scheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(16.dp))
+            Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(tr("Current weather city"), style = MaterialTheme.typography.labelMedium, color = scheme.onSurfaceVariant)
+                    Text(weatherCity, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                VerticalDivider(Modifier.padding(horizontal = 16.dp), color = scheme.outlineVariant)
+                Column(Modifier.weight(1f)) {
+                    Text(tr("Activity city"), style = MaterialTheme.typography.labelMedium, color = scheme.primary)
+                    Text(
+                        activityCity,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+            Spacer(Modifier.height(16.dp))
+            OutlinedTextField(
+                value = query,
+                onValueChange = onQuery,
+                label = { Text(tr("Search for an activity city")) },
+                singleLine = true,
+                shape = RoundedCornerShape(16.dp),
+                trailingIcon = {
+                    IconButton(onClick = onLocate) {
+                        Icon(Icons.Rounded.MyLocation, tr("Use device location for activity"), tint = scheme.primary)
+                    }
+                },
+                modifier = Modifier.fillMaxWidth()
+            )
+            results.forEachIndexed { index, candidate ->
+                if (index > 0) HorizontalDivider(color = scheme.outlineVariant.copy(alpha = 0.5f))
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .clickable { onPick(candidate) }
+                        .padding(vertical = 12.dp, horizontal = 4.dp)
+                ) {
+                    Text(candidate.name, style = MaterialTheme.typography.bodyLarge)
+                    val detail = listOf(candidate.region, candidate.country).filter(String::isNotBlank).joinToString(" · ")
+                    if (detail.isNotEmpty()) Text(detail, style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
+                }
+            }
+            message?.let {
+                Spacer(Modifier.height(8.dp))
+                Text(it, style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
+            }
         }
     }
 }
@@ -397,7 +453,7 @@ private fun HeroTile(icon: ImageVector, label: String, value: String, sub: Strin
                 Text(label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onPrimaryContainer)
                 Text(
                     value,
-                    style = MaterialTheme.typography.headlineSmall,
+                    style = MaterialTheme.typography.headlineMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onPrimaryContainer
                 )
@@ -424,7 +480,7 @@ private fun StatTile(
             Icon(icon, null, tint = content, modifier = Modifier.size(22.dp))
             Spacer(Modifier.height(10.dp))
             Text(label, style = MaterialTheme.typography.labelLarge, color = content.copy(alpha = 0.8f))
-            Text(value, style = MaterialTheme.typography.headlineMedium, color = content)
+            Text(value, style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold, color = content)
             Text(sub, style = MaterialTheme.typography.bodySmall, color = content.copy(alpha = 0.7f), maxLines = 2)
         }
     }
