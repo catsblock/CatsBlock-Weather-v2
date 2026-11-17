@@ -15,6 +15,7 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -23,11 +24,11 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
@@ -35,45 +36,32 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.AcUnit
-import androidx.compose.material.icons.rounded.Air
+import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Check
-import androidx.compose.material.icons.rounded.Cloud
-import androidx.compose.material.icons.rounded.Landscape
 import androidx.compose.material.icons.rounded.Layers
 import androidx.compose.material.icons.rounded.LayersClear
-import androidx.compose.material.icons.rounded.LocalFireDepartment
-import androidx.compose.material.icons.rounded.Masks
 import androidx.compose.material.icons.rounded.MyLocation
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
-import androidx.compose.material.icons.rounded.Speed
-import androidx.compose.material.icons.rounded.Thermostat
+import androidx.compose.material.icons.rounded.Remove
 import androidx.compose.material.icons.rounded.Umbrella
-import androidx.compose.material.icons.rounded.Warning
-import androidx.compose.material.icons.rounded.Water
-import androidx.compose.material.icons.rounded.WaterDrop
-import androidx.compose.material.icons.rounded.Waves
-import androidx.compose.material.icons.rounded.WbSunny
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -81,72 +69,38 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.catsblock.weather.data.RadarFrameRef
-import com.catsblock.weather.data.RadarFrames
 import com.catsblock.weather.data.ThemeMode
 import com.catsblock.weather.i18n.I18n
 import com.catsblock.weather.i18n.tr
-import com.catsblock.weather.ui.components.ExpressiveLoader
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.delay
 import org.json.JSONObject
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.time.format.FormatStyle
+import kotlin.math.abs
 
-private val CycloneIcon: ImageVector by lazy {
-    ImageVector.Builder(
-        name = "Cyclone",
-        defaultWidth = 24.dp,
-        defaultHeight = 24.dp,
-        viewportWidth = 24f,
-        viewportHeight = 24f
-    ).apply {
-        path(
-            fill = null,
-            stroke = SolidColor(Color.Black),
-            strokeLineWidth = 2f,
-            strokeLineCap = StrokeCap.Round,
-            strokeLineJoin = StrokeJoin.Round
-        ) {
-            moveTo(12f, 12f)
-            curveTo(12f, 10.5f, 13.5f, 10f, 14.5f, 11f)
-            curveTo(16f, 12.5f, 14.5f, 15.5f, 12f, 15.5f)
-            curveTo(8.8f, 15.5f, 7f, 12.5f, 8f, 9.5f)
-            curveTo(9.2f, 6f, 14f, 5f, 17f, 7.5f)
-            curveTo(20.5f, 10.5f, 19.5f, 16f, 15.5f, 18.8f)
-        }
-    }.build()
-}
-
-internal enum class MapTimeline { Static, WeatherModel, RadarFrames }
+internal enum class MapTimeline { Static, RadarFrames }
 
 internal enum class MapLayer(val id: String, val label: String, val icon: ImageVector, val timeline: MapTimeline = MapTimeline.Static) {
     None("none", "None (Default)", Icons.Rounded.LayersClear),
-    Precipitation("precip", "Precipitation", Icons.Rounded.Umbrella, MapTimeline.RadarFrames),
-    Temperature("temp", "Temperature", Icons.Rounded.Thermostat, MapTimeline.WeatherModel),
-    Clouds("clouds", "Cloudiness", Icons.Rounded.Cloud, MapTimeline.WeatherModel),
-    Wind("wind", "Wind speed", Icons.Rounded.Air, MapTimeline.WeatherModel),
-    Pressure("pressure", "Pressure", Icons.Rounded.Speed, MapTimeline.WeatherModel),
-    Humidity("humidity", "Humidity", Icons.Rounded.WaterDrop, MapTimeline.WeatherModel),
-    Cyclones("cyclones", "Hurricanes & cyclones", CycloneIcon),
-    OceanHeat("sst", "El Niño & ocean heat", Icons.Rounded.Waves),
-    Fires("fires", "Active fires", Icons.Rounded.LocalFireDepartment),
-    DewPoint("dew", "Dew point", Icons.Rounded.WaterDrop, MapTimeline.WeatherModel),
-    UvIndex("uv", "UV index", Icons.Rounded.WbSunny, MapTimeline.WeatherModel),
-    AirQuality("aqi", "Air quality", Icons.Rounded.Masks),
-    SeaLevel("sea", "Sea level", Icons.Rounded.Water),
-    Alerts("alerts", "Weather alerts", Icons.Rounded.Warning),
-    ColdFronts("coldfront", "Cold fronts", Icons.Rounded.AcUnit, MapTimeline.WeatherModel),
-    Drought("drought", "Drought & dryness", Icons.Rounded.Landscape)
+    Precipitation("precip", "Precipitation", Icons.Rounded.Umbrella, MapTimeline.RadarFrames)
 }
+
+private val RadarLegendColors = listOf(
+    Color(0xFF00DFF2),
+    Color(0xFF287BFF),
+    Color(0xFF8655D8),
+    Color(0xFFED5BAF),
+    Color.White
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -159,83 +113,45 @@ fun MapScreen(vm: WeatherViewModel) {
         ThemeMode.Light -> false
         ThemeMode.Dark -> true
     }
-    var layer by remember { mutableStateOf(MapLayer.None) }
-    var radarFrames by remember { mutableStateOf<List<RadarFrameRef>>(emptyList()) }
-    var frameIndex by remember(radarFrames) { mutableIntStateOf(radarFrames.indexOfFirst { it.observed }.coerceAtLeast(0)) }
-    var offsetDays by remember { mutableIntStateOf(0) }
-    var nowUtc by remember { mutableStateOf(java.time.Instant.now().atZone(java.time.ZoneOffset.UTC)) }
-    var forecastHour by remember { mutableIntStateOf(nowUtc.hour) }
-    var playing by remember { mutableStateOf(false) }
+    var layer by remember { mutableStateOf(MapLayer.Precipitation) }
     var selectedDetail by remember { mutableStateOf<MapDetail?>(null) }
     var animatedDetail by remember { mutableStateOf<MapDetail?>(null) }
-    var ready by remember { mutableStateOf(false) }
     var focusRequest by remember { mutableIntStateOf(0) }
+    var sheetOpen by remember { mutableStateOf(false) }
+    val controller = remember { RadarMapController() }
+    val viewport = remember { MapViewport(city?.lat ?: 20.0, city?.lon ?: 0.0, if (city != null) 6f else 3f) }
     val bottomInset = LocalBottomInset.current
     val scope = rememberCoroutineScope()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    var sheetOpen by remember { mutableStateOf(false) }
     val locate = remember { Animatable(0f) }
-    LaunchedEffect(Unit) {
-        while (true) {
-            nowUtc = java.time.Instant.now().atZone(java.time.ZoneOffset.UTC)
-            delay(60_000L)
-        }
-    }
-    LaunchedEffect(playing, layer.timeline, radarFrames.size) {
-        if (!playing || layer.timeline != MapTimeline.RadarFrames || radarFrames.size < 2) return@LaunchedEffect
-        while (true) {
-            delay(900L)
-            frameIndex = (frameIndex + 1) % radarFrames.size
-        }
-    }
-    LaunchedEffect(layer.timeline) {
-        if (layer.timeline != MapTimeline.RadarFrames) {
-            playing = false
-            return@LaunchedEffect
-        }
-        while (true) {
-            val set = RadarFrames.set()
-            radarFrames = set?.let { frames ->
-                listOfNotNull(frames.frames.lastOrNull { it.observed }) + frames.frames.filterNot { it.observed }
-            }.orEmpty()
-            delay(310_000L)
-        }
-    }
+    val showRadar = layer == MapLayer.Precipitation
+
     LaunchedEffect(layer) {
         selectedDetail = null
+        if (layer != MapLayer.Precipitation) controller.playing = false
     }
     LaunchedEffect(selectedDetail) {
         selectedDetail?.let { animatedDetail = it }
     }
-    val nowHourUtc = nowUtc.truncatedTo(java.time.temporal.ChronoUnit.HOURS)
-    val selectedForecastHour = if (offsetDays == 0) forecastHour.coerceAtLeast(nowHourUtc.hour) else forecastHour
-    val selectedDate = nowUtc.toLocalDate().plusDays(offsetDays.toLong())
-    val selectedTimeMillis = remember(layer.id, frameIndex, offsetDays, selectedForecastHour, radarFrames, selectedDate) {
-        when (layer.timeline) {
-            MapTimeline.RadarFrames -> radarFrames.getOrNull(frameIndex)?.time?.times(1000L) ?: System.currentTimeMillis()
-            MapTimeline.WeatherModel -> selectedDate.atTime(selectedForecastHour, 0)
-                .toInstant(java.time.ZoneOffset.UTC).toEpochMilli()
-            MapTimeline.Static -> System.currentTimeMillis()
-        }
-    }
 
     Box(Modifier.fillMaxSize().clipToBounds().background(MaterialTheme.colorScheme.surface)) {
-        NativeWeatherMap(
+        RadarTileMap(
+            controller = controller,
+            viewport = viewport,
             city = city,
-            layer = layer,
+            showRadar = showRadar,
             dark = dark,
             focusRequest = focusRequest,
-            selectedTimeMillis = selectedTimeMillis,
             onPointSelected = { latitude, longitude, x, y ->
-                val currentOrFuture = layer.id != "precip" || selectedTimeMillis >= System.currentTimeMillis()
-                if (currentOrFuture && layer.id in setOf("precip", "temp", "clouds", "wind", "pressure", "humidity", "dew", "uv", "aqi", "sea")) {
+                val frameMillis = (controller.frame?.time ?: 0L) * 1000L
+                if (showRadar && frameMillis >= System.currentTimeMillis()) {
                     selectedDetail = MapDetail(
                         "weather-point",
                         JSONObject()
                             .put("lat", latitude)
                             .put("lon", longitude)
                             .put("layer", layer.id)
-                            .put("time", selectedTimeMillis),
+                            .put("time", frameMillis),
                         x.toDouble(),
                         y.toDouble()
                     )
@@ -243,20 +159,39 @@ fun MapScreen(vm: WeatherViewModel) {
                     selectedDetail = null
                 }
             },
-            onMapReady = { ready = it },
-            modifier = Modifier.fillMaxSize().clipToBounds()
+            modifier = Modifier.fillMaxSize().clipToBounds(),
+            attributionBottomPadding = bottomInset + 6.dp
         )
 
-        AnimatedVisibility(
-            visible = !ready,
-            modifier = Modifier.align(Alignment.Center),
-            enter = fadeIn(tween(200)) + scaleIn(initialScale = 0.9f),
-            exit = fadeOut(tween(200)) + scaleOut(targetScale = 0.9f)
+        Column(
+            Modifier.align(Alignment.TopStart).padding(start = 12.dp, top = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            StatusPill {
-                ExpressiveLoader(size = 28.dp)
-                Spacer(Modifier.width(12.dp))
-                Text(tr("Loading map…"), style = MaterialTheme.typography.titleSmall)
+            if (showRadar) {
+                RadarLegend()
+                RadarStatusChip(controller)
+            }
+        }
+
+        Column(
+            Modifier.align(Alignment.CenterEnd).padding(end = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            SmallFloatingActionButton(
+                onClick = { scope.launch { viewport.zoomBy(1f) } },
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                contentColor = MaterialTheme.colorScheme.onSurface,
+                shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomEnd = 6.dp, bottomStart = 6.dp)
+            ) {
+                Icon(Icons.Rounded.Add, tr("Zoom in"))
+            }
+            SmallFloatingActionButton(
+                onClick = { scope.launch { viewport.zoomBy(-1f) } },
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                contentColor = MaterialTheme.colorScheme.onSurface,
+                shape = RoundedCornerShape(topStart = 6.dp, topEnd = 6.dp, bottomEnd = 16.dp, bottomStart = 16.dp)
+            ) {
+                Icon(Icons.Rounded.Remove, tr("Zoom out"))
             }
         }
 
@@ -264,7 +199,7 @@ fun MapScreen(vm: WeatherViewModel) {
             Modifier
                 .align(Alignment.BottomStart)
                 .padding(start = 16.dp, bottom = bottomInset + 8.dp),
-            verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp)
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             val rotation by animateFloatAsState(
                 if (sheetOpen) 180f else 0f,
@@ -285,7 +220,7 @@ fun MapScreen(vm: WeatherViewModel) {
             }
             SmallFloatingActionButton(
                 onClick = {
-                    city?.let {
+                    if (city != null) {
                         focusRequest++
                         scope.launch {
                             locate.snapTo(0f)
@@ -312,31 +247,18 @@ fun MapScreen(vm: WeatherViewModel) {
             }
         }
 
-    AnimatedVisibility(
-        visible = layer.timeline != MapTimeline.Static,
-        modifier = Modifier
+        AnimatedVisibility(
+            visible = showRadar,
+            modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
                 .widthIn(max = 420.dp)
                 .padding(start = 88.dp, end = 12.dp, bottom = bottomInset + 12.dp),
-        enter = fadeIn(tween(180)) + scaleIn(initialScale = 0.96f),
-        exit = fadeOut(tween(140)) + scaleOut(targetScale = 0.98f)
-    ) {
-        MapTimelineControl(
-            layer = layer,
-            offsetDays = offsetDays,
-            onOffsetDays = { offsetDays = it },
-            hour = selectedForecastHour,
-            minHour = if (offsetDays == 0) nowHourUtc.hour else 0,
-            onHour = { forecastHour = it },
-            frames = radarFrames,
-            frameIndex = frameIndex,
-            onFrameIndex = { frameIndex = it.coerceIn(0, radarFrames.lastIndex.coerceAtLeast(0)); playing = false },
-            playing = playing,
-            onTogglePlaying = { playing = !playing },
-            selectedTimeMillis = selectedTimeMillis
-        )
-    }
+            enter = fadeIn(tween(180)) + scaleIn(initialScale = 0.96f),
+            exit = fadeOut(tween(140)) + scaleOut(targetScale = 0.98f)
+        ) {
+            RadarPlaybackBar(controller)
+        }
     }
 
     AnimatedVisibility(
@@ -347,24 +269,24 @@ fun MapScreen(vm: WeatherViewModel) {
     ) {
         animatedDetail?.let { detail ->
             if (detail.type == "weather-point") {
-            BoxWithConstraints(Modifier.fillMaxSize()) {
-                val popupWidth = (maxWidth - 24.dp).coerceAtMost(340.dp).coerceAtLeast(220.dp)
-                val popupHeight = (maxHeight - 100.dp).coerceAtMost(360.dp).coerceAtLeast(160.dp)
-                val anchorX = detail.anchorX.toFloat().dp
-                val anchorY = detail.anchorY.toFloat().dp
-                val left = (anchorX - popupWidth / 2f).coerceIn(12.dp, (maxWidth - popupWidth - 12.dp).coerceAtLeast(12.dp))
-                val topLimit = (maxHeight - popupHeight - 12.dp).coerceAtLeast(72.dp)
-                val preferredTop = if (anchorY + 14.dp <= topLimit) anchorY + 14.dp else anchorY - popupHeight - 14.dp
-                val top = preferredTop.coerceIn(72.dp, topLimit)
-                MapPointPopup(
-                    detail,
-                    settings.fahrenheit,
-                    settings.windUnit,
-                    settings.pressureUnit,
-                    { selectedDetail = null },
-                    Modifier.offset(left, top).width(popupWidth).heightIn(max = popupHeight)
-                )
-            }
+                BoxWithConstraints(Modifier.fillMaxSize()) {
+                    val popupWidth = (maxWidth - 24.dp).coerceAtMost(340.dp).coerceAtLeast(220.dp)
+                    val popupHeight = (maxHeight - 100.dp).coerceAtMost(360.dp).coerceAtLeast(160.dp)
+                    val anchorX = detail.anchorX.toFloat().dp
+                    val anchorY = detail.anchorY.toFloat().dp
+                    val left = (anchorX - popupWidth / 2f).coerceIn(12.dp, (maxWidth - popupWidth - 12.dp).coerceAtLeast(12.dp))
+                    val topLimit = (maxHeight - popupHeight - 12.dp).coerceAtLeast(72.dp)
+                    val preferredTop = if (anchorY + 14.dp <= topLimit) anchorY + 14.dp else anchorY - popupHeight - 14.dp
+                    val top = preferredTop.coerceIn(72.dp, topLimit)
+                    MapPointPopup(
+                        detail,
+                        settings.fahrenheit,
+                        settings.windUnit,
+                        settings.pressureUnit,
+                        { selectedDetail = null },
+                        Modifier.offset(left, top).width(popupWidth).heightIn(max = popupHeight)
+                    )
+                }
             } else {
                 MapDetailSheet(detail, settings.fahrenheit, settings.windUnit, settings.pressureUnit) { selectedDetail = null }
             }
@@ -383,7 +305,7 @@ fun MapScreen(vm: WeatherViewModel) {
                     .navigationBarsPadding()
                     .padding(horizontal = 16.dp)
                     .padding(bottom = 16.dp),
-                verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp)
+                verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 Text(
                     tr("Map layers"),
@@ -392,9 +314,8 @@ fun MapScreen(vm: WeatherViewModel) {
                 )
                 MapLayer.entries.forEach { item ->
                     LayerRow(item, item == layer) {
-                    layer = item
-                    playing = false
-                    selectedDetail = null
+                        layer = item
+                        selectedDetail = null
                         scope.launch {
                             sheetState.hide()
                             sheetOpen = false
@@ -407,111 +328,129 @@ fun MapScreen(vm: WeatherViewModel) {
 }
 
 @Composable
-private fun MapTimelineControl(
-    layer: MapLayer,
-    offsetDays: Int,
-    onOffsetDays: (Int) -> Unit,
-    hour: Int,
-    minHour: Int,
-    onHour: (Int) -> Unit,
-    frames: List<RadarFrameRef>,
-    frameIndex: Int,
-    onFrameIndex: (Int) -> Unit,
-    playing: Boolean,
-    onTogglePlaying: () -> Unit,
-    selectedTimeMillis: Long,
-    modifier: Modifier = Modifier
-) {
-    val frame = frames.getOrNull(frameIndex)
-    val timestamp = java.time.format.DateTimeFormatter.ofPattern("EEE, MMM d · HH:mm 'UTC'")
-        .withLocale(I18n.lang.locale).withZone(java.time.ZoneOffset.UTC).format(java.time.Instant.ofEpochMilli(selectedTimeMillis))
-    val status = if (layer.timeline == MapTimeline.RadarFrames) {
-        frame?.let { tr(if (it.observed) "Observed" else "Forecast") } ?: tr("Unavailable")
-    } else {
-        tr("Forecast model")
-    }
+private fun RadarLegend() {
     Surface(
-        modifier = modifier,
-        shape = RoundedCornerShape(20.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.94f),
-        tonalElevation = 4.dp,
-        shadowElevation = 4.dp
+        shape = RoundedCornerShape(topStart = 18.dp, topEnd = 8.dp, bottomEnd = 18.dp, bottomStart = 8.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.92f),
+        tonalElevation = 2.dp
     ) {
-        Column(Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (layer.timeline == MapTimeline.RadarFrames) {
-                    IconButton(onClick = onTogglePlaying, enabled = frames.size > 1, modifier = Modifier.size(34.dp)) {
-                        Icon(if (playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, tr(if (playing) "Pause" else "Play"), Modifier.size(20.dp))
-                    }
-                }
-                Column(Modifier.weight(1f)) {
-                    Text(timestamp, style = MaterialTheme.typography.labelLarge, maxLines = 1)
-                    Text(
-                        if (layer.timeline == MapTimeline.RadarFrames) "RainViewer · $status" else "Open-Meteo · $status",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1
-                    )
-                }
-            }
-            Slider(
-                value = if (layer.timeline == MapTimeline.RadarFrames) frameIndex.toFloat() else offsetDays.toFloat(),
-                onValueChange = {
-                    if (layer.timeline == MapTimeline.RadarFrames) onFrameIndex(it.toInt()) else onOffsetDays(it.toInt())
-                },
-                valueRange = if (layer.timeline == MapTimeline.RadarFrames) 0f..frames.lastIndex.coerceAtLeast(1).toFloat() else 0f..14f,
-                steps = if (layer.timeline == MapTimeline.RadarFrames) (frames.size - 2).coerceAtLeast(0) else 13,
-                enabled = layer.timeline != MapTimeline.RadarFrames || frames.size > 1,
-                colors = SliderDefaults.colors(
-                    thumbColor = MaterialTheme.colorScheme.primary,
-                    activeTrackColor = MaterialTheme.colorScheme.primary,
-                    inactiveTrackColor = MaterialTheme.colorScheme.outlineVariant
-                )
+        Column(Modifier.widthIn(min = 152.dp).padding(horizontal = 14.dp, vertical = 10.dp)) {
+            Text(tr("Precipitation"), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurface)
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(top = 6.dp)
+                    .height(8.dp)
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(Brush.horizontalGradient(RadarLegendColors))
             )
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = androidx.compose.foundation.layout.Arrangement.SpaceBetween) {
-                val edgeFormatter = java.time.format.DateTimeFormatter.ofPattern("HH:mm 'UTC'", I18n.lang.locale).withZone(java.time.ZoneOffset.UTC)
-                val firstFrame = frames.firstOrNull()?.time?.let { edgeFormatter.format(java.time.Instant.ofEpochSecond(it)) }
-                val lastFrame = frames.lastOrNull()?.time?.let { edgeFormatter.format(java.time.Instant.ofEpochSecond(it)) }
-                val firstLabel = if (layer.timeline == MapTimeline.RadarFrames) firstFrame ?: tr("Now") else tr("Today")
-                val lastLabel = if (layer.timeline == MapTimeline.RadarFrames) lastFrame ?: tr("Unavailable") else tr("+14 days")
-                Text(firstLabel, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(lastLabel, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            if (layer.timeline == MapTimeline.WeatherModel) {
-                if (minHour < 23) {
-                    Slider(
-                        value = hour.coerceAtLeast(minHour).toFloat(),
-                        onValueChange = { onHour(it.toInt().coerceAtLeast(minHour)) },
-                        valueRange = minHour.toFloat()..23f,
-                        steps = (22 - minHour).coerceAtLeast(0),
-                        colors = SliderDefaults.colors(
-                            thumbColor = MaterialTheme.colorScheme.primary,
-                            activeTrackColor = MaterialTheme.colorScheme.primary,
-                            inactiveTrackColor = MaterialTheme.colorScheme.outlineVariant
-                        )
-                    )
-                }
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = androidx.compose.foundation.layout.Arrangement.SpaceBetween) {
-                    Text("${minHour.toString().padStart(2, '0')}:00 UTC", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text("23:00 UTC", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
+            Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("15 dBZ", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("65 dBZ", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }
 }
 
 @Composable
-private fun StatusPill(content: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit) {
+private fun RadarStatusChip(controller: RadarMapController) {
+    when (controller.radarState) {
+        RadarDataState.Loading -> StatusSurface(null) {
+            CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+            Spacer(Modifier.width(10.dp))
+            Text(tr("Loading radar…"), style = MaterialTheme.typography.labelLarge)
+        }
+        RadarDataState.Unavailable -> StatusSurface({ controller.retryAll() }) {
+            Text(
+                "${tr("Radar data unavailable")} · ${tr("Retry")}",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.error
+            )
+        }
+        RadarDataState.Ready -> Unit
+    }
+}
+
+@Composable
+private fun StatusSurface(onClick: (() -> Unit)?, content: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit) {
     Surface(
-        shape = MaterialTheme.shapes.large,
+        shape = RoundedCornerShape(topStart = 14.dp, topEnd = 14.dp, bottomEnd = 14.dp, bottomStart = 4.dp),
         color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.95f),
-        shadowElevation = 6.dp
+        shadowElevation = 3.dp,
+        modifier = if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier
     ) {
-        Row(
-            Modifier.padding(horizontal = 20.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            content = content
-        )
+        Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, content = content)
+    }
+}
+
+@Composable
+private fun RadarPlaybackBar(controller: RadarMapController, modifier: Modifier = Modifier) {
+    val scheme = MaterialTheme.colorScheme
+    val frame = controller.frame
+    val frames = controller.frames
+    val timeFormatter = remember(I18n.lang) {
+        DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT).withLocale(I18n.lang.locale).withZone(ZoneId.systemDefault())
+    }
+    val clock = frame?.let { timeFormatter.format(Instant.ofEpochSecond(it.time)) } ?: "--:--"
+    val status = frame?.let { "${tr(if (it.observed) "Observed" else "Forecast")} · ${relativeFrameLabel(it.time)}" } ?: tr("Unavailable")
+    val corner by animateDpAsState(if (controller.playing) 14.dp else 22.dp, spring(0.6f, Spring.StiffnessMediumLow), label = "playCorner")
+    val progress by animateFloatAsState(
+        if (frames.size > 1) controller.index.toFloat() / (frames.size - 1) else 0f,
+        tween(300),
+        label = "frameProgress"
+    )
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 14.dp, bottomEnd = 28.dp, bottomStart = 14.dp),
+        color = scheme.surfaceContainerHigh.copy(alpha = 0.95f),
+        tonalElevation = 4.dp,
+        shadowElevation = 4.dp
+    ) {
+        Column(Modifier.padding(start = 10.dp, end = 18.dp, top = 10.dp, bottom = 12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                FilledIconButton(
+                    onClick = { controller.playing = !controller.playing },
+                    enabled = frames.size > 1,
+                    shape = RoundedCornerShape(corner),
+                    modifier = Modifier.size(44.dp)
+                ) {
+                    Icon(
+                        if (controller.playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                        tr(if (controller.playing) "Pause" else "Play"),
+                        Modifier.size(24.dp)
+                    )
+                }
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(clock, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                    Text(
+                        status,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = scheme.onSurfaceVariant,
+                        maxLines = 1
+                    )
+                }
+                Text("RainViewer", style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant)
+            }
+            Spacer(Modifier.height(10.dp))
+            LinearProgressIndicator(
+                progress = { progress },
+                modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)),
+                color = scheme.primary,
+                trackColor = scheme.outlineVariant
+            )
+        }
+    }
+}
+
+private fun relativeFrameLabel(epochSeconds: Long): String {
+    val minutes = ((epochSeconds - System.currentTimeMillis() / 1000L) / 60L).toInt()
+    return when {
+        abs(minutes) <= 1 -> tr("Now")
+        minutes < 0 && -minutes < 60 -> "−${-minutes}m"
+        minutes < 0 -> "−${-minutes / 60}h ${-minutes % 60}m"
+        minutes < 60 -> "+${minutes}m"
+        else -> "+${minutes / 60}h ${minutes % 60}m"
     }
 }
 
@@ -553,9 +492,8 @@ private fun LayerRow(item: MapLayer, selected: Boolean, onClick: () -> Unit) {
                 fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
                 color = if (selected) scheme.onSecondaryContainer else scheme.onSurface
             )
-            if (item.timeline != MapTimeline.Static) {
-                val note = if (item.timeline == MapTimeline.RadarFrames) tr("Radar frames") else tr("Forecast model")
-                Text(note, style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant)
+            if (item.timeline == MapTimeline.RadarFrames) {
+                Text(tr("Radar frames"), style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant)
             }
         }
         AnimatedVisibility(
