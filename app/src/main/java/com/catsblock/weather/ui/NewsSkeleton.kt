@@ -114,7 +114,7 @@ private fun SkeletonCard(
         shape = RoundedCornerShape(26.dp),
         color = MaterialTheme.colorScheme.surfaceContainerLow
     ) {
-        Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 12.dp)) {
+        Column(Modifier.padding(16.dp)) {
             Row {
                 Column(Modifier.weight(1f)) {
                     SkeletonBar(0.4f, 10.dp, phase, base, highlight, 5.dp)
@@ -132,37 +132,6 @@ private fun SkeletonCard(
                     Modifier
                         .size(84.dp)
                         .clip(RoundedCornerShape(18.dp))
-                        .shimmer(phase, base, highlight)
-                )
-            }
-            Spacer(Modifier.height(14.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Box(
-                    Modifier
-                        .width(64.dp)
-                        .height(26.dp)
-                        .clip(CircleShape)
-                        .shimmer(phase, base, highlight)
-                )
-                Box(
-                    Modifier
-                        .width(48.dp)
-                        .height(26.dp)
-                        .clip(CircleShape)
-                        .shimmer(phase, base, highlight)
-                )
-                Box(
-                    Modifier
-                        .width(48.dp)
-                        .height(26.dp)
-                        .clip(CircleShape)
-                        .shimmer(phase, base, highlight)
-                )
-                Box(
-                    Modifier
-                        .width(34.dp)
-                        .height(26.dp)
-                        .clip(CircleShape)
                         .shimmer(phase, base, highlight)
                 )
             }
