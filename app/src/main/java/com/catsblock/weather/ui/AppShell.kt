@@ -90,6 +90,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import com.catsblock.weather.i18n.tr
 import kotlin.math.PI
@@ -407,10 +409,12 @@ private fun RowScope.NavigationItem(tab: AppTab, selected: Boolean, onClick: () 
 
 @Composable
 private fun AnimatedNavigationIcon(tab: AppTab, selected: Boolean, tint: Color) {
+    val motionEnabled = rememberMotionEnabled()
+    val direction = if (LocalLayoutDirection.current == LayoutDirection.Rtl) -1f else 1f
     val kick = remember { Animatable(0f) }
     val pop = remember { Animatable(1f) }
-    LaunchedEffect(selected) {
-        if (selected) {
+    LaunchedEffect(selected, motionEnabled) {
+        if (selected && motionEnabled) {
             launch {
                 pop.snapTo(0.68f)
                 pop.animateTo(1f, spring(dampingRatio = 0.34f, stiffness = Spring.StiffnessLow))
@@ -419,7 +423,7 @@ private fun AnimatedNavigationIcon(tab: AppTab, selected: Boolean, tint: Color) 
             kick.animateTo(1f, tween(720, easing = Emphasized))
         } else {
             kick.snapTo(0f)
-            pop.animateTo(1f, spring(stiffness = Spring.StiffnessMedium))
+            if (motionEnabled) pop.animateTo(1f, spring(stiffness = Spring.StiffnessMedium)) else pop.snapTo(1f)
         }
     }
     Box(
@@ -448,8 +452,8 @@ private fun AnimatedNavigationIcon(tab: AppTab, selected: Boolean, tint: Color) 
                     }
                     AppTab.News -> {
                         cameraDistance = 14f * density
-                        rotationY = 360f * t * t * (3f - 2f * t)
-                        translationY = 3.dp.toPx() * arc
+                        rotationY = direction * -68f * arc
+                        translationX = direction * 2.dp.toPx() * arc
                     }
                     AppTab.Settings -> rotationZ = 180f * t
                 }
