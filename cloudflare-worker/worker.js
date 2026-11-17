@@ -1686,6 +1686,9 @@ async function handleRequest(request, env, ctx) {
     if (regionBlocked) {
       return jsonResponse({ error: "region_blocked", message: REGION_MESSAGE }, 451);
     }
+    if (ADMIN_PATHS.has(path)) {
+      return handleAdmin(request, env, path, { jsonResponse, authorized, identify, readEnvSecret, hmacHex, constantTimeEqual });
+    }
     if (path === "/v1/news" || path === "/v1/news/event") {
       if (request.method !== "GET") {
         return jsonResponse({ error: "method_not_allowed" }, 405, { Allow: "GET, OPTIONS" });
