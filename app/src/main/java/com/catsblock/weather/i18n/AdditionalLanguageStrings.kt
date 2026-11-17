@@ -12,6 +12,7 @@ internal val additionalLanguageStrings: Map<String, Array<String>> by lazy {
         putAll(additionalLanguageStringsChunk03())
         putAll(additionalLanguageStringsChunk04())
         putAll(additionalLanguageStringsChunk05())
+        putAll(radarMapAdditionalStrings)
         putAll(additionalLanguageStringsChunk06())
         putAll(additionalLanguageStringsChunk07())
         putAll(additionalLanguageStringsChunk08())
