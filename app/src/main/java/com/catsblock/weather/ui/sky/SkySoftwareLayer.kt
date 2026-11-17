@@ -211,7 +211,7 @@ internal fun SkySoftwareLayer(
     tier: SkyTier,
     fade: Float,
     windKmh: Double,
-    windFromDeg: Double,
+    windFromDeg: Double?,
     lightning: LightningState?,
     refreshRateHz: Float,
     probePerformance: Boolean,
@@ -237,8 +237,10 @@ internal fun SkySoftwareLayer(
     val lifecycleOwner = LocalLifecycleOwner.current
     val active = fade > 0.01f
     val windVector = remember(windFromDeg) {
-        val toward = Math.toRadians(windFromDeg + 180.0)
-        floatArrayOf(sin(toward).toFloat(), cos(toward).toFloat())
+        windFromDeg?.let {
+            val toward = Math.toRadians(it + 180.0)
+            floatArrayOf(sin(toward).toFloat(), cos(toward).toFloat())
+        } ?: floatArrayOf(0f, 0f)
     }
     LaunchedEffect(lifecycleOwner, scene, currentQuality, active, probePerformance) {
         if (!active) return@LaunchedEffect
@@ -251,8 +253,8 @@ internal fun SkySoftwareLayer(
                 val now = withFrameNanos { it }
                 if (now - drawn < interval) continue
                 val dt = if (drawn == 0L) 0.0 else (now - drawn) / 1e9
-                val toward = Math.toRadians(direction + 180.0)
-                val lowKm = upperWindKmh(wind) / 3600.0 * WIND_GAIN * dt
+                val toward = direction?.let { Math.toRadians(it + 180.0) } ?: 0.0
+                val lowKm = if (direction != null) upperWindKmh(wind) / 3600.0 * WIND_GAIN * dt else 0.0
                 val highKm = lowKm * HIGH_LAYER_SPEED_RATIO
                 offsets[0] = ((offsets[0] + sin(toward) * lowKm).mod(WRAP_KM)).toFloat()
                 offsets[1] = ((offsets[1] + cos(toward) * lowKm).mod(WRAP_KM)).toFloat()

@@ -69,6 +69,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.catsblock.weather.ui.WindRose
 import androidx.compose.ui.unit.sp
 import com.catsblock.weather.ui.hourLabel
 import java.time.LocalDateTime
@@ -582,33 +583,11 @@ fun WaterGauge(
 
 @Composable
 fun WindCompass(
-    fromDegrees: Double,
-    latitude: Double = 0.0,
-    longitude: Double = 0.0,
+    fromDegrees: Double?,
     modifier: Modifier = Modifier,
     size: Dp = 112.dp
 ) {
-    val orientation = com.catsblock.weather.ui.rememberDeviceOrientation()
-    val declination = remember(latitude, longitude) {
-        com.catsblock.weather.ui.magneticDeclination(latitude, longitude)
-    }
-    val trueHeading = if (orientation.available) (orientation.heading + declination + 360f) % 360f else 0f
-    val target = com.catsblock.weather.ui.shortestAngle(fromDegrees.toFloat() - trueHeading)
-    val angle by animateFloatAsState(
-        targetValue = target,
-        animationSpec = tween(durationMillis = 120),
-        label = "compass"
-    )
-    androidx.compose.material3.Icon(
-        androidx.compose.material.icons.Icons.Rounded.Navigation,
-        contentDescription = null,
-        modifier = modifier.size(size * 0.56f).graphicsLayer {
-            rotationZ = angle
-            rotationX = (-orientation.pitch * 0.25f).coerceIn(-18f, 18f)
-            rotationY = (orientation.roll * 0.25f).coerceIn(-18f, 18f)
-        },
-        tint = MaterialTheme.colorScheme.primary
-    )
+    WindRose(fromDegrees, modifier, size)
 }
 
 @Composable

@@ -41,7 +41,7 @@ private fun tierScale(tier: SkyTier): Float = when (tier) {
 fun AtmosphericPrecipitation(
     mix: PrecipMix,
     windSpeedKmh: Double,
-    windDirDeg: Double,
+    windDirDeg: Double?,
     modifier: Modifier = Modifier,
     alpha: Float = 1f
 ) {
@@ -52,7 +52,7 @@ fun AtmosphericPrecipitation(
     val sim = remember(density) { PrecipitationSimulation(density) }
     val lifecycleOwner = LocalLifecycleOwner.current
     val currentMix by rememberUpdatedState(mix)
-    val windRatio = (-sin(Math.toRadians(windDirDeg)) * (windSpeedKmh / 45.0).coerceIn(0.0, 1.0) * 0.55).toFloat()
+    val windRatio = windDirDeg?.let { (-sin(Math.toRadians(it)) * (windSpeedKmh / 45.0).coerceIn(0.0, 1.0) * 0.55).toFloat() } ?: 0f
     val currentWind by rememberUpdatedState(windRatio)
     val currentScale by rememberUpdatedState(scale)
     var frame by remember { mutableLongStateOf(0L) }

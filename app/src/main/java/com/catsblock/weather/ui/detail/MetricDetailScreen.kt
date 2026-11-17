@@ -46,7 +46,7 @@ import com.catsblock.weather.data.WeatherBundle
 import com.catsblock.weather.data.WindUnit
 import com.catsblock.weather.data.aqiAdvice
 import com.catsblock.weather.data.aqiStatus
-import com.catsblock.weather.data.compassLabel
+import com.catsblock.weather.data.windDirectionLabel
 import com.catsblock.weather.data.humidityDescription
 import com.catsblock.weather.data.precipLabel
 import com.catsblock.weather.data.precipToday
@@ -387,7 +387,7 @@ private fun WindBody(day: DayData, ctx: Ctx) {
     val unit = ctx.windUnit
     val f = day.focus(ctx)
     val speed = f?.windSpeed ?: 0.0
-    val dir = f?.windDir ?: 0.0
+    val dir = f?.windDir
     val series = day.series { windValue(it.windSpeed, unit) }
     val dirs = day.series { it.windDir }
     val moderate = windValue(20.0, unit).toFloat()
@@ -396,8 +396,8 @@ private fun WindBody(day: DayData, ctx: Ctx) {
             GaugeRow(
                 label = tr("Wind"),
                 value = windText(speed, unit),
-                sub = "${windShort(speed)} · ${tr("From")} ${compassLabel(dir)}"
-            ) { WindCompass(dir, ctx.city?.lat ?: 0.0, ctx.city?.lon ?: 0.0) }
+                sub = "${windShort(speed)} · ${tr("From")} ${windDirectionLabel(dir)}"
+            ) { WindCompass(dir) }
         }),
         baseIndex = 1
     )

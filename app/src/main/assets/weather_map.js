@@ -197,12 +197,18 @@
   function fetchJson(url, token) {
     var controller = typeof AbortController === "function" ? new AbortController() : null;
     if (controller) activeControllers.push(controller);
-    var timer = setTimeout(function () { if (controller) controller.abort(); }, 20000);
-    return fetch(url, controller ? { signal: controller.signal } : {}).then(function (response) {
-      clearTimeout(timer);
+    var timer;
+    var timeout = new Promise(function (_, reject) {
+      timer = setTimeout(function () {
+        if (controller) controller.abort();
+        reject(new Error("timeout"));
+      }, 20000);
+    });
+    var request = fetch(url, controller ? { signal: controller.signal } : {}).then(function (response) {
       if (!response.ok) throw new Error("http " + response.status);
       return response.json();
-    }).then(function (json) {
+    });
+    return Promise.race([request, timeout]).then(function (json) {
       clearTimeout(timer);
       if (controller) {
         var completed = activeControllers.indexOf(controller);
@@ -210,7 +216,7 @@
       }
       if (token !== layerToken) throw new Error("stale");
       return json;
-    }, function (err) {
+    }).catch(function (err) {
       clearTimeout(timer);
       if (controller) {
         var failed = activeControllers.indexOf(controller);

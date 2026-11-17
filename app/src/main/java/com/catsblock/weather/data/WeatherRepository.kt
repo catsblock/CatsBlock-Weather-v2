@@ -255,7 +255,7 @@ class WeatherRepository {
         val precip = hourly.getJSONArray("precipitation")
         val codes = hourly.getJSONArray("weather_code")
         val wind = hourly.getJSONArray("wind_speed_10m")
-        val windDir = hourly.getJSONArray("wind_direction_10m")
+        val windDir = hourly.optJSONArray("wind_direction_10m")
         val uv = hourly.getJSONArray("uv_index")
         val isDay = hourly.getJSONArray("is_day")
         val pressureArr = hourly.getJSONArray("pressure_msl")
@@ -273,7 +273,7 @@ class WeatherRepository {
                 isDay = isDay.optInt(i, 1) == 1,
                 precip = precip.optDouble(i, 0.0),
                 windSpeed = wind.optDouble(i, 0.0),
-                windDir = windDir.optDouble(i, 0.0),
+                windDir = windDir?.optWindDirection(i),
                 humidity = hum.optInt(i, 0),
                 uv = uv.optDouble(i, 0.0),
                 aqi = aqiMap[time.toString()],
@@ -324,7 +324,7 @@ class WeatherRepository {
             kind = wmoCondition(code, cur.getDouble("wind_speed_10m")),
             isDay = day,
             windSpeed = cur.getDouble("wind_speed_10m"),
-            windDir = cur.getDouble("wind_direction_10m"),
+            windDir = cur.optWindDirection("wind_direction_10m"),
             humidity = cur.getInt("relative_humidity_2m"),
             uv = hourNow?.uv ?: 0.0,
             aqi = aqiMap[nowKey],

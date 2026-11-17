@@ -49,7 +49,7 @@ internal fun SkyShaderLayer(
     tier: SkyTier,
     fade: Float,
     windKmh: Double,
-    windFromDeg: Double,
+    windFromDeg: Double?,
     lightning: LightningState?,
     refreshRateHz: Float,
     probePerformance: Boolean,
@@ -87,8 +87,8 @@ internal fun SkyShaderLayer(
                 val now = withFrameNanos { it }
                 if (now - drawn >= interval) {
                     val dt = if (drawn == 0L) 0.0 else (now - drawn) / 1e9
-                    val toward = Math.toRadians(direction + 180.0)
-                    val lowKm = upperWindKmh(wind) / 3600.0 * WIND_GAIN * dt
+                    val toward = direction?.let { Math.toRadians(it + 180.0) } ?: 0.0
+                    val lowKm = if (direction != null) upperWindKmh(wind) / 3600.0 * WIND_GAIN * dt else 0.0
                     val highKm = lowKm * HIGH_LAYER_SPEED_RATIO
                     offset[0] = (offset[0] + sin(toward) * lowKm).mod(WRAP_KM)
                     offset[1] = (offset[1] + cos(toward) * lowKm).mod(WRAP_KM)
@@ -137,8 +137,8 @@ internal fun SkyShaderLayer(
             shader.setFloatUniform("uAmb", scene.ambient[0], scene.ambient[1], scene.ambient[2])
             shader.setFloatUniform("uOff", offset[0].toFloat(), offset[1].toFloat())
             shader.setFloatUniform("uOffHigh", offset[2].toFloat(), offset[3].toFloat())
-            val toward = Math.toRadians(direction + 180.0)
-            shader.setFloatUniform("uWindDir", sin(toward).toFloat(), cos(toward).toFloat())
+            val toward = direction?.let { Math.toRadians(it + 180.0) }
+            shader.setFloatUniform("uWindDir", toward?.let { sin(it).toFloat() } ?: 0f, toward?.let { cos(it).toFloat() } ?: 0f)
             shader.setFloatUniform("uStyle", scene.style[0], scene.style[1], scene.style[2], scene.style[3])
             shader.setFloatUniform("uCirrus", scene.cirrus * animatedCirrus)
             shader.setFloatUniform("uShade", scene.shade)

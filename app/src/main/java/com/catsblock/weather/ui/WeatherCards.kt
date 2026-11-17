@@ -74,6 +74,7 @@ import com.catsblock.weather.data.WeatherBundle
 import com.catsblock.weather.data.aqiStatus
 import com.catsblock.weather.data.compassLabel
 import com.catsblock.weather.data.humidityLabel
+import com.catsblock.weather.data.normalizeWindDirection
 import com.catsblock.weather.data.precipToday
 import com.catsblock.weather.data.uvLevel
 import com.catsblock.weather.i18n.tr
@@ -390,45 +391,16 @@ fun AirCardV2(aqi: Double?, description: String, modifier: Modifier = Modifier, 
 }
 
 @Composable
-fun WindCardV2(speedKmh: Double, fromDeg: Double, city: City? = null, modifier: Modifier = Modifier, onClick: (() -> Unit)? = null) {
-    val orientation = rememberDeviceOrientation()
-    val declination = remember(city?.lat, city?.lon) { city?.let { magneticDeclination(it.lat, it.lon) } ?: 0f }
-    val trueHeading = if (orientation.available) (orientation.heading + declination + 360f) % 360f else 0f
-    val target = shortestAngle(fromDeg.toFloat() - trueHeading)
-    val rot by animateFloatAsState(target, tween(120), label = "windRot")
+fun WindCardV2(speedKmh: Double, fromDeg: Double?, modifier: Modifier = Modifier, onClick: (() -> Unit)? = null) {
+    val normalizedDirection = normalizeWindDirection(fromDeg)
     GlassCard(modifier, onClick, Modifier.fillMaxSize()) {
         CardHeader(Icons.Rounded.Air, tr("Wind"))
         Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-            Box(
-                Modifier.size(92.dp).graphicsLayer { rotationZ = -trueHeading },
-                contentAlignment = Alignment.Center
-            ) {
-                Text("N", Modifier.align(Alignment.TopCenter).padding(top = 1.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("S", Modifier.align(Alignment.BottomCenter).padding(bottom = 1.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("W", Modifier.align(Alignment.CenterStart).padding(start = 1.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("E", Modifier.align(Alignment.CenterEnd).padding(end = 1.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            Icon(
-                Icons.Rounded.Air,
-                contentDescription = "${tr("From")} ${compassLabel(fromDeg)}",
-                modifier = Modifier.size(58.dp).graphicsLayer {
-                    rotationZ = rot
-                    rotationX = (-orientation.pitch * 0.25f).coerceIn(-18f, 18f)
-                    rotationY = (orientation.roll * 0.25f).coerceIn(-18f, 18f)
-                },
-                tint = MaterialTheme.colorScheme.primary
-            )
+            WindRose(normalizedDirection)
         }
         Text(windText(speedKmh, LocalUnits.current.wind), style = MaterialTheme.typography.titleMedium, maxLines = 1)
         Text(
-            "${tr("From")} ${compassLabel(fromDeg)} · ${fromDeg.roundToInt()}°",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
-        Text(
-            if (orientation.available) "${tr("True heading")} ${compassLabel(trueHeading.toDouble())}" else tr("Compass unavailable"),
+            normalizedDirection?.let { "${tr("From")} ${compassLabel(it)} · ${it.roundToInt()}°" } ?: tr("Unavailable"),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
@@ -508,7 +480,7 @@ fun CardsDashboard(
             onClick = { onOpen("Precip") },
             condition = cur.kind
         )
-        WindCardV2(cur.windSpeed, cur.windDir, city, Modifier.weight(1f).then(tall)) { onOpen("Wind") }
+        WindCardV2(cur.windSpeed, cur.windDir, Modifier.weight(1f).then(tall)) { onOpen("Wind") }
     }
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         AirCardV2(

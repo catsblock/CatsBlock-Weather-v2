@@ -75,7 +75,7 @@ import com.catsblock.weather.data.Hour
 import com.catsblock.weather.data.City
 import com.catsblock.weather.data.LifeKind
 import com.catsblock.weather.data.aqiStatus
-import com.catsblock.weather.data.compassLabel
+import com.catsblock.weather.data.windDirectionLabel
 import com.catsblock.weather.data.humidityLabel
 import com.catsblock.weather.data.lifeIndex
 import com.catsblock.weather.data.precipLabel
@@ -321,8 +321,8 @@ private fun DayBody(day: Day, dayHours: List<Hour>, fahrenheit: Boolean, now: Lo
                 GaugeRow(
                     label = tr("Wind"),
                     value = windText(windPeak.windSpeed, windUnit),
-                    sub = "${windShort(windPeak.windSpeed)} · ${tr("From")} ${compassLabel(windPeak.windDir)}"
-                ) { WindCompass(windPeak.windDir, city?.lat ?: 0.0, city?.lon ?: 0.0) }
+                    sub = "${windShort(windPeak.windSpeed)} · ${tr("From")} ${windDirectionLabel(windPeak.windDir)}"
+                ) { WindCompass(windPeak.windDir) }
             },
             {
                 GaugeRow(

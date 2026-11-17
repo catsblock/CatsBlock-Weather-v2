@@ -5,12 +5,9 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.temporal.ChronoUnit
 import java.util.concurrent.ConcurrentHashMap
-import kotlin.math.atan2
-import kotlin.math.cos
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
-import kotlin.math.sin
 
 internal class ProviderResult(val source: WeatherSource, val bundle: WeatherBundle)
 
@@ -133,13 +130,7 @@ internal object WeatherAggregator {
         return if (valid.isEmpty()) -1 else valid.average().roundToInt()
     }
 
-    private fun meanDirection(values: List<Double>): Double {
-        if (values.isEmpty()) return 0.0
-        val x = values.sumOf { cos(Math.toRadians(it)) }
-        val y = values.sumOf { sin(Math.toRadians(it)) }
-        val degrees = Math.toDegrees(atan2(y, x))
-        return (degrees + 360.0) % 360.0
-    }
+    private fun meanDirection(values: List<Double?>): Double? = circularMeanWindDirection(values)
 
     private fun radarOverlap(radar: RadarReading, now: LocalDateTime, hourStart: LocalDateTime): Int {
         val start = ChronoUnit.MINUTES.between(now, hourStart).toDouble()

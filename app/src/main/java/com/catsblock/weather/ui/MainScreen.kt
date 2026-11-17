@@ -112,7 +112,7 @@ import com.catsblock.weather.data.Day
 import com.catsblock.weather.data.WeatherBundle
 import com.catsblock.weather.data.aqiAdvice
 import com.catsblock.weather.data.buildAlert
-import com.catsblock.weather.data.compassLabel
+import com.catsblock.weather.data.windDirectionLabel
 import com.catsblock.weather.data.humidityDescription
 import com.catsblock.weather.data.humidityLabel
 import com.catsblock.weather.data.isWet
@@ -361,7 +361,7 @@ fun MainScreen(vm: WeatherViewModel) {
                     if (isWeatherLoading) 0 else bundle?.current?.cloud ?: -1,
                     if (isWeatherLoading) 0.0 else bundle?.current?.windSpeed ?: 0.0,
                     simulatedLoadingSkyTime?.dayOfYear ?: bundle?.current?.now?.dayOfYear ?: 0,
-                    if (isWeatherLoading) 0.0 else bundle?.current?.windDir ?: 0.0,
+                    if (isWeatherLoading) null else bundle?.current?.windDir,
                     if (isWeatherLoading) 1013.0 else bundle?.current?.pressure ?: Double.NaN,
                     if (isWeatherLoading) 0.0 else precipNow,
                     if (isWeatherLoading) city?.lat ?: 0.0 else city?.lat ?: Double.NaN,
@@ -381,7 +381,7 @@ fun MainScreen(vm: WeatherViewModel) {
                         precipMixFor(kind, bundle.current.temp, precipNow)
                     },
                     windSpeedKmh = bundle?.current?.windSpeed ?: 0.0,
-                    windDirDeg = bundle?.current?.windDir ?: 0.0,
+                    windDirDeg = bundle?.current?.windDir,
                     alpha = 1f - progress * 0.3f
                 )
             }
@@ -662,7 +662,7 @@ private fun WeatherDetails(
             )
             Spacer(Modifier.height(6.dp))
             Text(
-                "${tr("Feels like")} ${tempText(cur.feels, fahrenheit)}    ${tr("Wind")} ${compassLabel(cur.windDir)} ${beaufort(cur.windSpeed)}",
+                "${tr("Feels like")} ${tempText(cur.feels, fahrenheit)}    ${tr("Wind")} ${windDirectionLabel(cur.windDir)} ${beaufort(cur.windSpeed)}",
                 style = MaterialTheme.typography.bodyMedium.merge(textShadow),
                 color = Color.White.copy(alpha = 0.85f)
             )
@@ -860,7 +860,7 @@ private fun WeatherDetails(
                         Spacer(Modifier.height(12.dp))
                         SimpleChart(
                             values = next24.map { windValue(it.windSpeed, settings.windUnit) },
-                            labels = next24.map { "${hourLabel(it.time)}\n${compassLabel(it.windDir)}" },
+                            labels = next24.map { "${hourLabel(it.time)}\n${windDirectionLabel(it.windDir)}" },
                             valueLabel = { it.roundToInt().toString() },
                             minY = 0.0,
                             maxY = windValue(next24.maxOfOrNull { it.windSpeed }?.coerceAtLeast(10.0) ?: 10.0, settings.windUnit)

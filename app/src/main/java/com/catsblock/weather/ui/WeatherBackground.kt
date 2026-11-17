@@ -136,7 +136,7 @@ fun WeatherBackground(
     cloud: Int = -1,
     windKmh: Double = 0.0,
     dayOfYear: Int = 0,
-    windDirDeg: Double = 0.0,
+    windDirDeg: Double? = null,
     pressureHpa: Double = Double.NaN,
     precipMm: Double = -1.0,
     latitude: Double = Double.NaN,
