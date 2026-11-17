@@ -128,7 +128,6 @@ internal fun AgentMapCard(card: AgentCard.MapView, settings: AppSettings, conten
             layer = layer,
             dark = dark,
             focusRequest = 0,
-            radarTileTemplate = null,
             onPointSelected = { _, _, _, _ -> },
             onMapReady = {},
             initialCenter = LatLng(card.centerLat, card.centerLon),

@@ -225,9 +225,16 @@
     setLayerState("loading");
     function load() {
       fetchJson("https://api.rainviewer.com/public/weather-maps.json", token).then(function (data) {
-        var past = data && data.radar && data.radar.past;
-        if (!data || typeof data.host !== "string" || !past || !past.length) throw new Error("no frames");
-        var frames = past.concat(data.radar.nowcast || []);
+        var observations = data && data.radar && data.radar.past;
+        if (!data || typeof data.host !== "string" || !Array.isArray(observations) || !observations.length) throw new Error("no frames");
+        var latestObserved = observations.reduce(function (latest, item) {
+          return item && typeof item.time === "number" && (!latest || item.time > latest.time) ? item : latest;
+        }, null);
+        if (!latestObserved || typeof latestObserved.path !== "string") throw new Error("no current frame");
+        var nowcast = Array.isArray(data.radar.nowcast) ? data.radar.nowcast : [];
+        var frames = [latestObserved].concat(nowcast.filter(function (item) {
+          return item && typeof item.time === "number" && isFinite(item.time) && item.time >= latestObserved.time;
+        })).sort(function (a, b) { return a.time - b.time; });
         var target = Math.floor(epochMillis / 1000);
         var frame = frames.reduce(function (best, item) {
           return !best || Math.abs(item.time - target) < Math.abs(best.time - target) ? item : best;
