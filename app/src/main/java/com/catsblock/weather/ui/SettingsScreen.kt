@@ -1,5 +1,9 @@
 package com.catsblock.weather.ui
 
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.ui.semantics.Role
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.selection.selectable
 import com.catsblock.weather.ui.components.ExpressiveLoader
 import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
@@ -261,27 +265,45 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
             onDismissRequest = { langDialog = false },
             title = { Text(tr("App language")) },
             text = {
-                Column {
+                Column(
+                    Modifier
+                        .heightIn(max = 440.dp)
+                        .verticalScroll(rememberScrollState())
+                        .selectableGroup()
+                ) {
                     AppLanguage.entries.forEach { l ->
+                        val selected = settings.language == l
                         Row(
                             Modifier
                                 .fillMaxWidth()
-                                .clickable {
-                                    langDialog = false
-                                    scope.launch { SettingsStore(ctx.applicationContext).setLanguage(l) }
-                                }
-                                .padding(vertical = 4.dp),
+                                .heightIn(min = 52.dp)
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent)
+                                .selectable(
+                                    selected = selected,
+                                    role = Role.RadioButton,
+                                    onClick = {
+                                        langDialog = false
+                                        scope.launch { SettingsStore(ctx.applicationContext).setLanguage(l) }
+                                    }
+                                )
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            RadioButton(selected = settings.language == l, onClick = null)
-                            Spacer(Modifier.width(12.dp))
-                            Text(l.label, style = MaterialTheme.typography.bodyLarge)
+                            RadioButton(selected = selected, onClick = null)
+                            Spacer(Modifier.width(16.dp))
+                            Text(
+                                l.label,
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                                color = if (selected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.weight(1f)
+                            )
                         }
                     }
                 }
             },
-            confirmButton = {},
-            dismissButton = { TextButton(onClick = { langDialog = false }) { Text(tr("OK")) } }
+            confirmButton = { TextButton(onClick = { langDialog = false }) { Text(tr("OK")) } }
         )
     }
 
