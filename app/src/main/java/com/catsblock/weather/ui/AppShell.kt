@@ -17,6 +17,7 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
@@ -155,15 +156,22 @@ fun AppShell(vm: WeatherViewModel, screen: Screen?) {
                 modifier = Modifier.fillMaxSize(),
                 transitionSpec = {
                     val dir = if (targetState.ordinal > initialState.ordinal) 1 else -1
-                    (
-                        slideInHorizontally(tween(440, easing = Emphasized)) { dir * it / 6 } +
-                            fadeIn(tween(320, delayMillis = 80)) +
-                            scaleIn(tween(440, easing = Emphasized), initialScale = 0.94f)
-                        ) togetherWith (
-                        slideOutHorizontally(tween(440, easing = Emphasized)) { -dir * it / 6 } +
-                            fadeOut(tween(180)) +
-                            scaleOut(tween(440, easing = Emphasized), targetScale = 0.96f)
-                        )
+                    when (targetState) {
+                        AppTab.News -> (
+                            slideInVertically(tween(360, easing = Emphasized)) { it / 14 } +
+                                fadeIn(tween(280, delayMillis = 60))
+                            ) togetherWith fadeOut(tween(160))
+                        AppTab.WeatherMap -> fadeIn(tween(260)) togetherWith fadeOut(tween(160))
+                        else -> (
+                            slideInHorizontally(tween(440, easing = Emphasized)) { dir * it / 6 } +
+                                fadeIn(tween(320, delayMillis = 80)) +
+                                scaleIn(tween(440, easing = Emphasized), initialScale = 0.94f)
+                            ) togetherWith (
+                            slideOutHorizontally(tween(440, easing = Emphasized)) { -dir * it / 6 } +
+                                fadeOut(tween(180)) +
+                                scaleOut(tween(440, easing = Emphasized), targetScale = 0.96f)
+                            )
+                    }
                 },
                 label = "tabs"
             ) { target ->
