@@ -1,524 +1,460 @@
-package com.catsblock.weather.ui
+package com.catsblock.weather.ui.detail
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
-import androidx.compose.material.icons.rounded.BeachAccess
-import androidx.compose.material.icons.rounded.BugReport
-import androidx.compose.material.icons.rounded.CalendarMonth
-import androidx.compose.material.icons.rounded.Checkroom
-import androidx.compose.material.icons.rounded.DirectionsCar
-import androidx.compose.material.icons.rounded.DirectionsRun
-import androidx.compose.material.icons.rounded.MedicalServices
-import androidx.compose.material.icons.rounded.Schedule
-import androidx.compose.material.icons.rounded.WbSunny
-import androidx.compose.material.icons.rounded.WbTwilight
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material.icons.rounded.Navigation
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.compositionLocalOf
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.catsblock.weather.ui.WindRose
 import androidx.compose.ui.unit.sp
-import com.catsblock.weather.data.Day
-import com.catsblock.weather.data.Hour
-import com.catsblock.weather.data.LifeItem
-import com.catsblock.weather.data.LifeKind
-import com.catsblock.weather.i18n.tr
-import com.catsblock.weather.ui.glass.cardEntrance
-import kotlinx.coroutines.launch
-import java.time.Duration
-import java.time.LocalDate
+import com.catsblock.weather.ui.hourLabel
 import java.time.LocalDateTime
-import kotlin.math.cos
-import kotlin.math.roundToInt
+import kotlin.math.PI
+import kotlin.math.abs
+import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sin
 
-private val HourStep = 68.dp
-private val DayChipWidth = 150.dp
-private val DayChipGap = 8.dp
-private val DayStep = 70.dp
+data class Pill(
+    val top: String,
+    val bottom: String,
+    val low: Float,
+    val high: Float,
+    val tint: Color? = null
+)
 
-val LocalGlass = compositionLocalOf { false }
+data class ChartLine(
+    val values: List<Float?>,
+    val color: Color,
+    val label: String,
+    val scale: ClosedFloatingPointRange<Float>? = null
+)
+
+data class Threshold(val value: Float, val label: String)
+
+enum class HourlyStyle { Bars, Line }
+
+private const val HOURS = 24
 
 @Composable
-fun GlassCard(
+fun PillChart(
+    pills: List<Pill>,
+    selected: Int,
+    onSelect: (Int) -> Unit,
+    accent: Color,
     modifier: Modifier = Modifier,
-    onClick: (() -> Unit)? = null,
-    contentModifier: Modifier = Modifier,
-    background: (@Composable BoxScope.() -> Unit)? = null,
-    content: @Composable ColumnScope.() -> Unit
+    floating: Boolean = false,
+    trackHeight: Dp = 168.dp
 ) {
-    val expressive = LocalGlass.current
-    val dark = isSystemInDarkTheme()
     val scheme = MaterialTheme.colorScheme
-    val sky = LocalSkyColors.current
-    val shape = RoundedCornerShape(32.dp)
-    val colors = CardDefaults.cardColors(
-        containerColor = if (expressive) {
-            sky.card.copy(alpha = 0.88f)
-        } else {
-            scheme.surfaceContainer.copy(alpha = if (dark) 0.58f else 0.74f)
-        },
-        contentColor = if (expressive) Color.White else scheme.onSurface
-    )
-    val surface = if (expressive) modifier.scrollEdgeFade().cardEntrance() else modifier
-    val elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-    @Composable
-    fun CardContent() {
-        if (background == null) {
-            Column(contentModifier.padding(20.dp), content = content)
-        } else {
-            Box(Modifier.fillMaxSize()) {
-                background.invoke(this)
-                Column(contentModifier.padding(20.dp), content = content)
-            }
-        }
-    }
-    if (onClick != null) {
-        Card(onClick = onClick, modifier = surface, shape = shape, colors = colors, elevation = elevation, border = null) {
-            CardContent()
-        }
-    } else {
-        Card(modifier = surface, shape = shape, colors = colors, elevation = elevation, border = null) {
-            CardContent()
-        }
-    }
-}
-
-@Composable
-fun CardHeader(icon: ImageVector, title: String) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Icon(icon, null, Modifier.size(22.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(Modifier.width(10.dp))
-        Text(
-            title,
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Normal,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-    }
-}
-
-@Composable
-fun MetricCard(
-    title: String,
-    icon: ImageVector,
-    value: String,
-    unit: String?,
-    description: String,
-    modifier: Modifier = Modifier,
-    onClick: (() -> Unit)? = null
-) {
-    GlassCard(modifier.height(176.dp), onClick, Modifier.fillMaxSize()) {
-        CardHeader(icon, title)
-        Spacer(Modifier.height(8.dp))
-        Row(verticalAlignment = Alignment.Bottom) {
-            Text(
-                value,
-                style = MaterialTheme.typography.displaySmall.copy(
-                    fontWeight = FontWeight.Light,
-                    fontSize = 44.sp,
-                    lineHeight = 52.sp
-                ),
-                maxLines = 1
+    Row(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        pills.forEachIndexed { index, pill ->
+            val active = index == selected
+            val progress by animateFloatAsState(
+                targetValue = if (active) 1f else 0f,
+                animationSpec = spring(dampingRatio = 0.5f, stiffness = 420f),
+                label = "pill-selection"
             )
-            if (unit != null) {
-                Spacer(Modifier.width(8.dp))
+            var started by remember { mutableStateOf(false) }
+            LaunchedEffect(Unit) {
+                kotlinx.coroutines.delay(index * 45L)
+                started = true
+            }
+            val grow by animateFloatAsState(
+                targetValue = if (started) 1f else 0f,
+                animationSpec = spring(dampingRatio = 0.68f, stiffness = Spring.StiffnessLow),
+                label = "pill-grow"
+            )
+            val color = pill.tint ?: accent
+            Column(
+                Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(32.dp))
+                    .clickable { onSelect(index) }
+                    .semantics(mergeDescendants = true) {
+                        contentDescription = "${pill.bottom}, ${pill.top}"
+                        this.selected = active
+                        role = Role.RadioButton
+                    },
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
                 Text(
-                    unit,
-                    style = MaterialTheme.typography.labelLarge,
-                    modifier = Modifier.padding(bottom = 8.dp),
+                    pill.top,
+                    color = if (active) scheme.onSurface else scheme.onSurfaceVariant.copy(alpha = 0.75f),
+                    fontSize = 12.sp,
+                    fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
+                    maxLines = 1
+                )
+                Spacer(Modifier.height(8.dp))
+                Canvas(Modifier.fillMaxWidth().height(trackHeight)) {
+                    val w = size.width
+                    val h = size.height
+                    val radius = CornerRadius(w / 2f, w / 2f)
+                    drawRoundRect(scheme.onSurface.copy(alpha = 0.08f), size = size, cornerRadius = radius)
+                    val lowF = if (floating) pill.low.coerceIn(0f, 1f) else 0f
+                    val highF = lowF + (pill.high.coerceIn(0f, 1f) - lowF) * grow
+                    val fillH = max((highF - lowF) * h, w)
+                    val bottomY = (h * (1f - lowF)).coerceAtLeast(fillH)
+                    val lift = 5.dp.toPx() * progress
+                    val topY = (bottomY - fillH - lift).coerceAtLeast(0f)
+                    val height = bottomY - topY
+                    val fill = lerp(color.copy(alpha = 0.40f), color, progress)
+                    drawRoundRect(fill, Offset(0f, topY), Size(w, height), radius)
+                    val dotR = w * 0.12f * progress
+                    if (dotR > 0.5f) {
+                        drawCircle(Color.White.copy(alpha = 0.95f), dotR, Offset(w / 2f, bottomY - w * 0.5f))
+                    }
+                }
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    pill.bottom,
+                    color = if (active) scheme.onSurface else scheme.onSurfaceVariant,
+                    fontSize = 13.sp,
+                    fontWeight = if (active) FontWeight.Bold else FontWeight.Normal,
                     maxLines = 1
                 )
             }
         }
-        Spacer(Modifier.weight(1f))
-        Text(
-            description,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 3,
-            overflow = TextOverflow.Ellipsis
-        )
     }
-}
-
-private fun buildCurvePath(points: List<Offset>): Path {
-    val path = Path()
-    if (points.isEmpty()) return path
-    path.moveTo(points[0].x, points[0].y)
-    for (i in 1 until points.size) {
-        val a = points[i - 1]
-        val b = points[i]
-        val midX = (a.x + b.x) / 2f
-        path.cubicTo(midX, a.y, midX, b.y, b.x, b.y)
-    }
-    return path
 }
 
 @Composable
-fun HoursCard(
-    hours: List<Hour>,
-    days: List<Day>,
-    today: LocalDate,
-    fahrenheit: Boolean,
-    scrollState: ScrollState,
-    title: String = tr("Next 36 hours"),
-    showDays: Boolean = true
+fun HourlyChart(
+    lines: List<ChartLine>,
+    style: HourlyStyle,
+    yMin: Float,
+    yMax: Float,
+    thresholds: List<Threshold>,
+    nowHour: Int?,
+    format: (Int, Float) -> String,
+    modifier: Modifier = Modifier,
+    height: Dp = 190.dp,
+    arrows: List<Float?>? = null,
+    bandColors: List<Pair<Float, Color>> = emptyList()
 ) {
-    val scope = rememberCoroutineScope()
-    val density = LocalDensity.current
-    val chipScroll = rememberScrollState()
-    var chartViewportWidthPx by remember { mutableIntStateOf(0) }
-    val selected by remember(hours, days, chartViewportWidthPx) {
-        derivedStateOf {
-            if (hours.isEmpty() || days.isEmpty()) {
-                0
-            } else {
-                val stepPx = with(density) { HourStep.toPx() }
-                val centerOffset = scrollState.value + chartViewportWidthPx / 2f
-                val index = (centerOffset / stepPx).roundToInt().coerceIn(0, hours.lastIndex)
-                days.indexOfFirst { it.date == hours[index].time.toLocalDate() }.coerceAtLeast(0)
-            }
-        }
+    val scheme = MaterialTheme.colorScheme
+    val measurer = rememberTextMeasurer()
+    var scrub by remember { mutableIntStateOf(-1) }
+    val focus = if (scrub >= 0) scrub else (nowHour ?: -1)
+    val reveal = remember { Animatable(0f) }
+    LaunchedEffect(lines, style) {
+        reveal.snapTo(0f)
+        reveal.animateTo(1f, tween(900, easing = FastOutSlowInEasing))
     }
-    LaunchedEffect(selected, showDays) {
-        if (showDays) {
-            val target = with(density) { ((DayChipWidth + DayChipGap) * selected).roundToPx() }
-            chipScroll.animateScrollTo(target)
-        }
-    }
-    GlassCard(Modifier.fillMaxWidth()) {
-        CardHeader(Icons.Rounded.Schedule, title)
-        Spacer(Modifier.height(14.dp))
-        if (showDays) {
-            Row(
-                Modifier.horizontalScroll(chipScroll),
-                horizontalArrangement = Arrangement.spacedBy(DayChipGap)
-            ) {
-                days.forEachIndexed { i, d ->
-                    DayChip(d, today, fahrenheit, selected == i) {
-                        val index = hours.indexOfFirst { it.time.toLocalDate() == d.date }.coerceAtLeast(0)
-                        scope.launch {
-                            val chipTarget = with(density) { ((DayChipWidth + DayChipGap) * i).roundToPx() }
-                            val hourStepPx = with(density) { HourStep.roundToPx() }.coerceAtLeast(1)
-                            val hourCenterPx = index * hourStepPx + hourStepPx / 2
-                            val hourTarget = (hourCenterPx - chartViewportWidthPx / 2)
-                                .coerceIn(0, scrollState.maxValue)
-                            launch { chipScroll.animateScrollTo(chipTarget) }
-                            scrollState.animateScrollTo(hourTarget)
+    val labelStyle = TextStyle(fontSize = 11.sp, fontWeight = FontWeight.Medium, color = scheme.onSurfaceVariant)
+    val thresholdStyle = TextStyle(fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = scheme.onSurfaceVariant)
+    val extra = if (arrows != null) 30.dp else 0.dp
+
+    Column(modifier.fillMaxWidth()) {
+        Row(
+            Modifier.fillMaxWidth().height(30.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (focus in 0 until HOURS) {
+                Text(
+                    hourLabel(LocalDateTime.of(2000, 1, 1, focus, 0)),
+                    color = scheme.onSurfaceVariant,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+                lines.forEachIndexed { index, line ->
+                    val v = line.values.getOrNull(focus)
+                    if (v != null) {
+                        Box(
+                            Modifier
+                                .clip(RoundedCornerShape(50))
+                                .background(line.color.copy(alpha = 0.18f))
+                                .padding(horizontal = 10.dp, vertical = 3.dp)
+                        ) {
+                            Text(format(index, v), color = line.color, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
             }
-            Spacer(Modifier.height(8.dp))
         }
-        HoursChart(hours, fahrenheit, scrollState) { chartViewportWidthPx = it }
-    }
-}
-
-@Composable
-private fun DayChip(day: Day, today: LocalDate, fahrenheit: Boolean, selected: Boolean, onClick: () -> Unit) {
-    val scheme = MaterialTheme.colorScheme
-    val background = if (selected) scheme.secondaryContainer.copy(alpha = 0.75f) else scheme.onSurface.copy(alpha = 0.06f)
-    val content = if (selected) scheme.onSecondaryContainer else scheme.onSurface
-    Box(
-        Modifier
-            .width(DayChipWidth)
-            .clip(RoundedCornerShape(20.dp))
-            .background(background)
-            .clickable(onClick = onClick)
-            .padding(14.dp)
-    ) {
-        Column {
-            Text(dayLabel(day.date, today), style = MaterialTheme.typography.labelLarge, color = content.copy(alpha = 0.8f))
-            Spacer(Modifier.height(4.dp))
-            Text(
-                "${tempText(day.min, fahrenheit)}/${tempText(day.max, fahrenheit)}",
-                style = MaterialTheme.typography.titleLarge,
-                color = content
-            )
-            Spacer(Modifier.height(2.dp))
-            Text(day.kind.label(true), style = MaterialTheme.typography.bodyMedium, color = content, maxLines = 1)
-        }
-        WeatherIcon(day.kind, true, Modifier.align(Alignment.TopEnd).size(34.dp), chance = day.rainChance)
-    }
-}
-
-@Composable
-private fun PrecipChance(chance: Int) {
-    val scheme = MaterialTheme.colorScheme
-    val wet = chance > PRECIP_CHANCE_MIN
-    Column(Modifier.height(30.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        if (chance >= 0) {
-            Text(
-                "$chance%",
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = if (wet) FontWeight.Bold else FontWeight.Normal,
-                color = if (wet) scheme.primary else scheme.onSurfaceVariant
-            )
-            Spacer(Modifier.height(3.dp))
-            Box(
-                Modifier
-                    .width(32.dp)
-                    .height(4.dp)
-                    .clip(CircleShape)
-                    .background(scheme.onSurface.copy(alpha = 0.12f))
-            ) {
-                Box(
-                    Modifier
-                        .fillMaxWidth(chance.coerceIn(0, 100) / 100f)
-                        .height(4.dp)
-                        .background(if (wet) scheme.primary else scheme.onSurfaceVariant)
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun HoursChart(
-    hours: List<Hour>,
-    fahrenheit: Boolean,
-    scrollState: ScrollState,
-    onViewportWidthChanged: (Int) -> Unit
-) {
-    if (hours.isEmpty()) return
-    val measurer = rememberTextMeasurer()
-    val scheme = MaterialTheme.colorScheme
-    val line = scheme.primary
-    val grid = scheme.onSurface.copy(alpha = 0.10f)
-    val hole = scheme.surfaceContainerHigh
-    val valueStyle = MaterialTheme.typography.labelLarge.copy(color = scheme.onSurface)
-    val minT = hours.minOf { it.temp }
-    val maxT = hours.maxOf { it.temp }
-    val span = (maxT - minT).coerceAtLeast(4.0)
-    val nowLabel = tr("Now")
-    Column(
-        Modifier
-            .onSizeChanged { onViewportWidthChanged(it.width) }
-            .horizontalScroll(scrollState)
-    ) {
-        Canvas(Modifier.width(HourStep * hours.size).height(150.dp)) {
-            val topPad = 36.dp.toPx()
-            val bottomPad = 14.dp.toPx()
-            val plotH = size.height - topPad - bottomPad
-            val stepPx = size.width / hours.size
-            val points = hours.mapIndexed { i, h ->
-                Offset(stepPx * (i + 0.5f), topPad + (1f - ((h.temp - minT) / span).toFloat()) * plotH)
-            }
-            points.forEach { p ->
-                drawLine(grid, Offset(p.x, 4.dp.toPx()), Offset(p.x, size.height), 1.dp.toPx())
-            }
-            val area = buildCurvePath(points)
-            area.lineTo(points.last().x, size.height)
-            area.lineTo(points.first().x, size.height)
-            area.close()
-            drawPath(
-                area,
-                brush = Brush.verticalGradient(
-                    listOf(line.copy(alpha = 0.28f), Color.Transparent),
-                    startY = topPad,
-                    endY = size.height
-                )
-            )
-            drawPath(buildCurvePath(points), line, style = Stroke(3.dp.toPx(), cap = StrokeCap.Round))
-            hours.forEachIndexed { i, h ->
-                val p = points[i]
-                drawCircle(line, 6.dp.toPx(), p)
-                drawCircle(hole, 3.dp.toPx(), p)
-                val v = measurer.measure(tempText(h.temp, fahrenheit), valueStyle)
-                drawText(
-                    v,
-                    topLeft = Offset(p.x - v.size.width / 2f, (p.y - v.size.height - 10.dp.toPx()).coerceAtLeast(0f))
-                )
-            }
-        }
-        Row {
-            hours.forEachIndexed { i, h ->
-                Column(Modifier.width(HourStep), horizontalAlignment = Alignment.CenterHorizontally) {
-                    WeatherIcon(h.kind, h.isDay, Modifier.size(36.dp), h.precip, h.cloud, h.windSpeed, h.precipProb)
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        tr(weatherLook(h.kind, h.isDay, h.precip, h.cloud, h.windSpeed, h.precipProb).title),
-                        style = MaterialTheme.typography.labelSmall,
-                        textAlign = TextAlign.Center,
-                        maxLines = 2,
-                        minLines = 2,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Spacer(Modifier.height(6.dp))
-                    PrecipChance(h.precipProb)
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        if (i == 0) nowLabel else hourLabel(h.time),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun DaysCard(
-    days: List<Day>,
-    today: LocalDate,
-    fahrenheit: Boolean,
-    onDayClick: (Day) -> Unit,
-    onMore: () -> Unit
-) {
-    GlassCard(Modifier.fillMaxWidth()) {
-        CardHeader(Icons.Rounded.CalendarMonth, tr("Next 7 days"))
-        Spacer(Modifier.height(14.dp))
-        DaysChart(days, today, fahrenheit, onDayClick)
-        Spacer(Modifier.height(8.dp))
-        HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f))
-        Row(
+        Canvas(
             Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(12.dp))
-                .clickable(onClick = onMore)
-                .padding(vertical = 14.dp, horizontal = 4.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+                .height(height + extra)
+                .pointerInput(Unit) {
+                    detectTapGestures(
+                        onPress = { offset ->
+                            scrub = hourAt(offset.x, size.width.toFloat(), style)
+                            tryAwaitRelease()
+                            scrub = -1
+                        }
+                    )
+                }
+                .pointerInput(Unit) {
+                    detectHorizontalDragGestures(
+                        onDragStart = { offset -> scrub = hourAt(offset.x, size.width.toFloat(), style) },
+                        onDragEnd = { scrub = -1 },
+                        onDragCancel = { scrub = -1 },
+                        onHorizontalDrag = { change, _ -> scrub = hourAt(change.position.x, size.width.toFloat(), style) }
+                    )
+                }
         ) {
-            Text(tr("Show more"), style = MaterialTheme.typography.labelLarge)
-            Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-    }
-}
+            val w = size.width
+            val labelBand = 24.dp.toPx()
+            val arrowBand = extra.toPx()
+            val plotTop = 8.dp.toPx()
+            val plotBottom = size.height - labelBand - arrowBand
+            val plotH = plotBottom - plotTop
+            val pad = 6.dp.toPx()
+            val x0 = pad
+            val x1 = w - pad
+            val slot = (x1 - x0) / HOURS
+            val range = (yMax - yMin).coerceAtLeast(0.0001f)
+            fun xFor(i: Int): Float = if (style == HourlyStyle.Bars) x0 + slot * (i + 0.5f) else x0 + (x1 - x0) * i / (HOURS - 1).toFloat()
+            fun yFor(fraction: Float): Float = plotTop + plotH * (1f - fraction.coerceIn(0f, 1f))
+            fun fractionOf(line: ChartLine, v: Float): Float {
+                val s = line.scale
+                return if (s == null) (v - yMin) / range else (v - s.start) / (s.endInclusive - s.start).coerceAtLeast(0.0001f)
+            }
 
-@Composable
-private fun DaysChart(days: List<Day>, today: LocalDate, fahrenheit: Boolean, onDayClick: (Day) -> Unit) {
-    if (days.isEmpty()) return
-    val scheme = MaterialTheme.colorScheme
-    val maxAll = days.maxOf { it.max }
-    val minAll = days.minOf { it.min }
-    val span = (maxAll - minAll).coerceAtLeast(4.0)
-    val todayLabel = tr("Today")
-    val trackHeight = 156.dp
-    val labelBand = 28.dp
-    val plotHeight = trackHeight - labelBand * 2
-    Row(
-        Modifier.horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(6.dp)
-    ) {
-        days.forEach { d ->
-            val isToday = d.date == today
-            val top = ((maxAll - d.max) / span).toFloat()
-            val bottom = ((maxAll - d.min) / span).toFloat()
-            Column(
-                Modifier
-                    .width(56.dp)
-                    .clip(RoundedCornerShape(28.dp))
-                    .clickable { onDayClick(d) }
-                    .padding(vertical = 4.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text(
-                    if (isToday) todayLabel else weekdayLabel(d.date.atStartOfDay()),
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = if (isToday) FontWeight.Bold else FontWeight.Medium,
-                    color = if (isToday) scheme.primary else scheme.onSurfaceVariant,
-                    maxLines = 1
+            thresholds.forEach { t ->
+                val y = yFor((t.value - yMin) / range)
+                drawLine(
+                    scheme.onSurface.copy(alpha = 0.22f),
+                    Offset(x0, y),
+                    Offset(x1, y),
+                    strokeWidth = 1.dp.toPx(),
+                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f))
                 )
-                Spacer(Modifier.height(8.dp))
-                Box(
-                    Modifier
-                        .width(48.dp)
-                        .height(trackHeight)
-                        .clip(RoundedCornerShape(24.dp))
-                        .background(scheme.onSurface.copy(alpha = if (isToday) 0.16f else 0.08f))
-                ) {
-                    Box(
-                        Modifier
-                            .align(Alignment.TopCenter)
-                            .offset(y = labelBand + plotHeight * top)
-                            .width(30.dp)
-                            .height((plotHeight * (bottom - top)).coerceAtLeast(16.dp))
-                            .clip(CircleShape)
-                            .background(Brush.verticalGradient(listOf(scheme.primary, scheme.tertiary)))
+                val layout = measurer.measure(t.label, thresholdStyle)
+                drawText(layout, topLeft = Offset(x0 + 4.dp.toPx(), y - layout.size.height - 2.dp.toPx()))
+            }
+
+            if (style == HourlyStyle.Bars) {
+                val line = lines.first()
+                val barW = slot * 0.66f
+                for (i in 0 until HOURS) {
+                    val cx = xFor(i)
+                    val v = line.values.getOrNull(i)
+                    val r = CornerRadius(barW / 2f, barW / 2f)
+                    drawRoundRect(
+                        scheme.onSurface.copy(alpha = if (i == focus) 0.14f else 0.07f),
+                        Offset(cx - barW / 2f, plotTop),
+                        Size(barW, plotH),
+                        r
                     )
-                    Text(
-                        tempText(d.max, fahrenheit),
-                        Modifier.align(Alignment.TopCenter).padding(top = 7.dp),
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.SemiBold,
-                        color = scheme.onSurface,
-                        maxLines = 1
-                    )
-                    Text(
-                        tempText(d.min, fahrenheit),
-                        Modifier.align(Alignment.BottomCenter).padding(bottom = 7.dp),
-                        style = MaterialTheme.typography.labelLarge,
-                        color = scheme.onSurfaceVariant,
-                        maxLines = 1
-                    )
+                    if (v != null) {
+                        val stagger = ((reveal.value * 1.6f) - i / 40f).coerceIn(0f, 1f)
+                        val f = fractionOf(line, v).coerceIn(0f, 1f) * stagger
+                        val fillH = max(f * plotH, if (v > 0f) barW else barW * 0.5f)
+                        val top = plotBottom - fillH
+                        val color = if (i == focus) line.color else line.color.copy(alpha = 0.78f)
+                        drawRoundRect(color, Offset(cx - barW / 2f, top), Size(barW, fillH), r)
+                        drawCircle(Color.White.copy(alpha = 0.95f), barW * 0.17f, Offset(cx, top + barW * 0.5f))
+                    }
                 }
-                Spacer(Modifier.height(8.dp))
-                WeatherIcon(d.kind, true, Modifier.size(34.dp), chance = d.rainChance)
-                Box(Modifier.height(18.dp), contentAlignment = Alignment.Center) {
-                    if (d.rainChance >= 30) {
-                        Text(
-                            "${d.rainChance}%",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = scheme.secondary
-                        )
+            } else {
+                clipRect(left = 0f, top = 0f, right = w * reveal.value, bottom = size.height) {
+                    lines.forEachIndexed { lineIndex, line ->
+                        val path = Path()
+                        var lastX = 0f
+                        var lastY = 0f
+                        var firstX = -1f
+                        val run = ArrayList<Offset>()
+                        fun flushRun() {
+                            if (run.isEmpty()) return
+                            if (firstX < 0f) firstX = run.first().x
+                            path.moveTo(run.first().x, run.first().y)
+                            if (run.size > 1) {
+                                val slopes = FloatArray(run.size - 1) { k ->
+                                    (run[k + 1].y - run[k].y) / (run[k + 1].x - run[k].x)
+                                }
+                                val tangents = FloatArray(run.size)
+                                tangents[0] = slopes.first()
+                                tangents[run.lastIndex] = slopes.last()
+                                for (k in 1 until run.lastIndex) {
+                                    tangents[k] = if (slopes[k - 1] * slopes[k] <= 0f) 0f else {
+                                        val left = run[k].x - run[k - 1].x
+                                        val right = run[k + 1].x - run[k].x
+                                        val w1 = 2f * right + left
+                                        val w2 = right + 2f * left
+                                        (w1 + w2) / (w1 / slopes[k - 1] + w2 / slopes[k])
+                                    }
+                                }
+                                for (k in slopes.indices) {
+                                    if (slopes[k] == 0f) {
+                                        tangents[k] = 0f
+                                        tangents[k + 1] = 0f
+                                    } else {
+                                        val ra = tangents[k] / slopes[k]
+                                        val rb = tangents[k + 1] / slopes[k]
+                                        val magnitude = ra * ra + rb * rb
+                                        if (magnitude > 9f) {
+                                            val limit = 3f / kotlin.math.sqrt(magnitude)
+                                            tangents[k] = limit * ra * slopes[k]
+                                            tangents[k + 1] = limit * rb * slopes[k]
+                                        }
+                                    }
+                                }
+                                for (k in 0 until run.lastIndex) {
+                                    val dx = (run[k + 1].x - run[k].x) / 3f
+                                    path.cubicTo(
+                                        run[k].x + dx, run[k].y + tangents[k] * dx,
+                                        run[k + 1].x - dx, run[k + 1].y - tangents[k + 1] * dx,
+                                        run[k + 1].x, run[k + 1].y
+                                    )
+                                }
+                            }
+                            lastX = run.last().x
+                            lastY = run.last().y
+                            run.clear()
+                        }
+                        for (i in 0 until HOURS) {
+                            val v = line.values.getOrNull(i)
+                            if (v == null) {
+                                flushRun()
+                                continue
+                            }
+                            run.add(Offset(xFor(i), yFor(fractionOf(line, v))))
+                        }
+                        flushRun()
+                        if (firstX >= 0f) {
+                            if (lineIndex == 0) {
+                                val fill = Path().apply {
+                                    addPath(path)
+                                    lineTo(lastX, plotBottom)
+                                    lineTo(firstX, plotBottom)
+                                    close()
+                                }
+                                val base = if (bandColors.isEmpty()) line.color else bandColors.last().second
+                                drawPath(
+                                    fill,
+                                    Brush.verticalGradient(
+                                        listOf(base.copy(alpha = 0.32f), base.copy(alpha = 0.02f)),
+                                        startY = plotTop,
+                                        endY = plotBottom
+                                    )
+                                )
+                            }
+                            val stroke = Stroke(3.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
+                            if (bandColors.isNotEmpty() && lineIndex == 0) {
+                                val stops = bandColors
+                                    .map { (value, color) -> (1f - (value - yMin) / range).coerceIn(0f, 1f) to color }
+                                    .sortedBy { it.first }
+                                    .toTypedArray()
+                                drawPath(path, Brush.verticalGradient(*stops, startY = plotTop, endY = plotBottom), style = stroke)
+                            } else {
+                                drawPath(path, line.color, style = stroke)
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (focus in 0 until HOURS) {
+                val fx = xFor(focus)
+                drawLine(
+                    scheme.onSurface.copy(alpha = 0.40f),
+                    Offset(fx, plotTop),
+                    Offset(fx, plotBottom),
+                    strokeWidth = 1.5.dp.toPx(),
+                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 8f))
+                )
+                if (style == HourlyStyle.Line) {
+                    lines.forEach { line ->
+                        val v = line.values.getOrNull(focus)
+                        if (v != null) {
+                            val c = Offset(fx, yFor(fractionOf(line, v)))
+                            drawCircle(scheme.surfaceContainerHigh, 7.dp.toPx(), c)
+                            drawCircle(line.color, 5.dp.toPx(), c)
+                            drawCircle(Color.White, 2.dp.toPx(), c)
+                        }
+                    }
+                }
+            }
+
+            for (h in 0 until HOURS step 6) {
+                val layout = measurer.measure(hourLabel(LocalDateTime.of(2000, 1, 1, h, 0)), labelStyle)
+                val cx = xFor(h)
+                val left = (cx - layout.size.width / 2f).coerceIn(0f, w - layout.size.width)
+                drawText(layout, topLeft = Offset(left, plotBottom + 6.dp.toPx()))
+            }
+
+            if (arrows != null) {
+                val base = plotBottom + labelBand + 2.dp.toPx()
+                for (h in 0 until HOURS step 3) {
+                    val dir = arrows.getOrNull(h) ?: continue
+                    val c = Offset(xFor(h), base + arrowBand / 2f - 2.dp.toPx())
+                    rotate(degrees = (dir + 180f) % 360f, pivot = c) {
+                        val a = 6.dp.toPx()
+                        val p = Path().apply {
+                            moveTo(c.x, c.y - a)
+                            lineTo(c.x + a * 0.8f, c.y + a)
+                            lineTo(c.x, c.y + a * 0.45f)
+                            lineTo(c.x - a * 0.8f, c.y + a)
+                            close()
+                        }
+                        drawPath(p, scheme.onSurfaceVariant.copy(alpha = 0.85f))
                     }
                 }
             }
@@ -526,93 +462,220 @@ private fun DaysChart(days: List<Day>, today: LocalDate, fahrenheit: Boolean, on
     }
 }
 
+private fun hourAt(x: Float, width: Float, style: HourlyStyle): Int {
+    val f = (x / width).coerceIn(0f, 1f)
+    return if (style == HourlyStyle.Bars) min(HOURS - 1, (f * HOURS).toInt()) else (f * (HOURS - 1)).toInt().coerceIn(0, HOURS - 1)
+}
+
 @Composable
-fun SunCard(sunrise: LocalDateTime, sunset: LocalDateTime, now: LocalDateTime, modifier: Modifier = Modifier) {
-    val total = Duration.between(sunrise, sunset).toMinutes().coerceAtLeast(1)
-    val elapsed = Duration.between(sunrise, now).toMinutes()
-    val progress = (elapsed.toFloat() / total.toFloat()).coerceIn(0f, 1f)
+fun SegmentBar(
+    colors: List<Color>,
+    fraction: Float,
+    modifier: Modifier = Modifier
+) {
     val scheme = MaterialTheme.colorScheme
-    val primary = scheme.primary
-    val track = scheme.onSurface.copy(alpha = 0.25f)
-    GlassCard(modifier.height(176.dp), contentModifier = Modifier.fillMaxSize()) {
-        CardHeader(Icons.Rounded.WbTwilight, tr("Sun"))
-        Spacer(Modifier.weight(1f))
-        Canvas(Modifier.fillMaxWidth().height(62.dp)) {
-            val r = min(size.width / 2f - 12.dp.toPx(), size.height - 8.dp.toPx())
-            val cx = size.width / 2f
-            val cy = size.height - 4.dp.toPx()
-            drawLine(track, Offset(cx - r - 10.dp.toPx(), cy), Offset(cx + r + 10.dp.toPx(), cy), 1.5f.dp.toPx())
-            drawArc(
-                track,
-                180f,
-                180f,
-                false,
-                Offset(cx - r, cy - r),
-                Size(2 * r, 2 * r),
-                style = Stroke(2.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f)))
-            )
-            drawArc(
-                primary,
-                180f,
-                180f * progress,
-                false,
-                Offset(cx - r, cy - r),
-                Size(2 * r, 2 * r),
-                style = Stroke(3.dp.toPx(), cap = StrokeCap.Round)
-            )
-            val angle = Math.PI * (1.0 - progress)
-            val sx = cx + r * cos(angle).toFloat()
-            val sy = cy - r * sin(angle).toFloat()
-            drawCircle(Color(0x55FFC107), 13.dp.toPx(), Offset(sx, sy))
-            drawCircle(Color(0xFFFFC107), 6.dp.toPx(), Offset(sx, sy))
+    val animated by animateFloatAsState(
+        targetValue = fraction.coerceIn(0f, 1f),
+        animationSpec = spring(dampingRatio = 0.62f, stiffness = 180f),
+        label = "segment-marker"
+    )
+    Canvas(modifier.fillMaxWidth().height(32.dp)) {
+        val gap = 3.dp.toPx()
+        val barH = 24.dp.toPx()
+        val top = (size.height - barH) / 2f
+        val n = colors.size
+        val segW = (size.width - gap * (n - 1)) / n
+        val cap = barH / 2f
+        val inner = 3.dp.toPx()
+        colors.forEachIndexed { i, color ->
+            val left = i * (segW + gap)
+            val tl = if (i == 0) cap else inner
+            val tr = if (i == n - 1) cap else inner
+            val path = Path().apply {
+                addRoundRect(
+                    RoundRect(
+                        left = left,
+                        top = top,
+                        right = left + segW,
+                        bottom = top + barH,
+                        topLeftCornerRadius = CornerRadius(tl, tl),
+                        topRightCornerRadius = CornerRadius(tr, tr),
+                        bottomRightCornerRadius = CornerRadius(tr, tr),
+                        bottomLeftCornerRadius = CornerRadius(tl, tl)
+                    )
+                )
+            }
+            drawPath(path, color)
         }
-        Spacer(Modifier.height(8.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(clockLabel(sunrise), style = MaterialTheme.typography.labelLarge)
-            Text(clockLabel(sunset), style = MaterialTheme.typography.labelLarge)
-        }
+        val cx = (size.width * animated).coerceIn(cap, size.width - cap)
+        val c = Offset(cx, size.height / 2f)
+        drawCircle(Color.Black.copy(alpha = 0.28f), 14.dp.toPx(), c)
+        drawCircle(Color.White, 12.dp.toPx(), c)
+        drawCircle(scheme.surfaceContainerHigh, 7.dp.toPx(), c)
     }
-}
-
-private fun lifeIcon(kind: LifeKind): ImageVector = when (kind) {
-    LifeKind.Sun -> Icons.Rounded.WbSunny
-    LifeKind.Exercise -> Icons.Rounded.DirectionsRun
-    LifeKind.Clothing -> Icons.Rounded.Checkroom
-    LifeKind.Flu -> Icons.Rounded.MedicalServices
-    LifeKind.Travel -> Icons.Rounded.DirectionsCar
-    LifeKind.Mosquito -> Icons.Rounded.BugReport
 }
 
 @Composable
-fun LifeIndexCard(items: List<LifeItem>) {
-    GlassCard(Modifier.fillMaxWidth()) {
-        CardHeader(Icons.Rounded.BeachAccess, tr("Life index"))
-        Spacer(Modifier.height(8.dp))
-        items.chunked(2).forEach { row ->
-            Row(Modifier.fillMaxWidth().padding(vertical = 12.dp)) {
-                row.forEach { item ->
-                    Column(
-                        Modifier.weight(1f).padding(horizontal = 6.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Icon(lifeIcon(item.kind), null, Modifier.size(34.dp), tint = MaterialTheme.colorScheme.primary)
-                        Spacer(Modifier.height(8.dp))
-                        Text(
-                            item.title,
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            textAlign = TextAlign.Center
-                        )
-                        Text(
-                            item.value,
-                            style = MaterialTheme.typography.titleSmall,
-                            textAlign = TextAlign.Center,
-                            maxLines = 2
-                        )
+fun ArcGauge(
+    fraction: Float,
+    color: Color,
+    modifier: Modifier = Modifier,
+    center: String? = null,
+    size: Dp = 112.dp,
+    segments: List<Color>? = null
+) {
+    val scheme = MaterialTheme.colorScheme
+    val animated by animateFloatAsState(
+        targetValue = fraction.coerceIn(0f, 1f),
+        animationSpec = spring(dampingRatio = 0.6f, stiffness = 120f),
+        label = "arc-gauge"
+    )
+    Box(modifier.size(size), contentAlignment = Alignment.Center) {
+        Canvas(Modifier.size(size)) {
+            val stroke = 16.dp.toPx()
+            val inset = stroke / 2f + 2.dp.toPx()
+            val arcSize = Size(this.size.width - inset * 2f, this.size.height - inset * 2f)
+            val topLeft = Offset(inset, inset)
+            val start = 150f
+            val total = 240f
+            if (segments == null) {
+                drawArc(scheme.onSurface.copy(alpha = 0.10f), start, total, false, topLeft, arcSize, style = Stroke(stroke, cap = StrokeCap.Round))
+                if (animated > 0.001f) {
+                    drawArc(color, start, total * animated, false, topLeft, arcSize, style = Stroke(stroke, cap = StrokeCap.Round))
+                }
+            } else {
+                val n = segments.size
+                val gapAngle = 7f
+                val seg = (total - gapAngle * (n - 1)) / n
+                segments.forEachIndexed { i, c ->
+                    val s = start + i * (seg + gapAngle)
+                    val reach = ((animated * total) - i * (seg + gapAngle)).coerceIn(0f, seg)
+                    drawArc(scheme.onSurface.copy(alpha = 0.10f), s, seg, false, topLeft, arcSize, style = Stroke(stroke, cap = StrokeCap.Round))
+                    if (reach > 0.5f) {
+                        drawArc(c, s, max(reach, 4f), false, topLeft, arcSize, style = Stroke(stroke, cap = StrokeCap.Round))
                     }
                 }
-                if (row.size == 1) Spacer(Modifier.weight(1f))
             }
         }
+        if (center != null) {
+            Text(center, color = scheme.onSurface, fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
+        }
     }
+}
+
+@Composable
+fun WaterGauge(
+    fraction: Float,
+    color: Color,
+    modifier: Modifier = Modifier,
+    size: Dp = 104.dp
+) {
+    val scheme = MaterialTheme.colorScheme
+    val level by animateFloatAsState(
+        targetValue = fraction.coerceIn(0f, 1f),
+        animationSpec = spring(dampingRatio = 0.7f, stiffness = 90f),
+        label = "water-level"
+    )
+    val transition = rememberInfiniteTransition(label = "water")
+    val phase by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = (2.0 * PI).toFloat(),
+        animationSpec = infiniteRepeatable(tween(2600, easing = LinearEasing), RepeatMode.Restart),
+        label = "water-phase"
+    )
+    Canvas(modifier.size(size)) {
+        val r = this.size.minDimension / 2f
+        val center = Offset(this.size.width / 2f, this.size.height / 2f)
+        val circle = Path().apply { addOval(androidx.compose.ui.geometry.Rect(center, r)) }
+        drawCircle(scheme.onSurface.copy(alpha = 0.08f), r, center)
+        clipPath(circle) {
+            val base = this.size.height * (1f - level)
+            val amp = 4.dp.toPx() * (0.4f + 0.6f * sin(level * PI.toFloat()))
+            val wave = Path()
+            wave.moveTo(0f, this.size.height)
+            wave.lineTo(0f, base)
+            var x = 0f
+            val step = 4f
+            while (x <= this.size.width) {
+                wave.lineTo(x, base + amp * sin(x / this.size.width * 2f * PI.toFloat() * 1.6f + phase))
+                x += step
+            }
+            wave.lineTo(this.size.width, this.size.height)
+            wave.close()
+            drawPath(wave, Brush.verticalGradient(listOf(color.copy(alpha = 0.95f), color.copy(alpha = 0.60f)), startY = base, endY = this.size.height))
+            val back = Path()
+            back.moveTo(0f, this.size.height)
+            back.lineTo(0f, base)
+            x = 0f
+            while (x <= this.size.width) {
+                back.lineTo(x, base + amp * sin(x / this.size.width * 2f * PI.toFloat() * 1.3f - phase * 0.8f + 1.4f))
+                x += step
+            }
+            back.lineTo(this.size.width, this.size.height)
+            back.close()
+            drawPath(back, color.copy(alpha = 0.30f))
+        }
+        drawCircle(color.copy(alpha = 0.45f), r - 1.dp.toPx(), center, style = Stroke(2.dp.toPx()))
+    }
+}
+
+@Composable
+fun WindCompass(
+    fromDegrees: Double?,
+    modifier: Modifier = Modifier,
+    size: Dp = 112.dp
+) {
+    WindRose(fromDegrees, modifier, size)
+}
+
+@Composable
+fun StackedBar(
+    parts: List<Pair<Float, Color>>,
+    modifier: Modifier = Modifier
+) {
+    val total = parts.sumOf { it.first.toDouble() }.toFloat().coerceAtLeast(0.0001f)
+    val reveal = remember { Animatable(0f) }
+    LaunchedEffect(parts) {
+        reveal.snapTo(0f)
+        reveal.animateTo(1f, spring(dampingRatio = 0.7f, stiffness = 140f))
+    }
+    Canvas(modifier.fillMaxWidth().height(44.dp)) {
+        val gap = 3.dp.toPx()
+        val visible = parts.filter { it.first > 0f }
+        val usable = (size.width - gap * (visible.size - 1).coerceAtLeast(0)) * reveal.value
+        var x = 0f
+        visible.forEachIndexed { i, (value, color) ->
+            val w = usable * value / total
+            val cap = size.height / 2f
+            val inner = 4.dp.toPx()
+            val tl = if (i == 0) cap else inner
+            val tr = if (i == visible.lastIndex) cap else inner
+            val path = Path().apply {
+                addRoundRect(
+                    RoundRect(
+                        left = x,
+                        top = 0f,
+                        right = x + w,
+                        bottom = size.height,
+                        topLeftCornerRadius = CornerRadius(tl, tl),
+                        topRightCornerRadius = CornerRadius(tr, tr),
+                        bottomRightCornerRadius = CornerRadius(tr, tr),
+                        bottomLeftCornerRadius = CornerRadius(tl, tl)
+                    )
+                )
+            }
+            drawPath(path, color)
+            x += w + gap
+        }
+    }
+}
+
+fun piecewiseFraction(value: Double, breakpoints: List<Double>): Float {
+    val segments = breakpoints.size + 1
+    var index = 0
+    while (index < breakpoints.size && value >= breakpoints[index]) index++
+    val lower = if (index == 0) breakpoints.first() - (breakpoints.getOrElse(1) { breakpoints.first() + 1.0 } - breakpoints.first()) else breakpoints[index - 1]
+    val upper = if (index >= breakpoints.size) breakpoints.last() + (breakpoints.last() - breakpoints.getOrElse(breakpoints.size - 2) { breakpoints.last() - 1.0 }) else breakpoints[index]
+    val within = ((value - lower) / abs(upper - lower).coerceAtLeast(0.0001)).coerceIn(0.0, 1.0)
+    return ((index + within) / segments).toFloat().coerceIn(0f, 1f)
 }
