@@ -83,7 +83,6 @@ import java.time.Duration
 import java.time.LocalDateTime
 import kotlin.math.PI
 import kotlin.math.abs
-import kotlin.math.cos
 import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlin.math.sin
@@ -411,10 +410,9 @@ fun WindCardV2(speedKmh: Double, fromDeg: Double?, modifier: Modifier = Modifier
 
 @Composable
 fun PressureCardV2(hpa: Double, modifier: Modifier = Modifier, onClick: (() -> Unit)? = null) {
-    val lo = 960.0
-    val hi = 1060.0
-    val target = ((hpa - lo) / (hi - lo)).toFloat().coerceIn(0f, 1f)
-    val f by animateFloatAsState(target, tween(350), label = "pressurePosition")
+    val valid = hpa.isFinite() && hpa > 0.0
+    val target = if (valid) ((hpa - PRESSURE_RANGE_LOW) / (PRESSURE_RANGE_HIGH - PRESSURE_RANGE_LOW)).toFloat().coerceIn(0f, 1f) else 0f
+    val fraction by animateFloatAsState(target, tween(350), label = "pressurePosition")
     val unit = LocalUnits.current.pressure
     val primary = MaterialTheme.colorScheme.primary
     val track = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
@@ -422,27 +420,28 @@ fun PressureCardV2(hpa: Double, modifier: Modifier = Modifier, onClick: (() -> U
         CardHeader(Icons.Rounded.Speed, tr("Pressure"))
         Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
             Canvas(Modifier.fillMaxSize()) {
-                val stroke = 7.dp.toPx()
-                val radius = (min(size.width, size.height) - stroke * 2f) / 2f
-                val arcSize = Size(radius * 2f, radius * 2f)
-                val topLeft = Offset((size.width - arcSize.width) / 2f, (size.height - arcSize.height) / 2f)
-                val sweep = 324f * f
-                drawArc(track, 108f, 324f, false, topLeft, arcSize, style = Stroke(stroke, cap = StrokeCap.Round))
-                drawArc(primary, 108f, sweep, false, topLeft, arcSize, style = Stroke(stroke, cap = StrokeCap.Round))
-                val angle = Math.toRadians((108f + sweep).toDouble())
-                val center = Offset(size.width / 2f, size.height / 2f)
-                val indicator = Offset(center.x + cos(angle).toFloat() * radius, center.y + sin(angle).toFloat() * radius)
-                drawCircle(primary.copy(alpha = 0.22f), stroke * 1.2f, indicator)
-                drawCircle(primary, stroke * 0.55f, indicator)
+                val stroke = 8.dp.toPx()
+                val diameter = min(size.width, size.height) - stroke
+                val arcSize = Size(diameter, diameter)
+                val topLeft = Offset((size.width - diameter) / 2f, (size.height - diameter) / 2f)
+                drawArc(track, -90f, 360f, false, topLeft, arcSize, style = Stroke(stroke))
+                if (valid) drawArc(primary, -90f, 360f * fraction, false, topLeft, arcSize, style = Stroke(stroke, cap = StrokeCap.Round))
             }
-            Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.Center) {
-                Text(pressureNumber(hpa, unit), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, maxLines = 1)
-                Spacer(Modifier.width(4.dp))
-                Text(unit.label, Modifier.padding(bottom = 3.dp), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    if (valid) pressureNumber(hpa, unit) else "—",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1
+                )
+                Text(unit.label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
             }
         }
     }
 }
+
+private const val PRESSURE_RANGE_LOW = 950.0
+private const val PRESSURE_RANGE_HIGH = 1050.0
 
 @Composable
 fun CardsDashboard(
