@@ -118,7 +118,7 @@ object RadarLoader {
 @Composable
 internal fun rememberDarkMap(): Boolean = MaterialTheme.colorScheme.background.luminance() < 0.5f
 
-private object RadarMapRenderer {
+internal object RadarMapRenderer {
     private val client = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(10, TimeUnit.SECONDS)
@@ -134,7 +134,7 @@ private object RadarMapRenderer {
             }
     }.getOrNull()
 
-    private suspend fun tile(url: String, fallback: String? = null, recolor: Boolean = false): Bitmap? {
+    suspend fun tile(url: String, fallback: String? = null, recolor: Boolean = false): Bitmap? {
         val key = if (recolor) "radar:$url" else url
         cache.get(key)?.let { return it }
         val bmp = withContext(Dispatchers.IO) {
