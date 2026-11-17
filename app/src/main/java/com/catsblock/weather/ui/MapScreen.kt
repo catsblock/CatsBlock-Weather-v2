@@ -165,60 +165,13 @@ fun MapScreen(vm: WeatherViewModel) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var sheetOpen by remember { mutableStateOf(false) }
     val locate = remember { Animatable(0f) }
-    var forecastOffset by remember(layer) { mutableIntStateOf(0) }
-    var forecastHour by remember(layer) { mutableIntStateOf(java.time.Instant.now().atZone(java.time.ZoneOffset.UTC).hour) }
-    var clockHour by remember(layer) { mutableStateOf(java.time.Instant.now().truncatedTo(java.time.temporal.ChronoUnit.HOURS)) }
-    LaunchedEffect(layer.timeline) {
-        if (layer.timeline == MapTimeline.WeatherModel) {
-            while (true) {
-                delay(60_000L)
-                clockHour = java.time.Instant.now().truncatedTo(java.time.temporal.ChronoUnit.HOURS)
-            }
-        }
-    }
-    val radarSet by produceState<RadarSet?>(initialValue = null, key1 = layer) {
-        value = if (layer.timeline == MapTimeline.RadarFrames) RadarLoader.load() else null
-    }
-    val radarFrames = remember(radarSet) {
-        val now = System.currentTimeMillis() / 1000L
-        val frames = radarSet?.frames.orEmpty()
-        buildList {
-            frames.filter { it.observed && it.time <= now }.maxByOrNull { it.time }?.let(::add)
-            addAll(frames.filter { !it.observed && it.time >= now }.sortedBy { it.time })
-        }
-    }
-    var radarIndex by remember(radarSet) {
-        mutableIntStateOf(radarFrames.indices.minByOrNull { kotlin.math.abs(radarFrames[it].time - System.currentTimeMillis() / 1000L) } ?: 0)
-    }
-    val selectedRadarFrame = radarFrames.getOrNull(radarIndex)
-    val radarTileTemplate = selectedRadarFrame?.let { frame ->
-        radarSet?.host?.plus(frame.path)?.plus("/256/{z}/{x}/{y}/2/1_1.png")
-    }
-    var radarPlaying by remember { mutableStateOf(false) }
     LaunchedEffect(layer) {
         selectedDetail = null
-        radarPlaying = false
     }
     LaunchedEffect(selectedDetail) {
         selectedDetail?.let { animatedDetail = it }
     }
-    LaunchedEffect(radarPlaying, layer, radarFrames.size) {
-        while (radarPlaying && layer.timeline == MapTimeline.RadarFrames && radarFrames.size > 1) {
-            delay(700)
-            radarIndex = if (radarIndex >= radarFrames.lastIndex) 0 else radarIndex + 1
-        }
-    }
-    val selectedWeatherTimeMillis = remember(layer, forecastOffset, forecastHour, clockHour) {
-        val currentHour = clockHour.atZone(java.time.ZoneOffset.UTC).hour
-        val nextDay = if (forecastOffset == 0 && forecastHour < currentHour) 1L else 0L
-        clockHour.atZone(java.time.ZoneOffset.UTC).plusDays(forecastOffset.toLong() + nextDay).withHour(forecastHour).toInstant().toEpochMilli()
-    }
-    val staticTimeMillis = remember(layer) { System.currentTimeMillis() }
-    val selectedTimeMillis = when (layer.timeline) {
-        MapTimeline.WeatherModel -> selectedWeatherTimeMillis
-        MapTimeline.RadarFrames -> selectedRadarFrame?.time?.times(1000L) ?: System.currentTimeMillis()
-        MapTimeline.Static -> staticTimeMillis
-    }
+    val selectedTimeMillis = remember(layer) { System.currentTimeMillis() }
 
     Box(Modifier.fillMaxSize().clipToBounds().background(MaterialTheme.colorScheme.surface)) {
         NativeWeatherMap(
@@ -226,7 +179,7 @@ fun MapScreen(vm: WeatherViewModel) {
             layer = layer,
             dark = dark,
             focusRequest = focusRequest,
-            radarTileTemplate = radarTileTemplate,
+            radarTileTemplate = null,
             selectedTimeMillis = selectedTimeMillis,
             onPointSelected = { latitude, longitude, x, y ->
                 if (layer.id in setOf("precip", "temp", "clouds", "wind", "pressure", "humidity", "dew", "uv", "aqi", "sea")) {
@@ -311,25 +264,6 @@ fun MapScreen(vm: WeatherViewModel) {
                     }
                 )
             }
-        }
-
-        if (layer.timeline != MapTimeline.Static) {
-            MapTimelineControl(
-                layer = layer,
-                offsetDays = forecastOffset,
-                onOffsetDays = { forecastOffset = it.coerceIn(0, 14) },
-                hour = forecastHour,
-                onHour = { forecastHour = it.coerceIn(0, 23) },
-                frames = radarFrames,
-                frameIndex = radarIndex,
-                onFrameIndex = { radarIndex = it.coerceIn(0, radarFrames.lastIndex.coerceAtLeast(0)) },
-                playing = radarPlaying,
-                onTogglePlaying = { radarPlaying = !radarPlaying },
-                selectedTimeMillis = selectedTimeMillis,
-                modifier = Modifier.align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .padding(start = 84.dp, end = 12.dp, bottom = bottomInset + 10.dp)
-            )
         }
     }
 
