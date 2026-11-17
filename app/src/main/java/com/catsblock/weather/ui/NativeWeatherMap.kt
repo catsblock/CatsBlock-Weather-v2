@@ -97,6 +97,8 @@ internal fun NativeWeatherMap(
     var rainParticles by remember { mutableStateOf<List<RadarParticlePoint>>(emptyList()) }
     var loaded by remember { mutableStateOf(false) }
     var failed by remember { mutableStateOf(false) }
+    var tilesFinished by remember { mutableStateOf(false) }
+    var useFallbackBase by remember { mutableStateOf(false) }
     var retryCount by remember { mutableIntStateOf(0) }
     var retryRequest by remember { mutableIntStateOf(0) }
     var centeredCityId by remember { mutableStateOf<String?>(null) }
@@ -124,6 +126,7 @@ internal fun NativeWeatherMap(
             MapView(viewContext).also { nativeView ->
                 nativeView.onCreate(Bundle())
                 nativeView.addOnDidFinishLoadingMapListener {
+                    tilesFinished = true
                     failed = false
                     retryCount = 0
                     currentOnMapReady(true)
@@ -143,9 +146,10 @@ internal fun NativeWeatherMap(
                             gridOverlay = null
                             featureOverlay?.close()
                             featureOverlay = null
-                            map?.setStyle(Style.Builder().fromJson(baseStyleJson())) { style ->
+                            map?.setStyle(Style.Builder().fromJson(baseStyleJson(useFallbackBase))) { style ->
                                 loaded = true
                                 failed = false
+                                currentOnMapReady(true)
                                 applyMapAppearance(style, dark)
                                 overlayManager = NativeWeatherOverlayManager(style, mapScope)
                                 gridOverlay = NativeWeatherGridOverlay(style, mapScope)
@@ -173,9 +177,10 @@ internal fun NativeWeatherMap(
                     nativeMap.uiSettings.isAttributionEnabled = false
                     nativeMap.uiSettings.isCompassEnabled = true
                     nativeMap.uiSettings.isRotateGesturesEnabled = true
-                    nativeMap.setStyle(Style.Builder().fromJson(baseStyleJson())) { style ->
+                    nativeMap.setStyle(Style.Builder().fromJson(baseStyleJson(useFallbackBase))) { style ->
                         loaded = true
                         failed = false
+                        currentOnMapReady(true)
                         nativeMap.addOnMapClickListener { coordinate ->
                             val point = nativeMap.projection.toScreenLocation(coordinate)
                             currentOnPointSelected(
@@ -274,14 +279,42 @@ internal fun NativeWeatherMap(
         gridOverlay = null
         featureOverlay?.close()
         featureOverlay = null
-        map?.setStyle(Style.Builder().fromJson(baseStyleJson())) { style ->
+        tilesFinished = false
+        map?.setStyle(Style.Builder().fromJson(baseStyleJson(useFallbackBase))) { style ->
             loaded = true
             failed = false
+            currentOnMapReady(true)
             applyMapAppearance(style, dark)
             overlayManager = NativeWeatherOverlayManager(style, mapScope)
             gridOverlay = NativeWeatherGridOverlay(style, mapScope)
             val context = mapView?.context?.applicationContext
             if (context != null) featureOverlay = NativeWeatherFeatureOverlay(style, mapScope, context)
+        }
+    }
+
+    LaunchedEffect(map, loaded, useFallbackBase, retryRequest) {
+        val nativeMap = map ?: return@LaunchedEffect
+        if (!loaded || tilesFinished) return@LaunchedEffect
+        kotlinx.coroutines.delay(8000L)
+        if (tilesFinished) return@LaunchedEffect
+        if (!useFallbackBase) {
+            useFallbackBase = true
+            overlayManager?.close()
+            overlayManager = null
+            gridOverlay?.close()
+            gridOverlay = null
+            featureOverlay?.close()
+            featureOverlay = null
+            nativeMap.setStyle(Style.Builder().fromJson(baseStyleJson(true))) { style ->
+                applyMapAppearance(style, dark)
+                overlayManager = NativeWeatherOverlayManager(style, mapScope)
+                gridOverlay = NativeWeatherGridOverlay(style, mapScope)
+                mapView?.context?.applicationContext?.let { context ->
+                    featureOverlay = NativeWeatherFeatureOverlay(style, mapScope, context)
+                }
+            }
+        } else {
+            failed = true
         }
     }
 
@@ -508,10 +541,10 @@ private fun applyMapAppearance(style: Style, dark: Boolean) {
     }
 }
 
-private fun baseStyleJson(): String {
+private fun baseStyleJson(useFallback: Boolean): String {
     val source = JSONObject()
         .put("type", "raster")
-        .put("tiles", JSONArray().put("https://tile.openstreetmap.org/{z}/{x}/{y}.png"))
+        .put("tiles", JSONArray().put(if (useFallback) "https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png" else "https://tile.openstreetmap.org/{z}/{x}/{y}.png"))
         .put("tileSize", 256)
         .put("maxzoom", 19)
         .put("attribution", "© OpenStreetMap contributors")
