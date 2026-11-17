@@ -11,7 +11,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Umbrella
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
@@ -84,6 +90,16 @@ fun buildPrecipitationForecast(bundle: WeatherBundle): PrecipitationForecast? {
     return PrecipitationForecast(values, raining, start, end, peak, now)
 }
 
+private fun precipitationMeasurements(bundle: WeatherBundle, forecast: PrecipitationForecast, total: Int): List<ChartSample> {
+    val last = (total - 1).toLong()
+    val slots = bundle.rain.sortedBy { it.time }.mapNotNull { slot ->
+        val minute = java.time.Duration.between(forecast.now, slot.time.minusMinutes(8)).toMinutes()
+        if (minute in 0L..last) ChartSample(minute, slot.mm * 4.0) else null
+    }
+    val edges = listOf(ChartSample(0L, forecast.values[0]), ChartSample(last, forecast.values[total - 1]))
+    return (edges + slots).sortedBy { it.timestamp }.distinctBy { it.timestamp }
+}
+
 private fun durationText(minutes: Int): String {
     val m = max(1, minutes)
     val min = tr("min")
@@ -144,6 +160,10 @@ fun PrecipitationCard(bundle: WeatherBundle, modifier: Modifier = Modifier) {
     val scale = max(forecast.values.take(total).maxOrNull() ?: 0.0, 2.5)
     val light = Color(0xFFBFE3FF)
     val deep = Color(0xFF3D8BFF)
+    val measured = remember(bundle, total) { precipitationMeasurements(bundle, forecast, total) }
+    val curve = remember(measured) { monotoneChartSegments(measured, 10) }
+    val reveal = remember { Animatable(0f) }
+    LaunchedEffect(Unit) { reveal.animateTo(1f, tween(650)) }
 
     GlassCard(modifier.fillMaxWidth()) {
         CardHeader(Icons.Rounded.Umbrella, tr("Precipitation"))
@@ -172,27 +192,33 @@ fun PrecipitationCard(bundle: WeatherBundle, modifier: Modifier = Modifier) {
                 drawLine(Color.White.copy(alpha = 0.10f), Offset(0f, y), Offset(size.width, y), 1.dp.toPx())
             }
             drawLine(Color.White.copy(alpha = 0.24f), Offset(0f, bottom), Offset(size.width, bottom), 1.dp.toPx())
-            val points = (0 until total).map { index ->
-                val value = forecast.values[index].coerceIn(0.0, scale).toFloat()
-                Offset(size.width * index / (total - 1).coerceAtLeast(1), bottom - chartHeight * value / scale.toFloat())
-            }
-            val line = Path().apply {
-                moveTo(points.first().x, points.first().y)
-                points.drop(1).forEach { lineTo(it.x, it.y) }
-            }
-            val area = Path().apply {
-                moveTo(points.first().x, bottom)
-                lineTo(points.first().x, points.first().y)
-                points.drop(1).forEach { lineTo(it.x, it.y) }
-                lineTo(points.last().x, bottom)
-                close()
-            }
-            drawPath(area, Brush.verticalGradient(listOf(deep.copy(alpha = 0.24f), deep.copy(alpha = 0.015f)), topPadding, bottom))
-            drawPath(line, Brush.horizontalGradient(listOf(light, deep)), style = Stroke(width = 2.5.dp.toPx(), cap = androidx.compose.ui.graphics.StrokeCap.Round))
-            for (index in 0 until total step 15) {
-                val point = points[index]
-                val value = forecast.values[index]
-                drawCircle(lerp(light, deep, (value / scale).coerceIn(0.0, 1.0).toFloat()), 2.1.dp.toPx(), point)
+            val span = (total - 1).coerceAtLeast(1).toFloat()
+            fun xOf(minute: Long) = size.width * minute.toFloat() / span
+            fun yOf(value: Double) = bottom - chartHeight * value.coerceIn(0.0, scale).toFloat() / scale.toFloat()
+            val points = curve.flatten().filter { it.timestamp in 0L..(total - 1).toLong() }.map { Offset(xOf(it.timestamp), yOf(it.value)) }
+            if (points.size < 2) return@Canvas
+            clipRect(right = size.width * reveal.value) {
+                val line = Path().apply {
+                    moveTo(points.first().x, points.first().y)
+                    points.drop(1).forEach { lineTo(it.x, it.y) }
+                }
+                val area = Path().apply {
+                    moveTo(points.first().x, bottom)
+                    lineTo(points.first().x, points.first().y)
+                    points.drop(1).forEach { lineTo(it.x, it.y) }
+                    lineTo(points.last().x, bottom)
+                    close()
+                }
+                drawPath(area, Brush.verticalGradient(listOf(deep.copy(alpha = 0.22f), deep.copy(alpha = 0.012f)), topPadding, bottom))
+                drawPath(
+                    line,
+                    Brush.horizontalGradient(listOf(light, deep)),
+                    style = Stroke(width = 2.5.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
+                )
+                measured.forEach { sample ->
+                    val value = sample.value ?: return@forEach
+                    drawCircle(lerp(light, deep, (value / scale).coerceIn(0.0, 1.0).toFloat()), 2.4.dp.toPx(), Offset(xOf(sample.timestamp), yOf(value)))
+                }
             }
         }
         Spacer(Modifier.height(8.dp))
