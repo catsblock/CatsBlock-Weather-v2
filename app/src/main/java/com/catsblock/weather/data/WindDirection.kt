@@ -1,35 +1,74 @@
 package com.catsblock.weather.data
 
-import org.json.JSONArray
-import org.json.JSONObject
-import kotlin.math.atan2
-import kotlin.math.cos
-import kotlin.math.hypot
-import kotlin.math.sin
+import com.catsblock.weather.i18n.AppLanguage
+import com.catsblock.weather.i18n.I18n
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Test
 
-fun normalizeWindDirection(degrees: Double?): Double? {
-    if (degrees == null || !degrees.isFinite()) return null
-    return ((degrees % 360.0) + 360.0) % 360.0
-}
+class WindDirectionTest {
+    @Test
+    fun normalizesAnglesIntoTheGeographicRange() {
+        assertEquals(0.0, normalizeWindDirection(0.0)!!, 0.0)
+        assertEquals(0.0, normalizeWindDirection(360.0)!!, 0.0)
+        assertEquals(315.0, normalizeWindDirection(-45.0)!!, 0.0)
+        assertEquals(5.0, normalizeWindDirection(725.0)!!, 0.0)
+    }
 
-fun circularMeanWindDirection(directions: Iterable<Double?>): Double? {
-    val normalized = directions.mapNotNull(::normalizeWindDirection)
-    if (normalized.isEmpty()) return null
-    val x = normalized.sumOf { cos(Math.toRadians(it)) }
-    val y = normalized.sumOf { sin(Math.toRadians(it)) }
-    if (hypot(x, y) < 1e-9) return null
-    return normalizeWindDirection(Math.toDegrees(atan2(y, x)))
-}
+    @Test
+    fun missingAndNonFiniteDirectionsRemainUnavailable() {
+        assertNull(normalizeWindDirection(null))
+        assertNull(normalizeWindDirection(Double.NaN))
+        assertNull(normalizeWindDirection(Double.POSITIVE_INFINITY))
+        assertNull(normalizeWindDirection(Double.NEGATIVE_INFINITY))
+    }
 
-fun windDirectionLabel(degrees: Double?): String =
-    normalizeWindDirection(degrees)?.let(::compassLabel) ?: "—"
+    @Test
+    fun cardinalAndIntercardinalAnglesKeepGeographicMeanings() {
+        val previous = I18n.lang
+        I18n.lang = AppLanguage.English
+        try {
+            val cases = listOf(
+                0.0 to "N",
+                45.0 to "NE",
+                90.0 to "E",
+                135.0 to "SE",
+                180.0 to "S",
+                225.0 to "SW",
+                270.0 to "W",
+                315.0 to "NW"
+            )
+            cases.forEach { (degrees, expected) ->
+                assertEquals(expected, compassLabel(normalizeWindDirection(degrees)!!))
+            }
+        } finally {
+            I18n.lang = previous
+        }
+    }
 
-fun JSONObject.optWindDirection(key: String): Double? {
-    if (!has(key) || isNull(key)) return null
-    return normalizeWindDirection(optDouble(key, Double.NaN))
-}
+    @Test
+    fun circularMeanCrossesNorthAndIgnoresUnavailableDirections() {
+        assertEquals(0.0, circularMeanWindDirection(listOf(350.0, 10.0, null))!!, 1e-8)
+        assertEquals(90.0, circularMeanWindDirection(listOf(null, 90.0, Double.NaN))!!, 1e-8)
+    }
 
-fun JSONArray.optWindDirection(index: Int): Double? {
-    if (index !in 0 until length() || isNull(index)) return null
-    return normalizeWindDirection(optDouble(index, Double.NaN))
+    @Test
+    fun emptyOrOpposingDirectionsStayUnavailable() {
+        assertNull(circularMeanWindDirection(emptyList()))
+        assertNull(circularMeanWindDirection(listOf(null, Double.NaN)))
+        assertNull(circularMeanWindDirection(listOf(0.0, 180.0)))
+    }
+
+    @Test
+    fun compassKeepsDegreeAndLabelConsistentForReferenceAngles() {
+        val previous = I18n.lang
+        I18n.lang = AppLanguage.English
+        try {
+            listOf(0.0 to "N", 90.0 to "E", 180.0 to "S", 270.0 to "W", 330.0 to "NNW").forEach { (degrees, expected) ->
+                assertEquals(expected, windDirectionLabel(degrees))
+            }
+        } finally {
+            I18n.lang = previous
+        }
+    }
 }
