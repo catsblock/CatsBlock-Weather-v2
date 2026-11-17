@@ -21,7 +21,7 @@ enum class AppLanguage(val code: String, val label: String, val locale: Locale) 
     Dutch("nl", "Nederlands", Locale("nl", "NL")),
     Romanian("ro", "Română", Locale("ro", "RO")),
     Vietnamese("vi", "Tiếng Việt", Locale("vi", "VN")),
-    ChineseSimplified("zh-CN", "简体中文", Locale.SIMPLIFIED_CHINESE);
+    ChineseSimplified("zh-CN", "中文", Locale.SIMPLIFIED_CHINESE);
 
     val isRightToLeft: Boolean get() = this == Arabic
 
@@ -933,4 +933,4 @@ private val travelStrings: Map<String, Array<out String>> = mapOf(
 )
 
 private val table: Map<String, Array<out String>> =
-    mapStrings + adminStrings + astronomyStrings + alertStrings + commonStrings + forecastStrings + featureStrings + policyStrings + cloudStrings + policyTable + detailStrings + sunMoonStrings + shellStrings + developerStrings + appearanceStrings + travelStrings + agentStrings + newsStrings + themeStrings
+    mapStrings + radarMapStrings + adminStrings + astronomyStrings + alertStrings + commonStrings + forecastStrings + featureStrings + policyStrings + cloudStrings + policyTable + detailStrings + sunMoonStrings + shellStrings + developerStrings + appearanceStrings + travelStrings + agentStrings + newsStrings + themeStrings
