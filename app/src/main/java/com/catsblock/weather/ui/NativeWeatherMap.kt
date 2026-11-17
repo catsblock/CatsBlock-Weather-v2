@@ -1,6 +1,15 @@
 package com.catsblock.weather.ui
 
 import android.annotation.SuppressLint
+import android.util.Log
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.runtime.key
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.coroutines.resume
 import android.graphics.Bitmap
 import android.os.Handler
 import android.os.Looper
@@ -85,66 +94,74 @@ internal fun NativeWeatherMap(
     val currentOnMapReady by rememberUpdatedState(onMapReady)
     val currentLayer by rememberUpdatedState(layer)
     var webView by remember { mutableStateOf<WebView?>(null) }
-    var pageReady by remember { mutableStateOf(false) }
-    var mapReady by remember { mutableStateOf(false) }
-    var failed by remember { mutableStateOf(false) }
-    var layerState by remember { mutableStateOf("ready") }
-    var retryRequest by remember { mutableIntStateOf(0) }
+    var load by remember { mutableStateOf(MapLoadState().start()) }
+    var generation by remember { mutableIntStateOf(0) }
+    var pageRetry by remember { mutableIntStateOf(0) }
+    var layerRetry by remember { mutableIntStateOf(0) }
+    var handledLayerRetry by remember { mutableIntStateOf(0) }
+    var rendererLost by remember { mutableStateOf(false) }
     var centeredCityId by remember { mutableStateOf<String?>(null) }
-    val bridge = remember {
+    val pageReady = load.pageReady
+    val bridge = remember(generation) {
         MapBridge { latitude, longitude, x, y -> currentOnPointSelected(latitude, longitude, x, y) }
     }
 
-    AndroidView(
-        modifier = modifier,
-        factory = { viewContext ->
-            WebView(viewContext).also { view ->
-                view.setBackgroundColor(if (dark) 0xFF2B2D31.toInt() else 0xFFE8E6E1.toInt())
-                view.overScrollMode = android.view.View.OVER_SCROLL_NEVER
-                view.isVerticalScrollBarEnabled = false
-                view.isHorizontalScrollBarEnabled = false
-                view.settings.apply {
-                    javaScriptEnabled = true
-                    domStorageEnabled = true
-                    allowFileAccess = false
-                    allowContentAccess = false
-                    mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
-                    cacheMode = WebSettings.LOAD_DEFAULT
-                    setSupportZoom(false)
-                    builtInZoomControls = false
-                    displayZoomControls = false
-                    mediaPlaybackRequiresUserGesture = true
-                }
-                view.addJavascriptInterface(bridge, "CatsBlockBridge")
-                view.webViewClient = object : WebViewClient() {
-                    override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean = true
+    key(generation) {
+        AndroidView(
+            modifier = modifier,
+            factory = { viewContext ->
+                WebView(viewContext).also { view ->
+                    view.setBackgroundColor(if (dark) 0xFF2B2D31.toInt() else 0xFFE8E6E1.toInt())
+                    view.overScrollMode = android.view.View.OVER_SCROLL_NEVER
+                    view.isVerticalScrollBarEnabled = false
+                    view.isHorizontalScrollBarEnabled = false
+                    view.settings.apply {
+                        javaScriptEnabled = true
+                        domStorageEnabled = true
+                        allowFileAccess = false
+                        allowContentAccess = false
+                        mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+                        cacheMode = WebSettings.LOAD_DEFAULT
+                        setSupportZoom(false)
+                        builtInZoomControls = false
+                        displayZoomControls = false
+                        mediaPlaybackRequiresUserGesture = true
+                    }
+                    view.addJavascriptInterface(bridge, "CatsBlockBridge")
+                    view.webViewClient = object : WebViewClient() {
+                        override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean = true
 
-                    override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
-                        if (request.isForMainFrame && bridge.active) {
-                            failed = true
-                            currentOnMapReady(true)
+                        override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
+                            if (request.isForMainFrame && bridge.active) load = load.onBaseFailed(MapFailure.SCRIPT)
+                        }
+
+                        override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
+                            if (bridge.active) {
+                                rendererLost = true
+                                load = load.onBaseFailed(MapFailure.RENDERER)
+                            }
+                            return true
                         }
                     }
-
-                    override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
-                        if (bridge.active) {
-                            failed = true
-                            currentOnMapReady(true)
-                        }
-                        return true
+                    val html = buildMapPage(viewContext)
+                    if (html == null) {
+                        view.post { if (bridge.active) load = load.onBaseFailed(MapFailure.BOOT) }
+                    } else {
+                        view.loadDataWithBaseURL(MAP_BASE_URL, html, "text/html", "UTF-8", null)
                     }
+                    webView = view
                 }
-                val html = buildMapPage(viewContext)
-                if (html == null) {
-                    failed = true
-                    currentOnMapReady(true)
-                } else {
-                    view.loadDataWithBaseURL(MAP_BASE_URL, html, "text/html", "UTF-8", null)
-                }
-                webView = view
+            },
+            onRelease = { view ->
+                releaseMapView(view, bridge)
+                if (webView === view) webView = null
             }
-        }
-    )
+        )
+    }
+
+    DisposableEffect(Unit) {
+        onDispose { currentOnMapReady(false) }
+    }
 
     DisposableEffect(webView, lifecycleOwner) {
         val view = webView
@@ -163,56 +180,75 @@ internal fun NativeWeatherMap(
                 }
             }
             lifecycleOwner.lifecycle.addObserver(observer)
-            onDispose {
-                lifecycleOwner.lifecycle.removeObserver(observer)
-                bridge.active = false
-                view.removeJavascriptInterface("CatsBlockBridge")
-                view.stopLoading()
-                view.webViewClient = WebViewClient()
-                view.loadUrl("about:blank")
-                view.removeAllViews()
-                view.destroy()
-                webView = null
-                pageReady = false
-                mapReady = false
-                currentOnMapReady(false)
-            }
+            onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
         }
     }
 
-    LaunchedEffect(webView, retryRequest) {
+    LaunchedEffect(load.finishedBaseLoading) {
+        currentOnMapReady(load.finishedBaseLoading)
+    }
+
+    LaunchedEffect(webView, pageRetry) {
         val view = webView ?: return@LaunchedEffect
+        var failures = 0
+        var loggedDiagnostics = 0
         while (bridge.active) {
-            val raw = runCatching { view.evalString("window.CBStatus ? CBStatus() : ''") }.getOrNull()
+            if (!lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
+                delay(1000L)
+                continue
+            }
+            val raw = withTimeoutOrNull(STATUS_POLL_TIMEOUT_MILLIS) { view.evalString("window.CBStatus ? CBStatus() : ''") }
             val json = raw?.takeIf { it.isNotEmpty() && it != "null" }?.let {
                 runCatching { JSONObject(JSONObject("{\"v\":$it}").getString("v")) }.getOrNull()
             }
-            if (json != null) {
-                if (json.optBoolean("page") && !pageReady) pageReady = true
-                if (json.optBoolean("ready") && !mapReady) {
-                    mapReady = true
-                    failed = false
-                    currentOnMapReady(true)
+            if (json == null) {
+                failures++
+                if (load.pageReady && failures >= MAX_STATUS_FAILURES) load = load.onBaseFailed(MapFailure.BRIDGE)
+            } else {
+                failures = 0
+                if (json.optBoolean("page")) load = load.onPageReady()
+                if (json.optBoolean("ready")) {
+                    load = load.onBaseReady()
+                } else {
+                    when (json.optString("error")) {
+                        "script" -> load = load.onBaseFailed(MapFailure.SCRIPT)
+                        "boot" -> load = load.onBaseFailed(MapFailure.BOOT)
+                        "tiles" -> load = load.onBaseFailed(MapFailure.BASE_TILES)
+                    }
                 }
-                val error = json.optString("error")
-                if (error.isNotEmpty() && !mapReady) {
-                    failed = true
-                    currentOnMapReady(true)
+                if (json.optString("layerId") == currentLayer.id) {
+                    when (json.optString("layer")) {
+                        "loading" -> load = load.onLayerLoading()
+                        "ready" -> load = load.onLayerActive()
+                        "error" -> load = load.onLayerFailed()
+                    }
                 }
-                val state = json.optString("layer")
-                if (state == "loading" || state == "ready" || state == "error") layerState = state
+                val diagnostics = json.optJSONArray("diag")
+                if (diagnostics != null) {
+                    while (loggedDiagnostics < diagnostics.length()) {
+                        val entry = diagnostics.optJSONObject(loggedDiagnostics)
+                        if (entry != null) Log.w(MAP_LOG_TAG, "${entry.optString("c")}:${entry.optString("k")}")
+                        loggedDiagnostics++
+                    }
+                }
             }
-            delay(if (mapReady) 800L else 300L)
+            delay(if (load.baseReady && load.layer != LayerLoadState.LOADING) 1000L else 300L)
         }
     }
 
-    LaunchedEffect(webView, retryRequest) {
+    LaunchedEffect(webView, pageRetry) {
         if (webView == null) return@LaunchedEffect
-        delay(15000L)
-        if (!mapReady && bridge.active) {
-            failed = true
-            currentOnMapReady(true)
+        val pageStage = withTimeoutOrNull(PAGE_DEADLINE_MILLIS) {
+            snapshotFlow { load }.first { it.pageReady || it.failure != null }
         }
+        if (pageStage == null) {
+            load = load.onBaseFailed(MapFailure.TIMEOUT)
+            return@LaunchedEffect
+        }
+        val baseStage = withTimeoutOrNull(BASE_DEADLINE_MILLIS) {
+            snapshotFlow { load }.first { it.baseReady || it.failure != null }
+        }
+        if (baseStage == null) load = load.onBaseFailed(MapFailure.TIMEOUT)
     }
 
     LaunchedEffect(pageReady, dark) {
@@ -254,18 +290,23 @@ internal fun NativeWeatherMap(
         view.runScript("CBMap.focus(${selected.lat}, ${selected.lon}, 8, true)")
     }
 
-    LaunchedEffect(layer.id, pageReady, retryRequest) {
+    LaunchedEffect(layer.id, pageReady, layerRetry) {
+        load = load.onLayerSelected(layer.id)
         val view = webView ?: return@LaunchedEffect
         if (!pageReady) return@LaunchedEffect
         val id = layer.id
-        if (retryRequest > 0) view.runScript("CBMap.reloadLayer(${JSONObject.quote(id)})") else view.runScript("CBMap.setLayer(${JSONObject.quote(id)})")
+        val reload = layerRetry > handledLayerRetry
+        handledLayerRetry = layerRetry
+        view.runScript(if (reload) "CBMap.reloadLayer(${JSONObject.quote(id)})" else "CBMap.setLayer(${JSONObject.quote(id)})")
         if (id == "fires" || id == "alerts" || id == "drought") {
             val geoJson = runCatching {
-                withContext(Dispatchers.IO) {
-                    when (id) {
-                        "fires" -> fireCollection(FireHotspots.json(view.context.applicationContext))
-                        "alerts" -> AlertFeed.json()?.toString(Charsets.UTF_8)
-                        else -> DroughtFeed.json()?.toString(Charsets.UTF_8)
+                withTimeoutOrNull(FEATURE_DEADLINE_MILLIS) {
+                    withContext(Dispatchers.IO) {
+                        when (id) {
+                            "fires" -> fireCollection(FireHotspots.json(view.context.applicationContext))
+                            "alerts" -> AlertFeed.json()?.toString(Charsets.UTF_8)
+                            else -> DroughtFeed.json()?.toString(Charsets.UTF_8)
+                        }
                     }
                 }
             }.getOrNull()
@@ -275,34 +316,45 @@ internal fun NativeWeatherMap(
         }
     }
 
+    val retryBase: () -> Unit = {
+        val view = webView
+        when {
+            rendererLost || view == null -> {
+                rendererLost = false
+                webView = null
+                load = load.start()
+                generation++
+            }
+            load.pageReady -> {
+                load = load.restartBase()
+                view.runScript("CBMap.reloadBase()")
+            }
+            else -> {
+                load = load.start()
+                val html = buildMapPage(view.context)
+                if (html == null) load = load.onBaseFailed(MapFailure.BOOT)
+                else view.loadDataWithBaseURL(MAP_BASE_URL, html, "text/html", "UTF-8", null)
+            }
+        }
+        pageRetry++
+    }
+
     Box(modifier = modifier) {
-        NativeMapLegend(layer, Modifier.align(Alignment.TopCenter).padding(top = 10.dp))
-        if (failed || layerState == "error") {
-            Surface(
-                modifier = Modifier.align(Alignment.Center).clickable {
-                    if (failed) {
-                        failed = false
-                        mapReady = false
-                        currentOnMapReady(false)
-                        pageReady = false
-                        webView?.let { view ->
-                            val html = buildMapPage(view.context)
-                            if (html != null) view.loadDataWithBaseURL(MAP_BASE_URL, html, "text/html", "UTF-8", null)
-                        }
-                    }
-                    layerState = "loading"
-                    retryRequest++
-                },
-                shape = RoundedCornerShape(12.dp),
-                color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                tonalElevation = 4.dp
-            ) {
-                Column(Modifier.padding(horizontal = 18.dp, vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(tr("Could not load the weather. Check your connection and try again."), color = MaterialTheme.colorScheme.onSurface)
-                    Text(tr("Retry"), Modifier.padding(top = 6.dp), color = MaterialTheme.colorScheme.primary)
+        Column(
+            Modifier.align(Alignment.TopCenter).padding(top = 10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)
+        ) {
+            NativeMapLegend(layer, Modifier)
+            if (load.baseReady && load.layer == LayerLoadState.LOADING) LayerProgressPill()
+            if (load.baseReady && load.layer == LayerLoadState.FAILED) {
+                MapNotice(Modifier) {
+                    load = load.onLayerSelected(layer.id)
+                    layerRetry++
                 }
             }
         }
+        if (load.phase == MapLoadPhase.ERROR) MapNotice(Modifier.align(Alignment.Center), retryBase)
         if (showAttribution) {
             val sourceAttribution = when (layer.id) {
                 "precip" -> "RainViewer" to "https://www.rainviewer.com/"
@@ -342,6 +394,49 @@ internal fun NativeWeatherMap(
     }
 }
 
+@Composable
+private fun MapNotice(modifier: Modifier, onRetry: () -> Unit) {
+    Surface(
+        modifier = modifier.clickable(onClick = onRetry),
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        tonalElevation = 4.dp
+    ) {
+        Column(Modifier.padding(horizontal = 18.dp, vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(tr("Could not load the weather. Check your connection and try again."), color = MaterialTheme.colorScheme.onSurface)
+            Text(tr("Retry"), Modifier.padding(top = 6.dp), color = MaterialTheme.colorScheme.primary)
+        }
+    }
+}
+
+@Composable
+private fun LayerProgressPill() {
+    Surface(
+        shape = RoundedCornerShape(50),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+        tonalElevation = 2.dp
+    ) {
+        CircularProgressIndicator(Modifier.padding(8.dp).size(18.dp), strokeWidth = 2.dp)
+    }
+}
+
+private fun releaseMapView(view: WebView, bridge: MapBridge) {
+    bridge.active = false
+    view.removeJavascriptInterface("CatsBlockBridge")
+    view.stopLoading()
+    view.webViewClient = WebViewClient()
+    view.loadUrl("about:blank")
+    view.removeAllViews()
+    view.destroy()
+}
+
+private const val MAP_LOG_TAG = "CatsBlockMap"
+private const val PAGE_DEADLINE_MILLIS = 15000L
+private const val BASE_DEADLINE_MILLIS = 12000L
+private const val FEATURE_DEADLINE_MILLIS = 20000L
+private const val STATUS_POLL_TIMEOUT_MILLIS = 2000L
+private const val MAX_STATUS_FAILURES = 8
+
 private const val MAP_BASE_URL = "https://github.com/catsblock/CatsBlock-Weather-v2/"
 
 private const val MAP_PAGE_STYLE = """
@@ -352,6 +447,11 @@ body.dark .base-pane{filter:brightness(0.72) saturate(0.8) contrast(1.05)}
 #grid{position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none;z-index:450;opacity:0;transition:opacity 280ms ease}
 #grid.visible{opacity:1}
 .city-dot{width:14px;height:14px;border-radius:50%;background:#1b6ef3;border:3px solid #fff;box-sizing:border-box;box-shadow:0 1px 4px rgba(0,0,0,.45)}
+.leaflet-pane,.leaflet-tile,.leaflet-marker-icon,.leaflet-tile-container,.leaflet-pane>svg,.leaflet-pane>canvas,.leaflet-layer{position:absolute;left:0;top:0}
+.leaflet-container{overflow:hidden;touch-action:none}
+.leaflet-container img.leaflet-tile{max-width:none!important;max-height:none!important}
+.leaflet-tile-pane{z-index:200}.leaflet-overlay-pane{z-index:400}.leaflet-marker-pane{z-index:600}
+.leaflet-zoom-animated{transform-origin:0 0}
 .leaflet-fade-anim .leaflet-tile{will-change:opacity}
 .overlay-tiles{transition:opacity 320ms ease}
 """
@@ -383,10 +483,10 @@ private class MapBridge(
     }
 }
 
-private suspend fun WebView.evalString(script: String): String? = kotlin.coroutines.suspendCoroutine { continuation ->
+private suspend fun WebView.evalString(script: String): String? = suspendCancellableCoroutine { continuation ->
     post {
         evaluateJavascript(script) { raw ->
-            continuation.resumeWith(Result.success(raw))
+            if (continuation.isActive) continuation.resume(raw)
         }
     }
 }
