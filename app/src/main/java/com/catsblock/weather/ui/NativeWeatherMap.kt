@@ -1,8 +1,16 @@
 package com.catsblock.weather.ui
 
-import android.os.Bundle
-import android.content.ComponentCallbacks2
-import android.content.res.Configuration
+import android.annotation.SuppressLint
+import android.graphics.Bitmap
+import android.os.Handler
+import android.os.Looper
+import android.webkit.JavascriptInterface
+import android.webkit.RenderProcessGoneDetail
+import android.webkit.WebResourceError
+import android.webkit.WebResourceRequest
+import android.webkit.WebSettings
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -21,14 +29,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -40,33 +46,26 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import com.catsblock.weather.data.RadarParticlePoint
-import com.catsblock.weather.data.RadarProbe
-import com.catsblock.weather.data.RainViewerPalette
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.catsblock.weather.data.AlertFeed
 import com.catsblock.weather.data.City
+import com.catsblock.weather.data.DroughtFeed
+import com.catsblock.weather.data.FireHotspots
+import com.catsblock.weather.data.RainViewerPalette
 import com.catsblock.weather.i18n.tr
-import okhttp3.Cache
-import okhttp3.OkHttpClient
-import org.maplibre.android.annotations.MarkerOptions
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
-import org.maplibre.android.MapLibre
-import org.maplibre.android.camera.CameraUpdateFactory
 import org.maplibre.android.geometry.LatLng
-import org.maplibre.android.maps.MapLibreMap
-import org.maplibre.android.annotations.Marker
-import org.maplibre.android.maps.MapView
-import org.maplibre.android.maps.Style
-import org.maplibre.android.style.layers.PropertyFactory
-import org.maplibre.android.module.http.HttpRequestUtil
-import java.io.File
-import kotlinx.coroutines.launch
 
 @Composable
+@SuppressLint("SetJavaScriptEnabled")
 internal fun NativeWeatherMap(
     city: City?,
     layer: MapLayer,
@@ -82,307 +81,202 @@ internal fun NativeWeatherMap(
     modifier: Modifier = Modifier
 ) {
     val lifecycleOwner = LocalLifecycleOwner.current
-    val density = LocalDensity.current
     val uriHandler = LocalUriHandler.current
-    val mapScope = rememberCoroutineScope()
     val currentOnPointSelected by rememberUpdatedState(onPointSelected)
     val currentOnMapReady by rememberUpdatedState(onMapReady)
-    var mapView by remember { mutableStateOf<MapView?>(null) }
-    var map by remember { mutableStateOf<MapLibreMap?>(null) }
-    var cityMarker by remember { mutableStateOf<Marker?>(null) }
-    var overlayManager by remember { mutableStateOf<NativeWeatherOverlayManager?>(null) }
-    var memoryCallbacks by remember { mutableStateOf<ComponentCallbacks2?>(null) }
-    var gridOverlay by remember { mutableStateOf<NativeWeatherGridOverlay?>(null) }
-    var featureOverlay by remember { mutableStateOf<NativeWeatherFeatureOverlay?>(null) }
-    var rainParticles by remember { mutableStateOf<List<RadarParticlePoint>>(emptyList()) }
-    var loaded by remember { mutableStateOf(false) }
+    val currentLayer by rememberUpdatedState(layer)
+    var webView by remember { mutableStateOf<WebView?>(null) }
+    var pageReady by remember { mutableStateOf(false) }
+    var mapReady by remember { mutableStateOf(false) }
     var failed by remember { mutableStateOf(false) }
-    var tilesFinished by remember { mutableStateOf(false) }
-    var useFallbackBase by remember { mutableStateOf(false) }
-    var retryCount by remember { mutableIntStateOf(0) }
+    var layerState by remember { mutableStateOf("ready") }
     var retryRequest by remember { mutableIntStateOf(0) }
     var centeredCityId by remember { mutableStateOf<String?>(null) }
+    val bridge = remember {
+        MapBridge(
+            onPageReadyCallback = { pageReady = true },
+            onMapReadyCallback = {
+                mapReady = true
+                failed = false
+                currentOnMapReady(true)
+            },
+            onMapErrorCallback = {
+                failed = true
+                currentOnMapReady(true)
+            },
+            onLayerStateCallback = { layerState = it },
+            onPointCallback = { latitude, longitude, x, y -> currentOnPointSelected(latitude, longitude, x, y) }
+        )
+    }
 
     AndroidView(
         modifier = modifier,
         factory = { viewContext ->
-            MapLibre.getInstance(viewContext)
-            val cacheDirectory = File(viewContext.cacheDir, "native-map-http").apply { mkdirs() }
-            val client = OkHttpClient.Builder()
-                .cache(Cache(cacheDirectory, 96L * 1024L * 1024L))
-                .addInterceptor { chain ->
-                    val request = chain.request().newBuilder()
-                        .header("User-Agent", "CatsBlockWeather/2.0 (Android; https://github.com/catsblock/CatsBlock-Weather-v2)")
-                        .build()
-                    val response = chain.proceed(request)
-                    if (response.isSuccessful && request.url.host == "tile.openstreetmap.org" && response.header("Cache-Control") == null) {
-                        response.newBuilder().header("Cache-Control", "public, max-age=604800").build()
-                    } else {
-                        response
+            WebView(viewContext).also { view ->
+                view.setBackgroundColor(if (dark) 0xFF2B2D31.toInt() else 0xFFE8E6E1.toInt())
+                view.overScrollMode = android.view.View.OVER_SCROLL_NEVER
+                view.isVerticalScrollBarEnabled = false
+                view.isHorizontalScrollBarEnabled = false
+                view.settings.apply {
+                    javaScriptEnabled = true
+                    domStorageEnabled = true
+                    allowFileAccess = false
+                    allowContentAccess = false
+                    mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+                    cacheMode = WebSettings.LOAD_DEFAULT
+                    setSupportZoom(false)
+                    builtInZoomControls = false
+                    displayZoomControls = false
+                    mediaPlaybackRequiresUserGesture = true
+                }
+                view.addJavascriptInterface(bridge, "CatsBlockBridge")
+                view.webViewClient = object : WebViewClient() {
+                    override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean = true
+
+                    override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
+                        if (request.isForMainFrame && bridge.active) {
+                            failed = true
+                            currentOnMapReady(true)
+                        }
+                    }
+
+                    override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
+                        if (bridge.active) {
+                            failed = true
+                            currentOnMapReady(true)
+                        }
+                        return true
                     }
                 }
-                .build()
-            HttpRequestUtil.setOkHttpClient(client)
-            MapView(viewContext).also { nativeView ->
-                nativeView.onCreate(Bundle())
-                nativeView.addOnDidFinishLoadingMapListener {
-                    tilesFinished = true
-                    failed = false
-                    retryCount = 0
+                val html = buildMapPage(viewContext)
+                if (html == null) {
+                    failed = true
                     currentOnMapReady(true)
+                } else {
+                    view.loadDataWithBaseURL(MAP_BASE_URL, html, "text/html", "UTF-8", null)
                 }
-                mapView = nativeView
-                nativeView.addOnDidFailLoadingMapListener {
-                    loaded = false
-                    currentOnMapReady(false)
-                    if (retryCount < MAX_MAP_RETRIES) {
-                        retryCount++
-                        failed = false
-                        mapScope.launch {
-                            kotlinx.coroutines.delay(700L * retryCount)
-                            overlayManager?.close()
-                            overlayManager = null
-                            gridOverlay?.close()
-                            gridOverlay = null
-                            featureOverlay?.close()
-                            featureOverlay = null
-                            map?.setStyle(Style.Builder().fromJson(baseStyleJson(useFallbackBase))) { style ->
-                                loaded = true
-                                failed = false
-                                currentOnMapReady(true)
-                                applyMapAppearance(style, dark)
-                                overlayManager = NativeWeatherOverlayManager(style, mapScope)
-                                gridOverlay = NativeWeatherGridOverlay(style, mapScope)
-                                mapView?.context?.applicationContext?.let { context ->
-                                    featureOverlay = NativeWeatherFeatureOverlay(style, mapScope, context)
-                                }
-                            }
-                        }
-                    } else {
-                        failed = true
-                        currentOnMapReady(true)
-                    }
-                }
-                val callback = object : ComponentCallbacks2 {
-                    override fun onTrimMemory(level: Int) {
-                        if (level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL) nativeView.onLowMemory()
-                    }
-                    override fun onLowMemory() = nativeView.onLowMemory()
-                    override fun onConfigurationChanged(newConfig: Configuration) = Unit
-                }
-                memoryCallbacks = callback
-                viewContext.registerComponentCallbacks(callback)
-                nativeView.getMapAsync { nativeMap ->
-                    map = nativeMap
-                    nativeMap.uiSettings.isAttributionEnabled = false
-                    nativeMap.uiSettings.isCompassEnabled = true
-                    nativeMap.uiSettings.isRotateGesturesEnabled = true
-                    nativeMap.setStyle(Style.Builder().fromJson(baseStyleJson(useFallbackBase))) { style ->
-                        loaded = true
-                        failed = false
-                        currentOnMapReady(true)
-                        nativeMap.addOnMapClickListener { coordinate ->
-                            val point = nativeMap.projection.toScreenLocation(coordinate)
-                            currentOnPointSelected(
-                                coordinate.latitude,
-                                coordinate.longitude,
-                                point.x / density.density,
-                                point.y / density.density
-                            )
-                            true
-                        }
-                        applyMapAppearance(style, dark)
-                        overlayManager = NativeWeatherOverlayManager(style, mapScope)
-                        gridOverlay = NativeWeatherGridOverlay(style, mapScope)
-                        featureOverlay = NativeWeatherFeatureOverlay(style, mapScope, viewContext.applicationContext)
-                        applyWeatherOverlay(overlayManager, layer, radarTileTemplate)
-                        (initialCenter ?: city?.let { LatLng(it.lat, it.lon) })?.let { target ->
-                            nativeMap.cameraPosition = org.maplibre.android.camera.CameraPosition.Builder()
-                                .target(target)
-                                .zoom(initialZoom)
-                                .build()
-                            centeredCityId = city?.id
-                        }
-                    }
-                }
-            }
-        },
-        update = { nativeView ->
-            if (mapView !== nativeView) mapView = nativeView
-            map?.style?.let { style ->
-                applyMapAppearance(style, dark)
-                if (overlayManager == null) overlayManager = NativeWeatherOverlayManager(style, mapScope)
-                if (gridOverlay == null) gridOverlay = NativeWeatherGridOverlay(style, mapScope)
-                if (featureOverlay == null) featureOverlay = NativeWeatherFeatureOverlay(style, mapScope, nativeView.context.applicationContext)
-                applyWeatherOverlay(overlayManager, layer, radarTileTemplate)
+                webView = view
             }
         }
     )
 
-    DisposableEffect(mapView, lifecycleOwner) {
-        val nativeView = mapView
-        if (nativeView == null) {
+    DisposableEffect(webView, lifecycleOwner) {
+        val view = webView
+        if (view == null) {
             onDispose { }
         } else {
             val observer = object : DefaultLifecycleObserver {
-                override fun onStart(owner: LifecycleOwner) {
-                    nativeView.onStart()
-                }
-
                 override fun onResume(owner: LifecycleOwner) {
-                    nativeView.onResume()
+                    view.onResume()
+                    view.runScript("window.CBMap && CBMap.setActive(true)")
                 }
 
                 override fun onPause(owner: LifecycleOwner) {
-                    nativeView.onPause()
+                    view.runScript("window.CBMap && CBMap.setActive(false)")
+                    view.onPause()
                 }
-
-                override fun onStop(owner: LifecycleOwner) {
-                    nativeView.onStop()
-                }
-
             }
             lifecycleOwner.lifecycle.addObserver(observer)
-            if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) nativeView.onStart()
-            if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) nativeView.onResume()
+            if (!lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) view.onPause()
             onDispose {
                 lifecycleOwner.lifecycle.removeObserver(observer)
-                memoryCallbacks?.let { nativeView.context.unregisterComponentCallbacks(it) }
-                memoryCallbacks = null
-                overlayManager?.close()
-                overlayManager = null
-                gridOverlay?.close()
-                gridOverlay = null
-                featureOverlay?.close()
-                featureOverlay = null
-                cityMarker = null
-                nativeView.onPause()
-                nativeView.onStop()
-                nativeView.onDestroy()
-                map = null
-                mapView = null
-                loaded = false
+                bridge.active = false
+                view.removeJavascriptInterface("CatsBlockBridge")
+                view.stopLoading()
+                view.webViewClient = WebViewClient()
+                view.loadUrl("about:blank")
+                view.removeAllViews()
+                view.destroy()
+                webView = null
+                pageReady = false
+                mapReady = false
                 currentOnMapReady(false)
             }
         }
     }
 
-    LaunchedEffect(retryRequest, map) {
-        if (retryRequest == 0) return@LaunchedEffect
-        failed = false
-        retryCount = 0
-        loaded = false
-        currentOnMapReady(false)
-        overlayManager?.close()
-        overlayManager = null
-        gridOverlay?.close()
-        gridOverlay = null
-        featureOverlay?.close()
-        featureOverlay = null
-        tilesFinished = false
-        map?.setStyle(Style.Builder().fromJson(baseStyleJson(useFallbackBase))) { style ->
-            loaded = true
-            failed = false
-            currentOnMapReady(true)
-            applyMapAppearance(style, dark)
-            overlayManager = NativeWeatherOverlayManager(style, mapScope)
-            gridOverlay = NativeWeatherGridOverlay(style, mapScope)
-            val context = mapView?.context?.applicationContext
-            if (context != null) featureOverlay = NativeWeatherFeatureOverlay(style, mapScope, context)
-        }
-    }
-
-    LaunchedEffect(map, loaded, useFallbackBase, retryRequest) {
-        val nativeMap = map ?: return@LaunchedEffect
-        if (!loaded || tilesFinished) return@LaunchedEffect
-        kotlinx.coroutines.delay(8000L)
-        if (tilesFinished) return@LaunchedEffect
-        if (!useFallbackBase) {
-            useFallbackBase = true
-            overlayManager?.close()
-            overlayManager = null
-            gridOverlay?.close()
-            gridOverlay = null
-            featureOverlay?.close()
-            featureOverlay = null
-            nativeMap.setStyle(Style.Builder().fromJson(baseStyleJson(true))) { style ->
-                applyMapAppearance(style, dark)
-                overlayManager = NativeWeatherOverlayManager(style, mapScope)
-                gridOverlay = NativeWeatherGridOverlay(style, mapScope)
-                mapView?.context?.applicationContext?.let { context ->
-                    featureOverlay = NativeWeatherFeatureOverlay(style, mapScope, context)
-                }
-            }
-        } else {
+    LaunchedEffect(webView, retryRequest) {
+        if (webView == null) return@LaunchedEffect
+        delay(15000L)
+        if (!mapReady && bridge.active) {
             failed = true
+            currentOnMapReady(true)
         }
     }
 
-    LaunchedEffect(city?.id, map, loaded) {
-        val nativeMap = map ?: return@LaunchedEffect
-        cityMarker?.let(nativeMap::removeMarker)
-        cityMarker = null
-        val selectedCity = city ?: return@LaunchedEffect
-        if (!loaded) return@LaunchedEffect
-        cityMarker = nativeMap.addMarker(
-            MarkerOptions()
-                .position(LatLng(selectedCity.lat, selectedCity.lon))
-                .title(selectedCity.name)
-        )
-        if (centeredCityId == selectedCity.id) return@LaunchedEffect
-        nativeMap.animateCamera(
-            CameraUpdateFactory.newLatLngZoom(LatLng(selectedCity.lat, selectedCity.lon), 6.0),
-            850
-        )
-        centeredCityId = selectedCity.id
+    LaunchedEffect(pageReady, dark) {
+        val view = webView ?: return@LaunchedEffect
+        if (pageReady) view.runScript("CBMap.setDark($dark)")
     }
 
-    LaunchedEffect(focusRequest, city, map, loaded) {
-        if (focusRequest == 0 || !loaded) return@LaunchedEffect
-        val selectedCity = city ?: return@LaunchedEffect
-        map?.animateCamera(CameraUpdateFactory.newLatLngZoom(LatLng(selectedCity.lat, selectedCity.lon), 7.0), 700)
-    }
-
-    val gridLayer = layer.id.takeIf { it in setOf("temp", "clouds", "wind", "pressure", "humidity", "dew", "uv", "aqi", "sea") }
-    val gridTimeKey = if (gridLayer == null) 0L else selectedTimeMillis
-    LaunchedEffect(gridLayer, gridTimeKey, map, loaded) {
-        if (!loaded) return@LaunchedEffect
-        val nativeMap = map ?: return@LaunchedEffect
-        val manager = gridOverlay ?: nativeMap.style?.let { NativeWeatherGridOverlay(it, mapScope).also { created -> gridOverlay = created } }
-            ?: return@LaunchedEffect
-        manager.show(gridLayer, selectedTimeMillis)
-    }
-
-    val featureLayer = layer.id.takeIf { it in setOf("cyclones", "sst", "fires", "alerts", "drought") }
-    LaunchedEffect(featureLayer, map, loaded) {
-        if (!loaded) return@LaunchedEffect
-        val nativeMap = map ?: return@LaunchedEffect
-        var manager = featureOverlay
-        if (manager == null) {
-            val style = nativeMap.style ?: return@LaunchedEffect
-            val context = mapView?.context?.applicationContext ?: return@LaunchedEffect
-            manager = NativeWeatherFeatureOverlay(style, mapScope, context)
-            featureOverlay = manager
+    LaunchedEffect(pageReady) {
+        val view = webView ?: return@LaunchedEffect
+        if (!pageReady) return@LaunchedEffect
+        val start = initialCenter?.let { it.latitude to it.longitude } ?: city?.let { it.lat to it.lon }
+        if (start != null) {
+            val zoom = if (initialCenter != null) initialZoom + 1.0 else 7.0
+            view.runScript("CBMap.focus(${start.first}, ${start.second}, $zoom, false)")
+            centeredCityId = city?.id
         }
-        manager.show(featureLayer)
     }
 
-    LaunchedEffect(layer, selectedTimeMillis, loaded) {
-        if (!loaded || layer != MapLayer.Precipitation) {
-            rainParticles = emptyList()
-            return@LaunchedEffect
+    LaunchedEffect(pageReady, city?.id) {
+        val view = webView ?: return@LaunchedEffect
+        if (!pageReady) return@LaunchedEffect
+        val selected = city ?: return@LaunchedEffect
+        view.runScript("CBMap.setCity(${selected.lat}, ${selected.lon})")
+        if (centeredCityId != selected.id && initialCenter == null) {
+            view.runScript("CBMap.focus(${selected.lat}, ${selected.lon}, 7, true)")
+            centeredCityId = selected.id
         }
-        rainParticles = RadarProbe.sampleParticles(selectedTimeMillis / 1000L)
+    }
+
+    LaunchedEffect(focusRequest, pageReady) {
+        val view = webView ?: return@LaunchedEffect
+        if (focusRequest == 0 || !pageReady) return@LaunchedEffect
+        val selected = city ?: return@LaunchedEffect
+        view.runScript("CBMap.focus(${selected.lat}, ${selected.lon}, 8, true)")
+    }
+
+    LaunchedEffect(layer.id, pageReady, retryRequest) {
+        val view = webView ?: return@LaunchedEffect
+        if (!pageReady) return@LaunchedEffect
+        val id = layer.id
+        if (retryRequest > 0) view.runScript("CBMap.reloadLayer(${JSONObject.quote(id)})") else view.runScript("CBMap.setLayer(${JSONObject.quote(id)})")
+        if (id == "fires" || id == "alerts" || id == "drought") {
+            val geoJson = runCatching {
+                withContext(Dispatchers.IO) {
+                    when (id) {
+                        "fires" -> fireCollection(FireHotspots.json(view.context.applicationContext))
+                        "alerts" -> AlertFeed.json()?.toString(Charsets.UTF_8)
+                        else -> DroughtFeed.json()?.toString(Charsets.UTF_8)
+                    }
+                }
+            }.getOrNull()
+            if (currentLayer.id != id) return@LaunchedEffect
+            if (geoJson == null) view.runScript("CBMap.featuresFailed(${JSONObject.quote(id)})")
+            else view.runScript("CBMap.setFeatures(${JSONObject.quote(id)}, ${JSONObject.quote(geoJson)})")
+        }
     }
 
     Box(modifier = modifier) {
-        if (layer == MapLayer.Precipitation && rainParticles.isNotEmpty()) {
-            RainParticleOverlay(map, rainParticles, Modifier.matchParentSize())
-        }
         NativeMapLegend(layer, Modifier.align(Alignment.TopCenter).padding(top = 10.dp))
-        if (failed) {
+        if (failed || layerState == "error") {
             Surface(
-                modifier = Modifier.align(Alignment.Center).clickable { retryRequest++ },
+                modifier = Modifier.align(Alignment.Center).clickable {
+                    if (failed) {
+                        failed = false
+                        mapReady = false
+                        currentOnMapReady(false)
+                        pageReady = false
+                        webView?.let { view ->
+                            val html = buildMapPage(view.context)
+                            if (html != null) view.loadDataWithBaseURL(MAP_BASE_URL, html, "text/html", "UTF-8", null)
+                        }
+                    }
+                    layerState = "loading"
+                    retryRequest++
+                },
                 shape = RoundedCornerShape(12.dp),
                 color = MaterialTheme.colorScheme.surfaceContainerHigh,
                 tonalElevation = 4.dp
@@ -432,6 +326,94 @@ internal fun NativeWeatherMap(
     }
 }
 
+private const val MAP_BASE_URL = "https://github.com/catsblock/CatsBlock-Weather-v2"
+
+private const val MAP_PAGE_STYLE = """
+html,body,#map{margin:0;padding:0;width:100%;height:100%;background:#e8e6e1;overflow:hidden}
+.leaflet-container{background:#e8e6e1;outline:none;-webkit-tap-highlight-color:transparent}
+body.dark .leaflet-container{background:#2b2d31}
+body.dark .base-pane{filter:brightness(0.72) saturate(0.8) contrast(1.05)}
+#grid{position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none;z-index:450;opacity:0;transition:opacity 280ms ease}
+#grid.visible{opacity:1}
+.city-dot{width:14px;height:14px;border-radius:50%;background:#1b6ef3;border:3px solid #fff;box-sizing:border-box;box-shadow:0 1px 4px rgba(0,0,0,.45)}
+.leaflet-fade-anim .leaflet-tile{will-change:opacity}
+.overlay-tiles{transition:opacity 320ms ease}
+"""
+
+private fun buildMapPage(context: android.content.Context): String? {
+    val script = runCatching {
+        context.assets.open("weather_map.js").bufferedReader(Charsets.UTF_8).use { it.readText() }
+    }.getOrNull() ?: return null
+    return "<!DOCTYPE html><html><head><meta charset=\"utf-8\">" +
+        "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no\">" +
+        "<link rel=\"stylesheet\" href=\"https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css\">" +
+        "<style>" + MAP_PAGE_STYLE + "</style>" +
+        "<script src=\"https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js\"></script>" +
+        "</head><body><div id=\"map\"></div><canvas id=\"grid\"></canvas><script>" + script + "</script></body></html>"
+}
+
+private class MapBridge(
+    private val onPageReadyCallback: () -> Unit,
+    private val onMapReadyCallback: () -> Unit,
+    private val onMapErrorCallback: () -> Unit,
+    private val onLayerStateCallback: (String) -> Unit,
+    private val onPointCallback: (Double, Double, Float, Float) -> Unit
+) {
+    @Volatile
+    var active = true
+    private val handler = Handler(Looper.getMainLooper())
+
+    private fun post(block: () -> Unit) {
+        handler.post { if (active) block() }
+    }
+
+    @JavascriptInterface
+    fun onPageReady() = post(onPageReadyCallback)
+
+    @JavascriptInterface
+    fun onMapReady() = post(onMapReadyCallback)
+
+    @JavascriptInterface
+    fun onMapError(reason: String?) = post(onMapErrorCallback)
+
+    @JavascriptInterface
+    fun onLayerState(state: String?) {
+        val value = state ?: return
+        if (value != "loading" && value != "ready" && value != "error") return
+        post { onLayerStateCallback(value) }
+    }
+
+    @JavascriptInterface
+    fun onPoint(latitude: Double, longitude: Double, x: Double, y: Double) {
+        if (!latitude.isFinite() || !longitude.isFinite() || !x.isFinite() || !y.isFinite()) return
+        if (latitude !in -90.0..90.0 || longitude !in -180.0..180.0) return
+        if (x < 0.0 || y < 0.0 || x > 10000.0 || y > 10000.0) return
+        post { onPointCallback(latitude, longitude, x.toFloat(), y.toFloat()) }
+    }
+}
+
+private fun WebView.runScript(script: String) {
+    post { evaluateJavascript(script, null) }
+}
+
+private fun fireCollection(bytes: ByteArray?): String? {
+    if (bytes == null) return null
+    val cells = JSONArray(bytes.toString(Charsets.UTF_8))
+    val features = JSONArray()
+    for (i in 0 until cells.length()) {
+        val cell = cells.optJSONArray(i) ?: continue
+        if (cell.length() < 3) continue
+        val lat = cell.optDouble(0, Double.NaN)
+        val lon = cell.optDouble(1, Double.NaN)
+        if (!lat.isFinite() || !lon.isFinite()) continue
+        val geometry = JSONObject().put("type", "Point").put("coordinates", JSONArray().put(lon + 0.125).put(lat + 0.125))
+        val count = cell.optInt(2)
+        val properties = JSONObject().put("count", count).put("radius", (3.0 + kotlin.math.sqrt(count.toDouble())).coerceIn(3.0, 10.0))
+        features.put(JSONObject().put("type", "Feature").put("geometry", geometry).put("properties", properties))
+    }
+    return JSONObject().put("type", "FeatureCollection").put("features", features).toString()
+}
+
 @Composable
 private fun NativeMapLegend(layer: MapLayer, modifier: Modifier) {
     val spec = remember(layer.id) { nativeLegendSpec(layer.id) } ?: return
@@ -477,86 +459,3 @@ private fun nativeLegendSpec(layerId: String): NativeLegendSpec? = when (layerId
     "sea" -> NativeLegendSpec("−2 m", "+2 m", listOf(Color(0xFF2166AC), Color(0xFF67A9CF), Color(0xFFF7F7F7), Color(0xFFFDAE61), Color(0xFFD73027)))
     else -> null
 }
-
-@Composable
-private fun RainParticleOverlay(map: MapLibreMap?, particles: List<RadarParticlePoint>, modifier: Modifier) {
-    var frameNanos by remember { mutableLongStateOf(0L) }
-    LaunchedEffect(map, particles) {
-        if (map == null || particles.isEmpty()) {
-            frameNanos = 0L
-            return@LaunchedEffect
-        }
-        while (true) {
-            withFrameNanos { frameNanos = it }
-            kotlinx.coroutines.delay(32L)
-        }
-    }
-    Canvas(modifier = modifier) {
-        val nativeMap = map ?: return@Canvas
-        if (frameNanos == 0L) return@Canvas
-        val elapsedSeconds = frameNanos / 1_000_000_000.0
-        particles.forEachIndexed { index, particle ->
-            val strength = ((particle.dbz - 15) / 50f).coerceIn(0f, 1f)
-            val phase = (elapsedSeconds * 0.8 + index * 0.61803398875).rem(1.0)
-            val travelDegrees = 0.08 + strength * 0.18
-            val headLatitude = (particle.latitude - phase * travelDegrees).coerceIn(-85.0, 85.0)
-            val tailLatitude = (headLatitude + travelDegrees * 0.18).coerceIn(-85.0, 85.0)
-            val head = nativeMap.projection.toScreenLocation(LatLng(headLatitude, particle.longitude))
-            if (head.x !in 0f..size.width || head.y !in 0f..size.height) return@forEachIndexed
-            val tail = nativeMap.projection.toScreenLocation(LatLng(tailLatitude, particle.longitude))
-            val color = Color(RainViewerPalette.particleColorForDbz(particle.dbz)).copy(alpha = 0.42f + strength * 0.48f)
-            drawLine(
-                color = color,
-                start = Offset(tail.x, tail.y),
-                end = Offset(head.x, head.y),
-                strokeWidth = 1.1f + strength * 1.4f,
-                cap = StrokeCap.Round
-            )
-        }
-    }
-}
-
-private fun applyWeatherOverlay(manager: NativeWeatherOverlayManager?, layer: MapLayer, tileTemplate: String?) {
-    val template = tileTemplate.takeIf { layer == MapLayer.Precipitation && !it.isNullOrBlank() }
-    manager?.setOverlay(
-        NativeWeatherOverlay.Precipitation,
-        template?.let { NativeWeatherTileSource(it, "RainViewer", minZoom = 0, maxZoom = 7, opacity = 0.82f) }
-    )
-}
-
-private fun applyMapAppearance(style: Style, dark: Boolean) {
-    val layer = style.getLayer("openstreetmap-raster") ?: return
-    if (dark) {
-        layer.setProperties(
-            PropertyFactory.rasterBrightnessMin(0.18f),
-            PropertyFactory.rasterBrightnessMax(0.76f),
-            PropertyFactory.rasterSaturation(-0.2f)
-        )
-    } else {
-        layer.setProperties(
-            PropertyFactory.rasterBrightnessMin(0f),
-            PropertyFactory.rasterBrightnessMax(1f),
-            PropertyFactory.rasterSaturation(0f)
-        )
-    }
-}
-
-private fun baseStyleJson(useFallback: Boolean): String {
-    val source = JSONObject()
-        .put("type", "raster")
-        .put("tiles", JSONArray().put(if (useFallback) "https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png" else "https://tile.openstreetmap.org/{z}/{x}/{y}.png"))
-        .put("tileSize", 256)
-        .put("maxzoom", 19)
-        .put("attribution", "© OpenStreetMap contributors")
-    val layer = JSONObject()
-        .put("id", "openstreetmap-raster")
-        .put("type", "raster")
-        .put("source", "openstreetmap")
-    return JSONObject()
-        .put("version", 8)
-        .put("sources", JSONObject().put("openstreetmap", source))
-        .put("layers", JSONArray().put(layer))
-        .toString()
-}
-
-private const val MAX_MAP_RETRIES = 2
