@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -90,6 +91,8 @@ import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.catsblock.weather.data.RadarFrameRef
+import com.catsblock.weather.data.RadarFrames
 import com.catsblock.weather.data.ThemeMode
 import com.catsblock.weather.i18n.I18n
 import com.catsblock.weather.i18n.tr
@@ -141,6 +144,7 @@ internal enum class MapLayer(val id: String, val label: String, val icon: ImageV
     AirQuality("aqi", "Air quality", Icons.Rounded.Masks),
     SeaLevel("sea", "Sea level", Icons.Rounded.Water),
     Alerts("alerts", "Weather alerts", Icons.Rounded.Warning),
+    ColdFronts("coldfront", "Cold fronts", Icons.Rounded.AcUnit, MapTimeline.WeatherModel),
     Drought("drought", "Drought & dryness", Icons.Rounded.Landscape)
 }
 
@@ -156,6 +160,12 @@ fun MapScreen(vm: WeatherViewModel) {
         ThemeMode.Dark -> true
     }
     var layer by remember { mutableStateOf(MapLayer.None) }
+    var radarFrames by remember { mutableStateOf<List<RadarFrameRef>>(emptyList()) }
+    var frameIndex by remember(radarFrames) { mutableIntStateOf(radarFrames.indexOfFirst { it.observed }.coerceAtLeast(0)) }
+    var offsetDays by remember { mutableIntStateOf(0) }
+    var nowUtc by remember { mutableStateOf(java.time.Instant.now().atZone(java.time.ZoneOffset.UTC)) }
+    var forecastHour by remember { mutableIntStateOf(nowUtc.hour) }
+    var playing by remember { mutableStateOf(false) }
     var selectedDetail by remember { mutableStateOf<MapDetail?>(null) }
     var animatedDetail by remember { mutableStateOf<MapDetail?>(null) }
     var ready by remember { mutableStateOf(false) }
@@ -165,13 +175,49 @@ fun MapScreen(vm: WeatherViewModel) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var sheetOpen by remember { mutableStateOf(false) }
     val locate = remember { Animatable(0f) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            nowUtc = java.time.Instant.now().atZone(java.time.ZoneOffset.UTC)
+            delay(60_000L)
+        }
+    }
+    LaunchedEffect(playing, layer.timeline, radarFrames.size) {
+        if (!playing || layer.timeline != MapTimeline.RadarFrames || radarFrames.size < 2) return@LaunchedEffect
+        while (true) {
+            delay(900L)
+            frameIndex = (frameIndex + 1) % radarFrames.size
+        }
+    }
+    LaunchedEffect(layer.timeline) {
+        if (layer.timeline != MapTimeline.RadarFrames) {
+            playing = false
+            return@LaunchedEffect
+        }
+        while (true) {
+            val set = RadarFrames.set()
+            radarFrames = set?.let { frames ->
+                listOfNotNull(frames.frames.lastOrNull { it.observed }) + frames.frames.filterNot { it.observed }
+            }.orEmpty()
+            delay(310_000L)
+        }
+    }
     LaunchedEffect(layer) {
         selectedDetail = null
     }
     LaunchedEffect(selectedDetail) {
         selectedDetail?.let { animatedDetail = it }
     }
-    val selectedTimeMillis = remember(layer) { System.currentTimeMillis() }
+    val nowHourUtc = nowUtc.truncatedTo(java.time.temporal.ChronoUnit.HOURS)
+    val selectedForecastHour = if (offsetDays == 0) forecastHour.coerceAtLeast(nowHourUtc.hour) else forecastHour
+    val selectedDate = nowUtc.toLocalDate().plusDays(offsetDays.toLong())
+    val selectedTimeMillis = remember(layer.id, frameIndex, offsetDays, selectedForecastHour, radarFrames, selectedDate) {
+        when (layer.timeline) {
+            MapTimeline.RadarFrames -> radarFrames.getOrNull(frameIndex)?.time?.times(1000L) ?: System.currentTimeMillis()
+            MapTimeline.WeatherModel -> selectedDate.atTime(selectedForecastHour, 0)
+                .toInstant(java.time.ZoneOffset.UTC).toEpochMilli()
+            MapTimeline.Static -> System.currentTimeMillis()
+        }
+    }
 
     Box(Modifier.fillMaxSize().clipToBounds().background(MaterialTheme.colorScheme.surface)) {
         NativeWeatherMap(
@@ -179,10 +225,10 @@ fun MapScreen(vm: WeatherViewModel) {
             layer = layer,
             dark = dark,
             focusRequest = focusRequest,
-            radarTileTemplate = null,
             selectedTimeMillis = selectedTimeMillis,
             onPointSelected = { latitude, longitude, x, y ->
-                if (layer.id in setOf("precip", "temp", "clouds", "wind", "pressure", "humidity", "dew", "uv", "aqi", "sea")) {
+                val currentOrFuture = layer.id != "precip" || selectedTimeMillis >= System.currentTimeMillis()
+                if (currentOrFuture && layer.id in setOf("precip", "temp", "clouds", "wind", "pressure", "humidity", "dew", "uv", "aqi", "sea")) {
                     selectedDetail = MapDetail(
                         "weather-point",
                         JSONObject()
@@ -265,6 +311,32 @@ fun MapScreen(vm: WeatherViewModel) {
                 )
             }
         }
+
+    AnimatedVisibility(
+        visible = layer.timeline != MapTimeline.Static,
+        modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .widthIn(max = 420.dp)
+                .padding(start = 88.dp, end = 12.dp, bottom = bottomInset + 12.dp),
+        enter = fadeIn(tween(180)) + scaleIn(initialScale = 0.96f),
+        exit = fadeOut(tween(140)) + scaleOut(targetScale = 0.98f)
+    ) {
+        MapTimelineControl(
+            layer = layer,
+            offsetDays = offsetDays,
+            onOffsetDays = { offsetDays = it },
+            hour = selectedForecastHour,
+            minHour = if (offsetDays == 0) nowHourUtc.hour else 0,
+            onHour = { forecastHour = it },
+            frames = radarFrames,
+            frameIndex = frameIndex,
+            onFrameIndex = { frameIndex = it.coerceIn(0, radarFrames.lastIndex.coerceAtLeast(0)); playing = false },
+            playing = playing,
+            onTogglePlaying = { playing = !playing },
+            selectedTimeMillis = selectedTimeMillis
+        )
+    }
     }
 
     AnimatedVisibility(
@@ -320,8 +392,9 @@ fun MapScreen(vm: WeatherViewModel) {
                 )
                 MapLayer.entries.forEach { item ->
                     LayerRow(item, item == layer) {
-                        layer = item
-                        selectedDetail = null
+                    layer = item
+                    playing = false
+                    selectedDetail = null
                         scope.launch {
                             sheetState.hide()
                             sheetOpen = false
@@ -339,8 +412,9 @@ private fun MapTimelineControl(
     offsetDays: Int,
     onOffsetDays: (Int) -> Unit,
     hour: Int,
+    minHour: Int,
     onHour: (Int) -> Unit,
-    frames: List<RadarFrame>,
+    frames: List<RadarFrameRef>,
     frameIndex: Int,
     onFrameIndex: (Int) -> Unit,
     playing: Boolean,
@@ -352,7 +426,7 @@ private fun MapTimelineControl(
     val timestamp = java.time.format.DateTimeFormatter.ofPattern("EEE, MMM d · HH:mm 'UTC'")
         .withLocale(I18n.lang.locale).withZone(java.time.ZoneOffset.UTC).format(java.time.Instant.ofEpochMilli(selectedTimeMillis))
     val status = if (layer.timeline == MapTimeline.RadarFrames) {
-        tr(if (frame?.observed != false) "Observed" else "Forecast")
+        frame?.let { tr(if (it.observed) "Observed" else "Forecast") } ?: tr("Unavailable")
     } else {
         tr("Forecast model")
     }
@@ -398,23 +472,27 @@ private fun MapTimelineControl(
                 val edgeFormatter = java.time.format.DateTimeFormatter.ofPattern("HH:mm 'UTC'", I18n.lang.locale).withZone(java.time.ZoneOffset.UTC)
                 val firstFrame = frames.firstOrNull()?.time?.let { edgeFormatter.format(java.time.Instant.ofEpochSecond(it)) }
                 val lastFrame = frames.lastOrNull()?.time?.let { edgeFormatter.format(java.time.Instant.ofEpochSecond(it)) }
-                Text(firstFrame ?: tr("Today"), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(lastFrame ?: "+14 d", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                val firstLabel = if (layer.timeline == MapTimeline.RadarFrames) firstFrame ?: tr("Now") else tr("Today")
+                val lastLabel = if (layer.timeline == MapTimeline.RadarFrames) lastFrame ?: tr("Unavailable") else tr("+14 days")
+                Text(firstLabel, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(lastLabel, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             if (layer.timeline == MapTimeline.WeatherModel) {
-                Slider(
-                    value = hour.toFloat(),
-                    onValueChange = { onHour(it.toInt()) },
-                    valueRange = 0f..23f,
-                    steps = 22,
-                    colors = SliderDefaults.colors(
-                        thumbColor = MaterialTheme.colorScheme.primary,
-                        activeTrackColor = MaterialTheme.colorScheme.primary,
-                        inactiveTrackColor = MaterialTheme.colorScheme.outlineVariant
+                if (minHour < 23) {
+                    Slider(
+                        value = hour.coerceAtLeast(minHour).toFloat(),
+                        onValueChange = { onHour(it.toInt().coerceAtLeast(minHour)) },
+                        valueRange = minHour.toFloat()..23f,
+                        steps = (22 - minHour).coerceAtLeast(0),
+                        colors = SliderDefaults.colors(
+                            thumbColor = MaterialTheme.colorScheme.primary,
+                            activeTrackColor = MaterialTheme.colorScheme.primary,
+                            inactiveTrackColor = MaterialTheme.colorScheme.outlineVariant
+                        )
                     )
-                )
+                }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = androidx.compose.foundation.layout.Arrangement.SpaceBetween) {
-                    Text("00:00 UTC", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("${minHour.toString().padStart(2, '0')}:00 UTC", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text("23:00 UTC", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }

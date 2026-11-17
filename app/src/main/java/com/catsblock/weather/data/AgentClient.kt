@@ -116,13 +116,12 @@ sealed interface AgentCard {
         val isDay: Boolean
     ) : AgentCard
 
-    data class Days(val history: Boolean, val place: String, val days: List<AgentDay>) : AgentCard
+    data class Days(val place: String, val days: List<AgentDay>) : AgentCard
 
     data class Metric(
         val metric: AgentMetric,
         val place: String,
         val now: Double,
-        val past: List<Double>,
         val ahead: List<Double>,
         val min: Double,
         val max: Double,
@@ -330,10 +329,9 @@ class AgentClient {
             code = item.optInt("code"),
             isDay = item.optBoolean("isDay", true)
         )
-        "forecast", "history" -> {
+        "forecast" -> {
             val days = item.getJSONArray("days")
             AgentCard.Days(
-                history = item.optString("type") == "history",
                 place = item.optString("place"),
                 days = (0 until days.length()).map {
                     val d = days.getJSONObject(it)
@@ -357,7 +355,6 @@ class AgentClient {
                     metric = metric,
                     place = item.optString("place"),
                     now = item.getDouble("now"),
-                    past = doubles(item.optJSONArray("past")),
                     ahead = doubles(item.optJSONArray("ahead")),
                     min = item.optDouble("min"),
                     max = item.optDouble("max"),

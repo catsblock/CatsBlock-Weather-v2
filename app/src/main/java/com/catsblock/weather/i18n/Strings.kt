@@ -789,6 +789,7 @@ private val developerStrings: Map<String, Array<out String>> = mapOf(
     row("City selected", "Cidade selecionada", "Cidade selecionada", "Ciudad seleccionada", "Ville sélectionnée", "Город выбран", "Stadt ausgewählt", "Città selezionata", "도시 선택됨", "Kota dipilih"),
     row("Forecast hours", "Horas de previsão", "Horas de previsão", "Horas de pronóstico", "Heures de prévision", "Часов прогноза", "Prognosestunden", "Ore di previsione", "예보 시간 수", "Jam prakiraan"),
     row("Forecast days", "Dias de previsão", "Dias de previsão", "Días de pronóstico", "Jours de prévision", "Дней прогноза", "Prognosetage", "Giorni di previsione", "예보 일수", "Hari prakiraan"),
+    row("+14 days", "+14 dias", "+14 dias", "+14 días", "+14 jours", "+14 дней", "+14 Tage", "+14 giorni", "+14일", "+14 hari"),
     row("Official alerts", "Alertas oficiais", "Alertas oficiais", "Alertas oficiales", "Alertes officielles", "Официальные предупреждения", "Offizielle Warnungen", "Allerte ufficiali", "공식 경보", "Peringatan resmi"),
     row("Rain slots", "Intervalos de chuva", "Intervalos de chuva", "Intervalos de lluvia", "Créneaux de pluie", "Интервалы осадков", "Regenintervalle", "Intervalli di pioggia", "강수 구간", "Interval hujan"),
     row("Last error", "Último erro", "Último erro", "Último error", "Dernière erreur", "Последняя ошибка", "Letzter Fehler", "Ultimo errore", "마지막 오류", "Kesalahan terakhir"),

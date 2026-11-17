@@ -213,7 +213,6 @@ class WeatherRepository {
                     "forecast_minutely_15" to "48",
                     "daily" to "weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,sunrise,sunset,uv_index_max",
                     "timezone" to "auto",
-                    "past_days" to "1",
                     "forecast_days" to "7",
                     "wind_speed_unit" to "kmh"
                 )
@@ -228,7 +227,6 @@ class WeatherRepository {
                         "longitude" to lon,
                         "hourly" to "us_aqi",
                         "timezone" to "auto",
-                        "past_days" to "1",
                         "forecast_days" to "7"
                     )
                 )

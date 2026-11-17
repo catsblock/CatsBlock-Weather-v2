@@ -53,7 +53,7 @@ internal fun MetricCard(card: AgentCard.Metric, settings: AppSettings, content: 
         )
         MetricChart(card, content)
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(tr("3 days ago"), style = MaterialTheme.typography.labelSmall, color = content.copy(alpha = 0.7f))
+            Text(tr("Now"), style = MaterialTheme.typography.labelSmall, color = content.copy(alpha = 0.7f))
             Text(tr("Next 24 hours"), style = MaterialTheme.typography.labelSmall, color = content.copy(alpha = 0.7f))
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -66,7 +66,7 @@ internal fun MetricCard(card: AgentCard.Metric, settings: AppSettings, content: 
 
 @Composable
 private fun MetricChart(card: AgentCard.Metric, content: Color) {
-    val series = card.past + card.ahead
+    val series = card.ahead
     Canvas(Modifier.fillMaxWidth().height(96.dp)) {
         if (series.size < 2) return@Canvas
         var low = series.min()
@@ -90,19 +90,13 @@ private fun MetricChart(card: AgentCard.Metric, content: Color) {
         }
         drawPath(area, Brush.verticalGradient(listOf(content.copy(alpha = 0.28f), Color.Transparent)))
 
-        val nowIndex = card.past.size.coerceIn(0, last)
-        val pastLine = Path().apply {
-            series.take(nowIndex + 1).forEachIndexed { index, value ->
+        val forecastLine = Path().apply {
+            series.forEachIndexed { index, value ->
                 if (index == 0) moveTo(px(index), py(value)) else lineTo(px(index), py(value))
             }
         }
-        val aheadLine = Path().apply {
-            moveTo(px(nowIndex), py(series[nowIndex]))
-            for (index in nowIndex + 1..last) lineTo(px(index), py(series[index]))
-        }
-        drawPath(pastLine, content, style = Stroke(width = 2.5.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
         drawPath(
-            aheadLine,
+            forecastLine,
             content.copy(alpha = 0.75f),
             style = Stroke(
                 width = 2.5.dp.toPx(),
@@ -111,14 +105,7 @@ private fun MetricChart(card: AgentCard.Metric, content: Color) {
                 pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 8f))
             )
         )
-        drawLine(
-            content.copy(alpha = 0.45f),
-            Offset(px(nowIndex), 0f),
-            Offset(px(nowIndex), height),
-            strokeWidth = 1.dp.toPx(),
-            pathEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 6f))
-        )
-        drawCircle(content, radius = 4.dp.toPx(), center = Offset(px(nowIndex), py(series[nowIndex])))
+        drawCircle(content, radius = 4.dp.toPx(), center = Offset(px(0), py(series[0])))
     }
 }
 

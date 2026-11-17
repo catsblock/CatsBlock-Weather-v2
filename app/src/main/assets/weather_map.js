@@ -98,6 +98,8 @@
   var baseTimer = null;
   var currentLayer = "none";
   var layerToken = 0;
+  var selectedTime = Date.now();
+  var timeTimer = null;
   var radarLayer = null;
   var radarTimer = null;
   var sstLayer = null;
@@ -109,6 +111,13 @@
   var gridKey = "";
   var gridCache = {};
   var drawQueued = false;
+  var activeControllers = [];
+
+  function rememberGrid(key, values) {
+    gridCache[key] = { at: Date.now(), values: values };
+    var keys = Object.keys(gridCache);
+    if (keys.length > 32) delete gridCache[keys[0]];
+  }
 
   function mountBase(index) {
     if (baseLayer) { map.removeLayer(baseLayer); baseLayer = null; }
@@ -177,6 +186,8 @@
 
   function resetLayers() {
     layerToken++;
+    if (timeTimer) { clearTimeout(timeTimer); timeTimer = null; }
+    activeControllers.splice(0).forEach(function (controller) { controller.abort(); });
     clearRadar();
     clearSst();
     clearFeatures();
@@ -185,27 +196,42 @@
 
   function fetchJson(url, token) {
     var controller = typeof AbortController === "function" ? new AbortController() : null;
+    if (controller) activeControllers.push(controller);
     var timer = setTimeout(function () { if (controller) controller.abort(); }, 20000);
     return fetch(url, controller ? { signal: controller.signal } : {}).then(function (response) {
       clearTimeout(timer);
       if (!response.ok) throw new Error("http " + response.status);
       return response.json();
     }).then(function (json) {
+      clearTimeout(timer);
+      if (controller) {
+        var completed = activeControllers.indexOf(controller);
+        if (completed >= 0) activeControllers.splice(completed, 1);
+      }
       if (token !== layerToken) throw new Error("stale");
       return json;
     }, function (err) {
       clearTimeout(timer);
+      if (controller) {
+        var failed = activeControllers.indexOf(controller);
+        if (failed >= 0) activeControllers.splice(failed, 1);
+      }
+      if (token !== layerToken) throw new Error("stale");
       throw err;
     });
   }
 
-  function showRadar(token) {
+  function showRadar(token, epochMillis) {
     setLayerState("loading");
     function load() {
       fetchJson("https://api.rainviewer.com/public/weather-maps.json", token).then(function (data) {
         var past = data && data.radar && data.radar.past;
         if (!data || typeof data.host !== "string" || !past || !past.length) throw new Error("no frames");
-        var frame = past[past.length - 1];
+        var frames = past.concat(data.radar.nowcast || []);
+        var target = Math.floor(epochMillis / 1000);
+        var frame = frames.reduce(function (best, item) {
+          return !best || Math.abs(item.time - target) < Math.abs(best.time - target) ? item : best;
+        }, null);
         if (typeof frame.path !== "string") throw new Error("bad frame");
         var url = data.host + frame.path + "/256/{z}/{x}/{y}/2/1_1.png";
         var next = L.tileLayer(url, {
@@ -290,13 +316,13 @@
     return points;
   }
 
-  function hourString() {
-    return new Date().toISOString().slice(0, 13) + ":00";
+  function hourString(epochMillis) {
+    return new Date(epochMillis).toISOString().slice(0, 13) + ":00";
   }
 
-  function fetchGrid(layer, token) {
-    var hour = hourString();
-    var cacheKey = layer + ":" + (layer === "sea" ? "" : hour);
+  function fetchGrid(layer, token, epochMillis) {
+    var hour = hourString(epochMillis);
+    var cacheKey = layer + ":" + hour;
     var cached = gridCache[cacheKey];
     if (cached && Date.now() - cached.at < 1800000) return Promise.resolve(cached.values);
     var points = gridCoordinates();
@@ -316,7 +342,7 @@
       var lat = slice.map(function (p) { return p[0].toFixed(3); }).join(",");
       var lon = slice.map(function (p) { return p[1].toFixed(3); }).join(",");
       var query = "latitude=" + lat + "&longitude=" + lon + "&hourly=" + VARIABLE[layer] + "&timezone=UTC";
-      if (layer === "sea") query += "&forecast_days=1"; else query += "&start_hour=" + hour + "&end_hour=" + hour;
+      query += "&start_hour=" + hour + "&end_hour=" + hour;
       if (layer === "wind") query += "&wind_speed_unit=kmh";
       return fetchWithRetry(base + "?" + query, token).then(function (json) {
         var list = Array.isArray(json) ? json : [json];
@@ -340,7 +366,7 @@
     return Promise.all(workers).then(function () {
       var any = values.some(function (v) { return isFinite(v); });
       if (!any) throw new Error("empty");
-      gridCache[cacheKey] = { at: Date.now(), values: values };
+      rememberGrid(cacheKey, values);
       return values;
     });
   }
@@ -358,13 +384,95 @@
     return run();
   }
 
-  function showGrid(layer, token) {
+  function showGrid(layer, token, epochMillis) {
     setLayerState("loading");
-    fetchGrid(layer, token).then(function (values) {
+    fetchGrid(layer, token, epochMillis).then(function (values) {
       if (token !== layerToken) return;
       gridData = { layer: layer, values: values };
       gridCanvas.classList.add("visible");
       queueDraw();
+      setLayerState("ready");
+    }).catch(function (err) {
+      if (err && err.message === "stale") return;
+      if (token === layerToken) setLayerState("error");
+    });
+  }
+
+  function fetchColdFrontValues(token, epochMillis) {
+    var hour = hourString(epochMillis);
+    var endHour = hourString(epochMillis + 6 * 60 * 60 * 1000);
+    var cacheKey = "coldfront:" + hour;
+    var cached = gridCache[cacheKey];
+    if (cached && Date.now() - cached.at < 1800000) return Promise.resolve(cached.values);
+    var points = gridCoordinates();
+    var chunk = 120;
+    var starts = [];
+    for (var offset = 0; offset < points.length; offset += chunk) starts.push(offset);
+    var values = new Array(points.length);
+    for (var i = 0; i < values.length; i++) values[i] = NaN;
+    var next = 0;
+    function worker() {
+      if (next >= starts.length) return Promise.resolve();
+      var start = starts[next++];
+      var slice = points.slice(start, start + chunk);
+      var lat = slice.map(function (p) { return p[0].toFixed(3); }).join(",");
+      var lon = slice.map(function (p) { return p[1].toFixed(3); }).join(",");
+      var url = "https://api.open-meteo.com/v1/forecast?latitude=" + lat + "&longitude=" + lon +
+        "&hourly=temperature_2m&start_hour=" + hour + "&end_hour=" + endHour + "&timezone=UTC";
+      return fetchWithRetry(url, token).then(function (json) {
+        var list = Array.isArray(json) ? json : [json];
+        for (var j = 0; j < slice.length; j++) {
+          var hourly = list[j] && list[j].hourly;
+          var temperatures = hourly && hourly.temperature_2m;
+          if (!temperatures || temperatures.length < 2) continue;
+          var first = temperatures[0], last = temperatures[temperatures.length - 1];
+          if (typeof first === "number" && isFinite(first) && typeof last === "number" && isFinite(last)) {
+            values[start + j] = first - last;
+          }
+        }
+        return worker();
+      });
+    }
+    return Promise.all([worker(), worker(), worker()]).then(function () {
+      if (!values.some(function (value) { return isFinite(value); })) throw new Error("empty");
+      rememberGrid(cacheKey, values);
+      return values;
+    });
+  }
+
+  function showColdFronts(token, epochMillis) {
+    setLayerState("loading");
+    fetchColdFrontValues(token, epochMillis).then(function (values) {
+      if (token !== layerToken) return;
+      var points = gridCoordinates();
+      var threshold = 3.5;
+      var segments = [];
+      for (var row = 0; row < ROWS - 1; row++) {
+        for (var col = 0; col < COLS - 1; col++) {
+          var indices = [row * COLS + col, row * COLS + col + 1, (row + 1) * COLS + col + 1, (row + 1) * COLS + col];
+          var corners = indices.map(function (index) { return points[index]; });
+          var field = indices.map(function (index) { return values[index]; });
+          if (field.some(function (value) { return !isFinite(value); })) continue;
+          var edges = [[0, 1], [1, 2], [2, 3], [3, 0]];
+          var crossings = [];
+          edges.forEach(function (edge, edgeIndex) {
+            var a = field[edge[0]], b = field[edge[1]];
+            if ((a < threshold) === (b < threshold)) return;
+            var fraction = (threshold - a) / (b - a);
+            var first = corners[edge[0]], last = corners[edge[1]];
+            crossings.push({ edge: edgeIndex, point: [first[0] + (last[0] - first[0]) * fraction, first[1] + (last[1] - first[1]) * fraction] });
+          });
+          if (crossings.length === 2) segments.push([crossings[0].point, crossings[1].point]);
+          else if (crossings.length === 4) {
+            var center = (field[0] + field[1] + field[2] + field[3]) / 4;
+            var pairs = center >= threshold ? [[0, 3], [1, 2]] : [[0, 1], [2, 3]];
+            pairs.forEach(function (pair) { segments.push([crossings[pair[0]].point, crossings[pair[1]].point]); });
+          }
+        }
+      }
+      featureGroup = segments.length
+        ? L.polyline(segments, { pane: "featurePane", color: "#1e88e5", weight: 2.5, opacity: 0.92, lineCap: "round", lineJoin: "round", smoothFactor: 1.5 }).addTo(map)
+        : L.layerGroup().addTo(map);
       setLayerState("ready");
     }).catch(function (err) {
       if (err && err.message === "stale") return;
@@ -479,11 +587,12 @@
     currentLayer = layer;
     var token = layerToken;
     if (layer === "none") { setLayerState("ready"); return; }
-    if (layer === "precip") showRadar(token);
+    if (layer === "precip") showRadar(token, selectedTime);
     else if (layer === "sst") showSst(token);
     else if (layer === "cyclones") showCyclones(token);
+    else if (layer === "coldfront") showColdFronts(token, selectedTime);
     else if (layer === "fires" || layer === "alerts" || layer === "drought") setLayerState("loading");
-    else if (VARIABLE[layer]) showGrid(layer, token);
+    else if (VARIABLE[layer]) showGrid(layer, token, selectedTime);
     else setLayerState("ready");
   }
 
@@ -497,6 +606,17 @@
     setLayer: function (layer) {
       if (typeof layer !== "string" || layer === currentLayer) return;
       applyLayer(layer);
+    },
+    setTime: function (epochMillis) {
+      if (typeof epochMillis !== "number" || !isFinite(epochMillis) || epochMillis < 0) return;
+      if (Math.abs(selectedTime - epochMillis) < 1000) return;
+      selectedTime = epochMillis;
+      if (currentLayer === "none") return;
+      if (timeTimer) clearTimeout(timeTimer);
+      timeTimer = setTimeout(function () {
+        timeTimer = null;
+        if (currentLayer !== "none" && (currentLayer === "precip" || currentLayer === "coldfront" || VARIABLE[currentLayer])) applyLayer(currentLayer);
+      }, 250);
     },
     reloadLayer: function (layer) {
       if (typeof layer !== "string") return;

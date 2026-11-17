@@ -677,7 +677,7 @@ internal fun Stat(label: String, value: String, content: Color, modifier: Modifi
 private fun DaysCard(card: AgentCard.Days, settings: AppSettings, content: Color) {
     val today = remember { LocalDate.now() }
     CardPanel(content) {
-        CardTitle(tr(if (card.history) "Past days" else "Forecast"), card.place, content)
+        CardTitle(tr("Forecast"), card.place, content)
         card.days.forEach { day -> DayRow(day, today, settings, content) }
     }
 }

@@ -2,8 +2,6 @@ package com.catsblock.weather.ui
 
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.rememberInfiniteTransition
@@ -109,12 +107,6 @@ fun SunCardV2(
     val sky = Color(0xFFFFB300)
     val night = Color(0xFF5C6BC0)
     val remaining = Duration.between(now, sunset).toMinutes().coerceAtLeast(0)
-    val pulse = rememberInfiniteTransition(label = "pulse")
-    val halo by pulse.animateFloat(
-        0.85f, 1.15f,
-        infiniteRepeatable(tween(2200, easing = FastOutSlowInEasing), RepeatMode.Reverse),
-        label = "halo"
-    )
     GlassCard(modifier, onClick, Modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Rounded.WbSunny, null, Modifier.size(22.dp), tint = scheme.onSurfaceVariant)
@@ -140,7 +132,7 @@ fun SunCardV2(
             val amp = horizon - 10f
             val a = PI * (1.0 - progress)
             val sx = w * 0.06f + (w * 0.88f) * progress
-            val sy = horizon - amp * sin(a).toFloat() * 1f
+            val sy = if (up) horizon - amp * sin(a).toFloat() else horizon + 7f
             Canvas(Modifier.fillMaxSize()) {
                 val left = w * 0.06f
                 val span = w * 0.88f
@@ -173,10 +165,9 @@ fun SunCardV2(
                 }
                 val c = Offset(sx.dp.toPx(), sy.dp.toPx())
                 val alpha = if (up) 1f else 0.4f
-                drawCircle(sky.copy(alpha = 0.18f * alpha), 22.dp.toPx() * halo, c)
-                drawCircle(sky.copy(alpha = 0.32f * alpha), 15.dp.toPx() * halo, c)
-                drawCircle(Color(0xFFFFE082).copy(alpha = alpha), 10.dp.toPx(), c)
-                drawCircle(Color(0xFFFFF8E1).copy(alpha = alpha), 5.dp.toPx(), c)
+                drawCircle(sky.copy(alpha = 0.18f * alpha), 15.dp.toPx(), c)
+                drawCircle(Color(0xFFFFE082).copy(alpha = alpha), 8.dp.toPx(), c)
+                drawCircle(Color(0xFFFFF8E1).copy(alpha = alpha), 2.5f.dp.toPx(), c)
             }
             Text(
                 clockLabel(sunrise),
@@ -408,6 +399,15 @@ fun WindCardV2(speedKmh: Double, fromDeg: Double, city: City? = null, modifier: 
     GlassCard(modifier, onClick, Modifier.fillMaxSize()) {
         CardHeader(Icons.Rounded.Air, tr("Wind"))
         Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+            Box(
+                Modifier.size(92.dp).graphicsLayer { rotationZ = -trueHeading },
+                contentAlignment = Alignment.Center
+            ) {
+                Text("N", Modifier.align(Alignment.TopCenter).padding(top = 1.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("S", Modifier.align(Alignment.BottomCenter).padding(bottom = 1.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("W", Modifier.align(Alignment.CenterStart).padding(start = 1.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("E", Modifier.align(Alignment.CenterEnd).padding(end = 1.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
             Icon(
                 Icons.Rounded.Air,
                 contentDescription = "${tr("From")} ${compassLabel(fromDeg)}",
@@ -454,8 +454,14 @@ fun PressureCardV2(hpa: Double, modifier: Modifier = Modifier, onClick: (() -> U
                 val radius = (min(size.width, size.height) - stroke * 2f) / 2f
                 val arcSize = Size(radius * 2f, radius * 2f)
                 val topLeft = Offset((size.width - arcSize.width) / 2f, (size.height - arcSize.height) / 2f)
+                val sweep = 324f * f
                 drawArc(track, 108f, 324f, false, topLeft, arcSize, style = Stroke(stroke, cap = StrokeCap.Round))
-                drawArc(primary, 108f, 324f * f, false, topLeft, arcSize, style = Stroke(stroke, cap = StrokeCap.Round))
+                drawArc(primary, 108f, sweep, false, topLeft, arcSize, style = Stroke(stroke, cap = StrokeCap.Round))
+                val angle = Math.toRadians((108f + sweep).toDouble())
+                val center = Offset(size.width / 2f, size.height / 2f)
+                val indicator = Offset(center.x + cos(angle).toFloat() * radius, center.y + sin(angle).toFloat() * radius)
+                drawCircle(primary.copy(alpha = 0.22f), stroke * 1.2f, indicator)
+                drawCircle(primary, stroke * 0.55f, indicator)
             }
             Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.Center) {
                 Text(pressureNumber(hpa, unit), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, maxLines = 1)

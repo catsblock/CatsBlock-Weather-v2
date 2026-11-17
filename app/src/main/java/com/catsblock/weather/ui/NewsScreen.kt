@@ -260,13 +260,22 @@ internal fun EventNewsSection(event: String, region: String) {
     val language = I18n.lang
     val locale = language.locale
     var articles by remember(event, language.code, region) { mutableStateOf<List<NewsArticle>>(emptyList()) }
-    var selected by remember { mutableStateOf<NewsArticle?>(null) }
+    var selected by remember(event, language.code, region) { mutableStateOf<NewsArticle?>(null) }
     var loading by remember(event, language.code, region) { mutableStateOf(true) }
-    LaunchedEffect(event, language.code, region) {
+    var failed by remember(event, language.code, region) { mutableStateOf(false) }
+    var failureStatus by remember(event, language.code, region) { mutableStateOf(0) }
+    var refreshKey by remember(event, language.code, region) { mutableStateOf(0) }
+    LaunchedEffect(event, language.code, region, refreshKey) {
         loading = true
-        articles = when (val result = NewsFeed.event(language.code, region, event)) {
-            is NewsLoad.Success -> result.page.articles.take(10)
-            is NewsLoad.Failure -> emptyList()
+        failed = false
+        failureStatus = 0
+        when (val result = NewsFeed.event(language.code, region, event)) {
+            is NewsLoad.Success -> articles = result.page.articles.take(10)
+            is NewsLoad.Failure -> {
+                articles = emptyList()
+                failed = true
+                failureStatus = result.status
+            }
         }
         loading = false
     }
@@ -277,7 +286,24 @@ internal fun EventNewsSection(event: String, region: String) {
         }
         return
     }
-    if (articles.isEmpty()) return
+    if (articles.isEmpty()) {
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(tr("Related meteorological news"), style = MaterialTheme.typography.titleMedium)
+            Text(
+                if (failed) tr("News unavailable") else tr("No meteorological news found"),
+                style = MaterialTheme.typography.titleSmall
+            )
+            Text(
+                if (failed && failureStatus == 429) tr("Too many requests. Try again later.")
+                else if (failed) tr("The news service is not available right now.")
+                else tr("Try a different search or check again later."),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            TextButton(onClick = { refreshKey++ }) { Text(tr("Retry")) }
+        }
+        return
+    }
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(tr("Related meteorological news"), style = MaterialTheme.typography.titleMedium)
         articles.forEach { article ->

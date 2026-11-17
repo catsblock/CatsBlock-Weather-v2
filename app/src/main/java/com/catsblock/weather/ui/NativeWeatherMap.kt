@@ -71,7 +71,6 @@ internal fun NativeWeatherMap(
     layer: MapLayer,
     dark: Boolean,
     focusRequest: Int,
-    radarTileTemplate: String?,
     selectedTimeMillis: Long = System.currentTimeMillis(),
     onPointSelected: (latitude: Double, longitude: Double, x: Float, y: Float) -> Unit,
     onMapReady: (Boolean) -> Unit,
@@ -221,6 +220,11 @@ internal fun NativeWeatherMap(
         if (pageReady) view.runScript("CBMap.setDark($dark)")
     }
 
+    LaunchedEffect(pageReady, selectedTimeMillis) {
+        val view = webView ?: return@LaunchedEffect
+        if (pageReady) view.runScript("CBMap.setTime($selectedTimeMillis)")
+    }
+
     LaunchedEffect(pageReady) {
         val view = webView ?: return@LaunchedEffect
         if (!pageReady) return@LaunchedEffect
@@ -303,7 +307,7 @@ internal fun NativeWeatherMap(
             val sourceAttribution = when (layer.id) {
                 "precip" -> "RainViewer" to "https://www.rainviewer.com/"
                 "drought" -> "U.S. Drought Monitor" to "https://droughtmonitor.unl.edu/"
-                "temp", "clouds", "wind", "pressure", "humidity", "dew", "uv", "aqi", "sea" -> "Open-Meteo" to "https://open-meteo.com/"
+                "temp", "clouds", "wind", "pressure", "humidity", "dew", "uv", "aqi", "sea", "coldfront" -> "Open-Meteo" to "https://open-meteo.com/"
                 "cyclones" -> "NASA EONET" to "https://eonet.gsfc.nasa.gov/"
                 "sst" -> "NASA GIBS" to "https://earthdata.nasa.gov/"
                 "fires" -> "NASA FIRMS" to "https://firms.modaps.eosdis.nasa.gov/"

@@ -50,7 +50,7 @@ private val policySections = listOf(
     "Service monitoring" to
         "To keep the service reliable and within its usage limits, CatsBlock Corporation monitors its infrastructure in the background through the Cloudflare Worker. Monitoring uses the same one-way hash described above (or, when no device hash is available, a one-way hash of your IP address) and never includes your name, precise location, messages or replies. It records aggregated request and error counts by category, the number of devices active in the last 5 minutes, and the number of distinct devices per hour and per day. Hashed identifiers are kept for at most about 25 hours and the daily unique-count digests for about two days; the active-device list expires within minutes. Aggregated hourly counts are kept for 31 days and daily counts for 62 days, and contain no identifiers. Only an administrator, protected by a two-step access check, can view these totals, and cannot identify individual users or devices.",
     "AI Agent" to
-        "The Agent sends your message, the selected city and rounded coordinates through the Worker to Google's Gemini API and public weather services, which process them under their own terms. To answer, the Agent can read the weather data of the selected place, including the recent history and the next hours of temperature, humidity, wind, pressure, cloud cover, UV index and precipitation, and can show cards, charts and a map layer in its reply; the map is loaded on your device from public map providers. Do not enter personal, sensitive or confidential information. Replies are AI-generated, may be inaccurate and are not professional weather, safety or emergency advice; no decision with legal or similarly significant effects is made about you. CatsBlock Corporation does not store your messages or replies. The activity panel shows real technical steps, not the AI's reasoning.",
+        "The Agent sends your message, the selected city and rounded coordinates through the Worker to Google's Gemini API and public weather services, which process them under their own terms. To answer, the Agent can read current weather data for the selected place and may show cards, charts and a map layer in its reply; the map is loaded on your device from public map providers. Do not enter personal, sensitive or confidential information. Replies are AI-generated, may be inaccurate and are not professional weather, safety or emergency advice; no decision with legal or similarly significant effects is made about you. CatsBlock Corporation does not store your messages or replies. The activity panel shows real technical steps, not the AI's reasoning.",
     "International transfers" to
         "Data is processed on Cloudflare's global network and by the third-party providers named in this policy, which may be located outside your country, including outside the EEA and the UK. Where required, transfers rely on the safeguards those providers offer, such as Standard Contractual Clauses.",
     "Your rights" to
@@ -106,8 +106,10 @@ fun PrivacyPolicyScreen(vm: WeatherViewModel) {
                         if (index > 0) Spacer(Modifier.height(18.dp))
                         Text(tr(title), style = MaterialTheme.typography.titleMedium)
                         Spacer(Modifier.height(6.dp))
+                        val localizedBody = tr(body)
+                        val forecastDisclosure = if (title == "AI Agent") " ${tr("The Agent also receives forecast data for the selected place.")}" else ""
                         Text(
-                            tr(body),
+                            localizedBody + forecastDisclosure,
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
