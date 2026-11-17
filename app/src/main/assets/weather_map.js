@@ -1,8 +1,23 @@
 (function () {
   "use strict";
   var bridge = window.CatsBlockBridge;
-  var status = { page: false, ready: false, error: "", layer: "ready" };
+  var status = { page: false, ready: false, error: "", layer: "ready", layerId: "none", diag: [] };
   window.CBStatus = function () { return JSON.stringify(status); };
+
+  function diag(category, code) {
+    if (status.diag.length < 24) status.diag.push({ c: category, k: code });
+  }
+
+  window.addEventListener("error", function () { diag("js", "exception"); });
+  window.addEventListener("unhandledrejection", function () { diag("js", "rejection"); });
+
+  function errorCode(err) {
+    var message = err && err.message ? String(err.message) : "";
+    if ((err && err.name === "AbortError") || message === "timeout") return "timeout";
+    if (message.indexOf("http ") === 0) return "http";
+    if (message === "empty" || message === "no frames" || message === "no current frame" || message === "bad frame") return "data";
+    return "request";
+  }
 
   function send(name) {
     try {
@@ -12,13 +27,38 @@
 
   function loadScript(urls, index, ok, bad) {
     var el = document.createElement("script");
-    el.src = urls[index];
-    el.onload = ok;
-    el.onerror = function () {
+    var settled = false;
+    var timer = null;
+    function next(code) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      el.onload = null;
+      el.onerror = null;
+      if (el.parentNode) el.parentNode.removeChild(el);
+      diag("script", code);
       if (index + 1 < urls.length) loadScript(urls, index + 1, ok, bad);
       else bad();
+    }
+    el.onload = function () {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      ok();
     };
+    el.onerror = function () { next("error"); };
+    timer = setTimeout(function () { next("timeout"); }, 4000);
+    el.src = urls[index];
     document.head.appendChild(el);
+  }
+
+  function bootSafely() {
+    try {
+      boot();
+    } catch (e) {
+      diag("boot", "exception");
+      status.error = "boot";
+    }
   }
 
   function boot() {
@@ -137,16 +177,17 @@
     });
     baseLayer.on("tileload", function () {
       baseLoaded++;
-      if (!baseReady) { baseReady = true; status.ready = true; }
+      if (!baseReady) { baseReady = true; status.ready = true; status.error = ""; }
     });
     baseLayer.on("tileerror", function () {
       baseErrors++;
+      if (baseErrors === 1) diag("base", "tile");
       if (baseLoaded === 0 && baseErrors >= 4) failBase();
     });
     baseLayer.addTo(map);
     baseTimer = setTimeout(function () {
       if (baseLoaded === 0) failBase();
-    }, 7000);
+    }, 5000);
   }
 
   function failBase() {
@@ -154,14 +195,35 @@
     if (baseIndex + 1 < BASES.length) {
       mountBase(baseIndex + 1);
     } else {
+      diag("base", "exhausted");
       status.error = "tiles";
     }
   }
 
   mountBase(0);
 
+  var deadlineTimer = null;
+
   function setLayerState(state) {
+    status.layerId = currentLayer;
     status.layer = state;
+  }
+
+  function armDeadline(token, millis) {
+    if (deadlineTimer) clearTimeout(deadlineTimer);
+    deadlineTimer = setTimeout(function () {
+      deadlineTimer = null;
+      if (token === layerToken && status.layer === "loading") {
+        diag("layer", "timeout");
+        setLayerState("error");
+      }
+    }, millis);
+  }
+
+  function failLayer(token, err) {
+    if (token !== layerToken) return;
+    diag("layer", errorCode(err));
+    setLayerState("error");
   }
 
   function clearRadar() {
@@ -187,6 +249,7 @@
   function resetLayers() {
     layerToken++;
     if (timeTimer) { clearTimeout(timeTimer); timeTimer = null; }
+    if (deadlineTimer) { clearTimeout(deadlineTimer); deadlineTimer = null; }
     activeControllers.splice(0).forEach(function (controller) { controller.abort(); });
     clearRadar();
     clearSst();
@@ -202,7 +265,7 @@
       timer = setTimeout(function () {
         if (controller) controller.abort();
         reject(new Error("timeout"));
-      }, 20000);
+      }, 12000);
     });
     var request = fetch(url, controller ? { signal: controller.signal } : {}).then(function (response) {
       if (!response.ok) throw new Error("http " + response.status);
@@ -259,7 +322,7 @@
         });
         var errors = 0;
         var done = false;
-        next.on("load", function () {
+        next.on("tileload", function () {
           if (done || token !== layerToken) return;
           done = true;
           next.setOpacity(0.82);
@@ -273,13 +336,13 @@
         });
         next.on("tileerror", function () {
           errors++;
-          if (!done && errors >= 6 && token === layerToken) setLayerState("error");
+          if (!done && errors >= 6 && token === layerToken) failLayer(token, new Error("empty"));
         });
         next.addTo(map);
         if (!radarLayer) radarLayer = next;
       }).catch(function (err) {
         if (err && err.message === "stale") return;
-        if (token === layerToken) setLayerState("error");
+        failLayer(token, err);
       });
     }
     load();
@@ -295,8 +358,8 @@
     var errors = 0;
     var done = false;
     var layer = L.tileLayer(url, { pane: "radarPane", maxNativeZoom: 7, maxZoom: 18, opacity: 0.78, tileSize: 256 });
-    layer.on("load", function () { if (!done && token === layerToken) { done = true; setLayerState("ready"); } });
-    layer.on("tileerror", function () { errors++; if (!done && errors >= 6 && token === layerToken) setLayerState("error"); });
+    layer.on("tileload", function () { if (!done && token === layerToken) { done = true; setLayerState("ready"); } });
+    layer.on("tileerror", function () { errors++; if (!done && errors >= 6 && token === layerToken) failLayer(token, new Error("empty")); });
     layer.addTo(map);
     sstLayer = layer;
   }
@@ -317,7 +380,7 @@
       setLayerState("ready");
     }).catch(function (err) {
       if (err && err.message === "stale") return;
-      if (token === layerToken) setLayerState("error");
+      failLayer(token, err);
     });
   }
 
@@ -390,7 +453,7 @@
       return fetchJson(url, token).catch(function (err) {
         if (err && err.message === "stale") throw err;
         attempt++;
-        if (attempt >= 3) throw err;
+        if (attempt >= 2) throw err;
         return new Promise(function (resolve) { setTimeout(resolve, 450 * attempt); }).then(run);
       });
     }
@@ -407,7 +470,7 @@
       setLayerState("ready");
     }).catch(function (err) {
       if (err && err.message === "stale") return;
-      if (token === layerToken) setLayerState("error");
+      failLayer(token, err);
     });
   }
 
@@ -489,7 +552,7 @@
       setLayerState("ready");
     }).catch(function (err) {
       if (err && err.message === "stale") return;
-      if (token === layerToken) setLayerState("error");
+      failLayer(token, err);
     });
   }
 
@@ -600,6 +663,8 @@
     currentLayer = layer;
     var token = layerToken;
     if (layer === "none") { setLayerState("ready"); return; }
+    setLayerState("loading");
+    armDeadline(token, 25000);
     if (layer === "precip") showRadar(token, selectedTime);
     else if (layer === "sst") showSst(token);
     else if (layer === "cyclones") showCyclones(token);
@@ -644,10 +709,18 @@
       mountBase(0);
     },
     setFeatures: function (layer, json) {
-      if (typeof layer === "string" && typeof json === "string") showFeatures(layer, json);
+      if (typeof layer !== "string" || typeof json !== "string") return;
+      try {
+        showFeatures(layer, json);
+      } catch (e) {
+        if (layer === currentLayer) {
+          diag("layer", "data");
+          setLayerState("error");
+        }
+      }
     },
     featuresFailed: function (layer) {
-      if (layer === currentLayer) setLayerState("error");
+      if (layer === currentLayer) { diag("layer", "request"); setLayerState("error"); }
     },
     setDark: function (value) {
       document.body.classList.toggle("dark", value === true);
@@ -680,5 +753,5 @@
     "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js",
     "https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.min.js",
     "https://unpkg.com/leaflet@1.9.4/dist/leaflet.min.js"
-  ], 0, boot, function () { status.error = "script"; });
+  ], 0, bootSafely, function () { status.error = "script"; });
 })();
