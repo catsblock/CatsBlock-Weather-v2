@@ -1,13 +1,27 @@
 (function () {
   "use strict";
   var bridge = window.CatsBlockBridge;
+  var status = { page: false, ready: false, error: "", layer: "ready" };
+  window.CBStatus = function () { return JSON.stringify(status); };
+
   function send(name) {
     try {
-      if (bridge && typeof bridge[name] === "function") bridge[name].apply(bridge, Array.prototype.slice.call(arguments, 1));
+      bridge[name].apply(bridge, Array.prototype.slice.call(arguments, 1));
     } catch (e) {}
   }
-  if (typeof L === "undefined") { send("onMapError", "script"); return; }
 
+  function loadScript(urls, index, ok, bad) {
+    var el = document.createElement("script");
+    el.src = urls[index];
+    el.onload = ok;
+    el.onerror = function () {
+      if (index + 1 < urls.length) loadScript(urls, index + 1, ok, bad);
+      else bad();
+    };
+    document.head.appendChild(el);
+  }
+
+  function boot() {
   var ROWS = 16, COLS = 37, CELL = 4;
   var BASES = [
     "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
@@ -114,7 +128,7 @@
     });
     baseLayer.on("tileload", function () {
       baseLoaded++;
-      if (!baseReady) { baseReady = true; send("onMapReady"); }
+      if (!baseReady) { baseReady = true; status.ready = true; }
     });
     baseLayer.on("tileerror", function () {
       baseErrors++;
@@ -131,14 +145,14 @@
     if (baseIndex + 1 < BASES.length) {
       mountBase(baseIndex + 1);
     } else {
-      send("onMapError", "tiles");
+      status.error = "tiles";
     }
   }
 
   mountBase(0);
 
   function setLayerState(state) {
-    send("onLayerState", state);
+    status.layer = state;
   }
 
   function clearRadar() {
@@ -415,6 +429,14 @@
     gridCtx.putImageData(image, 0, 0);
   }
 
+  function syncSize() {
+    map.invalidateSize({ animate: false });
+    queueDraw();
+  }
+  if (window.ResizeObserver) new ResizeObserver(syncSize).observe(document.getElementById("map"));
+  else window.addEventListener("resize", syncSize);
+  [0, 250, 800, 2000].forEach(function (delay) { setTimeout(syncSize, delay); });
+
   map.on("move zoom", queueDraw);
   map.on("resize", queueDraw);
 
@@ -484,6 +506,8 @@
     },
     reloadBase: function () {
       baseReady = false;
+      status.ready = false;
+      status.error = "";
       mountBase(0);
     },
     setFeatures: function (layer, json) {
@@ -516,5 +540,12 @@
     }
   };
 
-  send("onPageReady");
+    status.page = true;
+  }
+
+  loadScript([
+    "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js",
+    "https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.min.js",
+    "https://unpkg.com/leaflet@1.9.4/dist/leaflet.min.js"
+  ], 0, boot, function () { status.error = "script"; });
 })();
