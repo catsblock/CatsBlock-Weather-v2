@@ -447,9 +447,9 @@ private fun AnimatedNavigationIcon(tab: AppTab, selected: Boolean, tint: Color) 
                         scaleY *= 1f + 0.22f * arc
                     }
                     AppTab.News -> {
-                        rotationZ = -18f * sin(t * PI * 3.0).toFloat() * decay
-                        scaleX *= 1f + 0.10f * arc
-                        scaleY *= 1f + 0.10f * arc
+                        cameraDistance = 14f * density
+                        rotationY = 360f * t * t * (3f - 2f * t)
+                        translationY = 3.dp.toPx() * arc
                     }
                     AppTab.Settings -> rotationZ = 180f * t
                 }
