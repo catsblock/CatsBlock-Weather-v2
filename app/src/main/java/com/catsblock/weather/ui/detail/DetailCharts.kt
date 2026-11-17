@@ -317,29 +317,67 @@ fun HourlyChart(
                 clipRect(left = 0f, top = 0f, right = w * reveal.value, bottom = size.height) {
                     lines.forEachIndexed { lineIndex, line ->
                         val path = Path()
-                        var started = false
                         var lastX = 0f
                         var lastY = 0f
                         var firstX = -1f
+                        val run = ArrayList<Offset>()
+                        fun flushRun() {
+                            if (run.isEmpty()) return
+                            if (firstX < 0f) firstX = run.first().x
+                            path.moveTo(run.first().x, run.first().y)
+                            if (run.size > 1) {
+                                val slopes = FloatArray(run.size - 1) { k ->
+                                    (run[k + 1].y - run[k].y) / (run[k + 1].x - run[k].x)
+                                }
+                                val tangents = FloatArray(run.size)
+                                tangents[0] = slopes.first()
+                                tangents[run.lastIndex] = slopes.last()
+                                for (k in 1 until run.lastIndex) {
+                                    tangents[k] = if (slopes[k - 1] * slopes[k] <= 0f) 0f else {
+                                        val left = run[k].x - run[k - 1].x
+                                        val right = run[k + 1].x - run[k].x
+                                        val w1 = 2f * right + left
+                                        val w2 = right + 2f * left
+                                        (w1 + w2) / (w1 / slopes[k - 1] + w2 / slopes[k])
+                                    }
+                                }
+                                for (k in slopes.indices) {
+                                    if (slopes[k] == 0f) {
+                                        tangents[k] = 0f
+                                        tangents[k + 1] = 0f
+                                    } else {
+                                        val ra = tangents[k] / slopes[k]
+                                        val rb = tangents[k + 1] / slopes[k]
+                                        val magnitude = ra * ra + rb * rb
+                                        if (magnitude > 9f) {
+                                            val limit = 3f / kotlin.math.sqrt(magnitude)
+                                            tangents[k] = limit * ra * slopes[k]
+                                            tangents[k + 1] = limit * rb * slopes[k]
+                                        }
+                                    }
+                                }
+                                for (k in 0 until run.lastIndex) {
+                                    val dx = (run[k + 1].x - run[k].x) / 3f
+                                    path.cubicTo(
+                                        run[k].x + dx, run[k].y + tangents[k] * dx,
+                                        run[k + 1].x - dx, run[k + 1].y - tangents[k + 1] * dx,
+                                        run[k + 1].x, run[k + 1].y
+                                    )
+                                }
+                            }
+                            lastX = run.last().x
+                            lastY = run.last().y
+                            run.clear()
+                        }
                         for (i in 0 until HOURS) {
                             val v = line.values.getOrNull(i)
                             if (v == null) {
-                                started = false
+                                flushRun()
                                 continue
                             }
-                            val x = xFor(i)
-                            val y = yFor(fractionOf(line, v))
-                            if (!started) {
-                                path.moveTo(x, y)
-                                started = true
-                                if (firstX < 0f) firstX = x
-                            } else {
-                                val mid = (lastX + x) / 2f
-                                path.cubicTo(mid, lastY, mid, y, x, y)
-                            }
-                            lastX = x
-                            lastY = y
+                            run.add(Offset(xFor(i), yFor(fractionOf(line, v))))
                         }
+                        flushRun()
                         if (firstX >= 0f) {
                             if (lineIndex == 0) {
                                 val fill = Path().apply {
