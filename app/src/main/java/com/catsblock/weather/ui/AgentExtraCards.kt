@@ -28,7 +28,6 @@ import com.catsblock.weather.data.AppSettings
 import com.catsblock.weather.data.City
 import com.catsblock.weather.data.ThemeMode
 import com.catsblock.weather.i18n.tr
-import org.maplibre.android.geometry.LatLng
 import kotlin.math.roundToInt
 
 private val MapHeight = 320.dp
@@ -120,18 +119,19 @@ internal fun AgentMapCard(card: AgentCard.MapView, settings: AppSettings, conten
     val layer = MapLayer.entries.firstOrNull { it.id == card.layer } ?: MapLayer.None
     val title = tr(if (layer == MapLayer.None) "Weather map" else layer.label)
     val city = remember(card) { City(card.place, "", "", "", card.lat, card.lon) }
+    val controller = remember(card) { RadarMapController() }
+    val viewport = remember(card) { MapViewport(card.centerLat, card.centerLon, (card.zoom + 1.0).toFloat()) }
 
     CardPanel(content) {
         CardTitle(title, card.place, content)
-        NativeWeatherMap(
+        RadarTileMap(
+            controller = controller,
+            viewport = viewport,
             city = city,
-            layer = layer,
+            showRadar = layer == MapLayer.Precipitation,
             dark = dark,
             focusRequest = 0,
             onPointSelected = { _, _, _, _ -> },
-            onMapReady = {},
-            initialCenter = LatLng(card.centerLat, card.centerLon),
-            initialZoom = card.zoom,
             modifier = Modifier.fillMaxWidth().height(MapHeight)
         )
     }
