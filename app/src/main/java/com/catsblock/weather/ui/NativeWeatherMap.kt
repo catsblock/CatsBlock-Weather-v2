@@ -93,20 +93,7 @@ internal fun NativeWeatherMap(
     var retryRequest by remember { mutableIntStateOf(0) }
     var centeredCityId by remember { mutableStateOf<String?>(null) }
     val bridge = remember {
-        MapBridge(
-            onPageReadyCallback = { pageReady = true },
-            onMapReadyCallback = {
-                mapReady = true
-                failed = false
-                currentOnMapReady(true)
-            },
-            onMapErrorCallback = {
-                failed = true
-                currentOnMapReady(true)
-            },
-            onLayerStateCallback = { layerState = it },
-            onPointCallback = { latitude, longitude, x, y -> currentOnPointSelected(latitude, longitude, x, y) }
-        )
+        MapBridge { latitude, longitude, x, y -> currentOnPointSelected(latitude, longitude, x, y) }
     }
 
     AndroidView(
@@ -177,7 +164,6 @@ internal fun NativeWeatherMap(
                 }
             }
             lifecycleOwner.lifecycle.addObserver(observer)
-            if (!lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) view.onPause()
             onDispose {
                 lifecycleOwner.lifecycle.removeObserver(observer)
                 bridge.active = false
@@ -192,6 +178,32 @@ internal fun NativeWeatherMap(
                 mapReady = false
                 currentOnMapReady(false)
             }
+        }
+    }
+
+    LaunchedEffect(webView, retryRequest) {
+        val view = webView ?: return@LaunchedEffect
+        while (bridge.active) {
+            val raw = runCatching { view.evalString("window.CBStatus ? CBStatus() : ''") }.getOrNull()
+            val json = raw?.takeIf { it.isNotEmpty() && it != "null" }?.let {
+                runCatching { JSONObject(JSONObject("{\"v\":$it}").getString("v")) }.getOrNull()
+            }
+            if (json != null) {
+                if (json.optBoolean("page") && !pageReady) pageReady = true
+                if (json.optBoolean("ready") && !mapReady) {
+                    mapReady = true
+                    failed = false
+                    currentOnMapReady(true)
+                }
+                val error = json.optString("error")
+                if (error.isNotEmpty() && !mapReady) {
+                    failed = true
+                    currentOnMapReady(true)
+                }
+                val state = json.optString("layer")
+                if (state == "loading" || state == "ready" || state == "error") layerState = state
+            }
+            delay(if (mapReady) 800L else 300L)
         }
     }
 
@@ -326,7 +338,7 @@ internal fun NativeWeatherMap(
     }
 }
 
-private const val MAP_BASE_URL = "https://github.com/catsblock/CatsBlock-Weather-v2"
+private const val MAP_BASE_URL = "https://github.com/catsblock/CatsBlock-Weather-v2/"
 
 private const val MAP_PAGE_STYLE = """
 html,body,#map{margin:0;padding:0;width:100%;height:100%;background:#e8e6e1;overflow:hidden}
@@ -346,49 +358,32 @@ private fun buildMapPage(context: android.content.Context): String? {
     }.getOrNull() ?: return null
     return "<!DOCTYPE html><html><head><meta charset=\"utf-8\">" +
         "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no\">" +
-        "<link rel=\"stylesheet\" href=\"https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css\">" +
+        "<link rel=\"stylesheet\" href=\"https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css\" onerror=\"this.onerror=null;this.href='https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css'\">" +
         "<style>" + MAP_PAGE_STYLE + "</style>" +
-        "<script src=\"https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js\"></script>" +
-        "</head><body><div id=\"map\"></div><canvas id=\"grid\"></canvas><script>" + script + "</script></body></html>"
+                "</head><body><div id=\"map\"></div><canvas id=\"grid\"></canvas><script>" + script + "</script></body></html>"
 }
 
 private class MapBridge(
-    private val onPageReadyCallback: () -> Unit,
-    private val onMapReadyCallback: () -> Unit,
-    private val onMapErrorCallback: () -> Unit,
-    private val onLayerStateCallback: (String) -> Unit,
     private val onPointCallback: (Double, Double, Float, Float) -> Unit
 ) {
     @Volatile
     var active = true
     private val handler = Handler(Looper.getMainLooper())
 
-    private fun post(block: () -> Unit) {
-        handler.post { if (active) block() }
-    }
-
-    @JavascriptInterface
-    fun onPageReady() = post(onPageReadyCallback)
-
-    @JavascriptInterface
-    fun onMapReady() = post(onMapReadyCallback)
-
-    @JavascriptInterface
-    fun onMapError(reason: String?) = post(onMapErrorCallback)
-
-    @JavascriptInterface
-    fun onLayerState(state: String?) {
-        val value = state ?: return
-        if (value != "loading" && value != "ready" && value != "error") return
-        post { onLayerStateCallback(value) }
-    }
-
     @JavascriptInterface
     fun onPoint(latitude: Double, longitude: Double, x: Double, y: Double) {
         if (!latitude.isFinite() || !longitude.isFinite() || !x.isFinite() || !y.isFinite()) return
         if (latitude !in -90.0..90.0 || longitude !in -180.0..180.0) return
         if (x < 0.0 || y < 0.0 || x > 10000.0 || y > 10000.0) return
-        post { onPointCallback(latitude, longitude, x.toFloat(), y.toFloat()) }
+        handler.post { if (active) onPointCallback(latitude, longitude, x.toFloat(), y.toFloat()) }
+    }
+}
+
+private suspend fun WebView.evalString(script: String): String? = kotlin.coroutines.suspendCoroutine { continuation ->
+    post {
+        evaluateJavascript(script) { raw ->
+            continuation.resumeWith(Result.success(raw))
+        }
     }
 }
 
