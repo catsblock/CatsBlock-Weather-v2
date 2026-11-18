@@ -24,9 +24,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -147,7 +147,7 @@ fun NewsBrowserDialog(article: NewsArticle, onDismiss: () -> Unit) {
                         Icon(Icons.Rounded.Refresh, contentDescription = tr("Retry"), tint = MaterialTheme.colorScheme.onSurface)
                     }
                     IconButton(onClick = { if (currentUrl != null) confirmExternal = true }) {
-                        Icon(Icons.Rounded.OpenInNew, contentDescription = tr("Open in browser"), tint = MaterialTheme.colorScheme.onSurface)
+                        Icon(Icons.AutoMirrored.Rounded.OpenInNew, contentDescription = tr("Open in browser"), tint = MaterialTheme.colorScheme.onSurface)
                     }
                 }
                 if (progress in 0.01f..0.99f) {
