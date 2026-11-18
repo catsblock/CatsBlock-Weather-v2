@@ -1,5 +1,7 @@
 package com.catsblock.weather.data
 
+import org.json.JSONArray
+import org.json.JSONObject
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.hypot
@@ -29,4 +31,14 @@ fun circularMeanWindDirection(values: List<Double?>): Double? {
     if (count == 0) return null
     if (hypot(sumSin, sumCos) / count < 1e-9) return null
     return normalizeWindDirection(Math.toDegrees(atan2(sumSin, sumCos)))
+}
+
+fun JSONObject.optWindDirection(key: String): Double? {
+    if (!has(key) || isNull(key)) return null
+    return normalizeWindDirection(optDouble(key, Double.NaN))
+}
+
+fun JSONArray.optWindDirection(index: Int): Double? {
+    if (index < 0 || index >= length() || isNull(index)) return null
+    return normalizeWindDirection(optDouble(index, Double.NaN))
 }
