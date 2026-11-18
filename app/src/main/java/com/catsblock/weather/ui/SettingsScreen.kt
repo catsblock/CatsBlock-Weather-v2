@@ -2,11 +2,13 @@ package com.catsblock.weather.ui
 
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.ui.semantics.Role
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.selectable
 import com.catsblock.weather.ui.components.ExpressiveLoader
 import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Insights
 import androidx.compose.material.icons.rounded.TipsAndUpdates
 import androidx.compose.material.icons.rounded.UploadFile
@@ -75,7 +77,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AppShortcut
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CheckCircle
-import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.SystemUpdate
@@ -678,7 +679,7 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
                     leadingContent = { Icon(Icons.Rounded.Language, null, tint = MaterialTheme.colorScheme.primary) },
                     headlineContent = { Text(tr("App language")) },
                     supportingContent = { Text(settings.language.label) },
-                    trailingContent = { Icon(Icons.Rounded.ChevronRight, null) },
+                    trailingContent = { Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null) },
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                 )
             }
@@ -762,7 +763,7 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
                         supportingContent = {
                             Text(if (settings.apiKeys[source].isNullOrBlank()) tr("Not set") else tr("Configured"))
                         },
-                        trailingContent = { Icon(Icons.Rounded.ChevronRight, null) },
+                        trailingContent = { Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null) },
                         colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                     )
                 }
@@ -789,7 +790,7 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
                         modifier = Modifier.clickable { intervalDialog = true },
                         headlineContent = { Text(tr("Update interval")) },
                         supportingContent = { Text(intervalLabel(settings.backgroundIntervalMinutes)) },
-                        trailingContent = { Icon(Icons.Rounded.ChevronRight, null) },
+                        trailingContent = { Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null) },
                         colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                     )
                     GroupDivider()
@@ -829,7 +830,7 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
                         modifier = Modifier.clickable { leadDialog = "rain" },
                         headlineContent = { Text(tr("Alert time")) },
                         supportingContent = { Text(leadFull(settings.rainLeadMinutes)) },
-                        trailingContent = { Icon(Icons.Rounded.ChevronRight, null) },
+                        trailingContent = { Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null) },
                         colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                     )
                 }
@@ -848,7 +849,7 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
                         modifier = Modifier.clickable { leadDialog = "snow" },
                         headlineContent = { Text(tr("Alert time")) },
                         supportingContent = { Text(leadFull(settings.snowLeadMinutes)) },
-                        trailingContent = { Icon(Icons.Rounded.ChevronRight, null) },
+                        trailingContent = { Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null) },
                         colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                     )
                 }
@@ -867,7 +868,7 @@ fun SettingsScreen(vm: WeatherViewModel, up: UpdateViewModel = viewModel()) {
                         modifier = Modifier.clickable { leadDialog = "eclipse" },
                         headlineContent = { Text(tr("Alert time")) },
                         supportingContent = { Text(leadFull(settings.eclipseLeadMinutes)) },
-                        trailingContent = { Icon(Icons.Rounded.ChevronRight, null) },
+                        trailingContent = { Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null) },
                         colors = ListItemDefaults.colors(containerColor = Color.Transparent)
                     )
                 }
@@ -1199,11 +1200,11 @@ private fun GroupDivider() {
 @Composable
 private fun NavRow(icon: ImageVector, title: String, description: String, onClick: () -> Unit) {
     ListItem(
-        modifier = Modifier.clickable(onClick = onClick),
+        modifier = Modifier.clickable(role = Role.Button, onClick = onClick),
         leadingContent = { Icon(icon, null, tint = MaterialTheme.colorScheme.primary) },
         headlineContent = { Text(title) },
         supportingContent = { Text(description) },
-        trailingContent = { Icon(Icons.Rounded.ChevronRight, null) },
+        trailingContent = { Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null) },
         colors = ListItemDefaults.colors(containerColor = Color.Transparent)
     )
 }
@@ -1211,12 +1212,13 @@ private fun NavRow(icon: ImageVector, title: String, description: String, onClic
 @Composable
 private fun SwitchRow(title: String, description: String, checked: Boolean, onChange: (Boolean) -> Unit) {
     ListItem(
+        modifier = Modifier.toggleable(value = checked, role = Role.Switch, onValueChange = onChange),
         headlineContent = { Text(title) },
         supportingContent = { Text(description) },
         trailingContent = {
             Switch(
                 checked = checked,
-                onCheckedChange = onChange,
+                onCheckedChange = null,
                 thumbContent = if (checked) {
                     { Icon(Icons.Rounded.Check, null, Modifier.size(SwitchDefaults.IconSize)) }
                 } else null
