@@ -260,7 +260,7 @@ fun WeatherTheme(
     val typography = remember(family) { typographyFor(family) }
     val density = LocalDensity.current
     val scaled = remember(density, settings.textScale) {
-        Density(density.density, density.fontScale * settings.textScale)
+        Density(density.density, (density.fontScale * settings.textScale).coerceAtMost(2.4f))
     }
     MaterialExpressiveTheme(
         colorScheme = scheme,
