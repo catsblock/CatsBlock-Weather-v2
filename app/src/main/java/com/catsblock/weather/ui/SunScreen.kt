@@ -37,12 +37,12 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.rounded.ArrowUpward
-import androidx.compose.material.icons.rounded.ChevronLeft
-import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Explore
 import androidx.compose.material.icons.rounded.Today
 import androidx.compose.material.icons.rounded.WbSunny
@@ -267,9 +267,9 @@ private fun SunContent(city: City, offsetSeconds: Int, now: LocalDateTime, onDis
                         }
                     }
                     Spacer(Modifier.weight(1f))
-                    NavButton(Icons.Rounded.ChevronLeft, tr("Previous day"), false) { selected = selected.minusDays(1) }
+                    NavButton(Icons.AutoMirrored.Rounded.KeyboardArrowLeft, tr("Previous day"), false) { selected = selected.minusDays(1) }
                     Spacer(Modifier.width(8.dp))
-                    NavButton(Icons.Rounded.ChevronRight, tr("Next day"), true) { selected = selected.plusDays(1) }
+                    NavButton(Icons.AutoMirrored.Rounded.KeyboardArrowRight, tr("Next day"), true) { selected = selected.plusDays(1) }
                 }
             }
             item {
