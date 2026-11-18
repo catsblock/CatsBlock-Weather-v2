@@ -29,10 +29,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.rounded.ChevronLeft
-import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -454,7 +454,7 @@ private fun CalendarCard(
     val grid: List<MoonCell?> = List(blanks) { null } + cells
     Column(Modifier.fillMaxWidth().clip(PanelShape).background(Panel).padding(horizontal = 14.dp, vertical = 18.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            RoundNav(Icons.Rounded.ChevronLeft, tr("Previous month")) { onMonth(month.minusMonths(1)) }
+            RoundNav(Icons.AutoMirrored.Rounded.KeyboardArrowLeft, tr("Previous month")) { onMonth(month.minusMonths(1)) }
             Text(
                 moonCap(month.month.getDisplayName(TextStyle.FULL, locale)) + " " + month.year,
                 Modifier.weight(1f),
@@ -463,7 +463,7 @@ private fun CalendarCard(
                 color = Color.White,
                 textAlign = TextAlign.Center
             )
-            RoundNav(Icons.Rounded.ChevronRight, tr("Next month")) { onMonth(month.plusMonths(1)) }
+            RoundNav(Icons.AutoMirrored.Rounded.KeyboardArrowRight, tr("Next month")) { onMonth(month.plusMonths(1)) }
         }
         Spacer(Modifier.height(16.dp))
         Row(Modifier.fillMaxWidth()) {
