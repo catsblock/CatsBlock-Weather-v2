@@ -146,7 +146,7 @@ private fun RegionBlockedScreen(onClose: () -> Unit) {
                 shape = RoundedCornerShape(28.dp),
                 modifier = Modifier.fillMaxWidth().height(60.dp)
             ) {
-                Text("Ok", style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold))
+                Text(tr("OK"), style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold))
             }
         }
     }
